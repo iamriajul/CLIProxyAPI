@@ -11,6 +11,8 @@ func init() {
 	registerRefreshLead("claude", func() Authenticator { return NewClaudeAuthenticator() })
 	registerRefreshLead("antigravity", func() Authenticator { return NewAntigravityAuthenticator() })
 	registerRefreshLead("kimi", func() Authenticator { return NewKimiAuthenticator() })
+	registerRefreshLead("muse", func() Authenticator { return NewMuseAuthenticator() })
+	registerRefreshLead("muse-code", func() Authenticator { return NewMuseAuthenticator() })
 	registerRefreshLead("xai", func() Authenticator { return NewXAIAuthenticator() })
 	registerRefreshLead("devin", func() Authenticator { return NewDevinAuthenticator() })
 	registerRefreshLead("meta", func() Authenticator { return NewMetaAuthenticator() })

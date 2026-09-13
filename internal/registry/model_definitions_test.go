@@ -9,6 +9,29 @@ func TestGetStaticModelDefinitionsByChannelSupportsGeminiInteractions(t *testing
 	}
 }
 
+func TestGetMuseModelsIncludesSparkFamily(t *testing.T) {
+	for _, channel := range []string{"muse", "muse-code", "muse_code"} {
+		models := GetStaticModelDefinitionsByChannel(channel)
+		if len(models) < 5 {
+			t.Fatalf("GetStaticModelDefinitionsByChannel(%q) = %d models, want >= 5", channel, len(models))
+		}
+		ids := make(map[string]bool, len(models))
+		for _, m := range models {
+			if m != nil {
+				ids[m.ID] = true
+			}
+		}
+		for _, want := range []string{"muse-spark-1.1", "muse-spark-1.2", "muse-spark-1.2-contributor", "muse-spark-1.3", "muse-spark-1.3-contributor"} {
+			if !ids[want] {
+				t.Fatalf("channel %q missing model %q (got %v)", channel, want, ids)
+			}
+		}
+	}
+	if got := LookupStaticModelInfo("muse-spark-1.3"); got == nil || got.ID != "muse-spark-1.3" {
+		t.Fatalf("LookupStaticModelInfo(muse-spark-1.3) = %+v, want muse-spark-1.3", got)
+	}
+}
+
 func TestModelOverrideHeadersFromEmbeddedModels(t *testing.T) {
 	const wantUA = "codex-tui/0.154.0 (Mac OS 26.5.2; arm64) iTerm.app/3.6.11 (codex-tui; 0.154.0)"
 	got := ModelOverrideHeaders("gpt-5.6-luna")

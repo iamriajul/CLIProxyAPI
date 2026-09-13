@@ -414,6 +414,8 @@ func requestToFormat(provider string, executor ProviderExecutor, req cliproxyexe
 		return sdktranslator.FormatOpenAI
 	case "meta":
 		return sdktranslator.FormatCodex
+	case "muse", "muse-code", "muse_code":
+		return sdktranslator.FormatOpenAI
 	case "antigravity":
 		return sdktranslator.FormatAntigravity
 	case "devin":

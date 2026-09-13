@@ -35,6 +35,7 @@ type staticModelsJSON struct {
 	XAI         []*ModelInfo `json:"xai"`
 	Devin       []*ModelInfo `json:"devin"`
 	Meta        []*ModelInfo `json:"meta"`
+	Muse        []*ModelInfo `json:"muse"`
 }
 
 // GetClaudeModels returns the standard Claude model definitions.
@@ -239,6 +240,11 @@ func AntigravityWebSearchModelFor(modelID string) string {
 // GetXAIModels returns the standard xAI Grok model definitions.
 func GetXAIModels() []*ModelInfo {
 	return WithXAIBuiltins(cloneModelInfos(getModels().XAI))
+}
+
+// GetMuseModels returns the standard Muse (Meta muse-spark) model definitions.
+func GetMuseModels() []*ModelInfo {
+	return cloneModelInfos(getModels().Muse)
 }
 
 // WithCodexBuiltins injects hard-coded Codex-only model definitions that should
@@ -479,6 +485,7 @@ func cloneModelInfos(models []*ModelInfo) []*ModelInfo {
 //   - xai
 //   - devin
 //   - meta
+//   - muse
 func GetStaticModelDefinitionsByChannel(channel string) []*ModelInfo {
 	key := strings.ToLower(strings.TrimSpace(channel))
 	switch key {
@@ -502,8 +509,10 @@ func GetStaticModelDefinitionsByChannel(channel string) []*ModelInfo {
 		return GetXAIModels()
 	case "devin":
 		return GetDevinModels()
-	case "meta", "muse":
+	case "meta":
 		return GetMetaModels()
+	case "muse", "muse-code", "muse_code":
+		return GetMuseModels()
 	default:
 		return nil
 	}
@@ -549,6 +558,7 @@ func LookupStaticModelInfo(modelID string) *ModelInfo {
 		data.Devin,
 		staticDevinModels,
 		data.Meta,
+		data.Muse,
 	}
 	for _, models := range allModels {
 		for _, m := range models {
