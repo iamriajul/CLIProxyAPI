@@ -16,7 +16,9 @@ permissions:
 
 jobs:
   retarget:
-    if: github.actor != 'github-actions[bot]'
+    # Fork: this fork has no dev branch — queue PRs target main by design, so
+    # the retarget bot only runs upstream where dev exists.
+    if: github.actor != 'github-actions[bot]' && github.repository == 'router-for-me/CLIProxyAPI'
     runs-on: ubuntu-latest
     steps:
       - name: Retarget PR base to dev
