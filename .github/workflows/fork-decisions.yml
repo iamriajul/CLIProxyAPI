@@ -1,0 +1,25 @@
+# Fork-only: prove every fork decision still holds after a sync.
+# Runs scripts/fork-verify.sh, which parses docs/fork-decisions.md directly —
+# a decision without a proof command fails this job by construction.
+
+name: fork-decisions
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run fork proofs
+        run: bash scripts/fork-verify.sh
