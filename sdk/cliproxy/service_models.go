@@ -179,6 +179,9 @@ func (s *Service) registerModelsForAuthWithConfigAndCache(ctx context.Context, c
 	case "opencode", "opencode-go", "opencode_go":
 		models = registry.GetOpencodeModels()
 		models = applyExcludedModels(models, excluded)
+	case "zai", "glm", "zhipu":
+		models = registry.GetZaiModels()
+		models = applyExcludedModels(models, excluded)
 	case "xai":
 		models = registry.GetXAIModels()
 		if entry := resolveConfigXAIKeyForConfig(cfg, a); entry != nil {
