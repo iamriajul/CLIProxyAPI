@@ -126,6 +126,7 @@ func run() (exitStatus int) {
 	var antigravityLogin bool
 	var kimiLogin bool
 	var kimiAILogin bool
+	var zaiLogin bool
 	var xaiLogin bool
 	var copilotLogin bool
 	var devinLogin bool
@@ -158,6 +159,7 @@ func run() (exitStatus int) {
 	flag.BoolVar(&antigravityLogin, "antigravity-login", false, "Login to Antigravity using OAuth")
 	flag.BoolVar(&kimiLogin, "kimi-login", false, "Login to Kimi (.com) using OAuth")
 	flag.BoolVar(&kimiAILogin, "kimi-ai-login", false, "Login to Kimi.ai using OAuth")
+	flag.BoolVar(&zaiLogin, "zai-login", false, "Login to Z.AI using OAuth")
 	flag.BoolVar(&xaiLogin, "xai-login", false, "Login to xAI using OAuth")
 	flag.BoolVar(&copilotLogin, "copilot-login", false, "Login to Copilot using device OAuth")
 	flag.BoolVar(&devinLogin, "devin-login", false, "Login to Devin using OAuth")
@@ -627,7 +629,7 @@ func run() (exitStatus int) {
 		ProxyURL:     loginProxyURL,
 	}
 
-	commandMode := vertexImport != "" || siwcBind != "" || antigravityLogin || codexLogin || codexDeviceLogin || claudeLogin || kimiLogin || kimiAILogin || xaiLogin || copilotLogin || devinLogin || metaLogin
+	commandMode := vertexImport != "" || siwcBind != "" || antigravityLogin || codexLogin || codexDeviceLogin || claudeLogin || kimiLogin || kimiAILogin || zaiLogin || xaiLogin || copilotLogin || devinLogin || metaLogin
 	cloudConfigMissing := isCloudDeploy && !configFileExists
 	homeMode := configLoadedFromHome || (cfg != nil && cfg.Home.Enabled)
 	exampleAPIKeySafeMode := shouldEnableExampleAPIKeySafeMode(cfg, commandMode, tuiMode, standalone, cloudConfigMissing, homeMode)
@@ -701,6 +703,8 @@ func run() (exitStatus int) {
 		cmd.DoKimiLogin(cfg, options)
 	} else if kimiAILogin {
 		cmd.DoKimiAILogin(cfg, options)
+	} else if zaiLogin {
+		cmd.DoZaiLogin(cfg, options)
 	} else if xaiLogin {
 		cmd.DoXAILogin(cfg, options)
 	} else if copilotLogin {
