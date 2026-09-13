@@ -10,4 +10,5 @@ import (
 	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/thinking/provider/openai"
 	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/thinking/provider/opencode"
 	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/thinking/provider/xai"
+	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/thinking/provider/zai"
 )
