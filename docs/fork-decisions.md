@@ -160,3 +160,18 @@ go test ./internal/auth/zai/...
 go test ./internal/runtime/executor/ -run 'TestZai'
 go test ./internal/registry/ -run TestGetZaiModelsCoverCodingPlan
 ```
+
+## zai-key-import
+
+**Z.AI dashboard keys import without the browser flow**
+
+Same plan, second credential type: `POST /v0/management/zai/import`
+validates the pasted key with a minimal coding-lane completion and saves a
+type-zai file carrying the identical key shape, so routing, executors, and
+quota behave exactly like OAuth-provisioned files. The OAuth page card links
+the dashboard key page directly.
+
+```bash
+grep -q "zai/import" internal/api/server_management.go
+go test ./internal/auth/zai/ -run TestValidateKey
+```
