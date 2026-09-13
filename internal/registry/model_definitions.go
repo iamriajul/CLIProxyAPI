@@ -117,8 +117,15 @@ func GetXAIModels() []*ModelInfo {
 }
 
 // GetMuseModels returns the standard Muse (Meta muse-spark) model definitions.
+// The remote models catalog does not carry a muse section yet, and a catalog
+// refresh replaces the embedded one wholesale — so when the catalog section
+// is empty the hard-coded family below keeps Muse credentials routable.
+// Once the remote catalog ships muse models they take precedence.
 func GetMuseModels() []*ModelInfo {
-	return cloneModelInfos(getModels().Muse)
+	if models := cloneModelInfos(getModels().Muse); len(models) > 0 {
+		return models
+	}
+	return museBuiltinModelInfos()
 }
 
 // WithCodexBuiltins injects hard-coded Codex-only model definitions that should
@@ -138,6 +145,56 @@ func WithCodexBuiltins(models []*ModelInfo) []*ModelInfo {
 // not depend on remote models.json updates.
 func WithXAIBuiltins(models []*ModelInfo) []*ModelInfo {
 	return upsertModelInfos(models, xaiBuiltinImageModelInfo(), xaiBuiltinImageQualityModelInfo(), xaiBuiltinImage20ModelInfo(), xaiBuiltinVideoModelInfo(), xaiBuiltinVideo15ModelInfo(), xaiBuiltinVideo15PreviewModelInfo())
+}
+
+// museBuiltinModelIDs lists the Muse Spark family served through subscriptions.
+func museBuiltinModelIDs() []string {
+	return []string{
+		"muse-spark-1.1",
+		"muse-spark-1.2",
+		"muse-spark-1.2-contributor",
+		"muse-spark-1.3",
+		"muse-spark-1.3-contributor",
+	}
+}
+
+// museBuiltinModelInfos returns hard-coded Muse Spark definitions used when the
+// models catalog carries no muse section (see GetMuseModels).
+func museBuiltinModelInfos() []*ModelInfo {
+	thinking := &ThinkingSupport{Levels: []string{"minimal", "low", "medium", "high", "xhigh"}}
+	thinkingMax := &ThinkingSupport{Levels: []string{"minimal", "low", "medium", "high", "xhigh", "max"}}
+	defs := []struct {
+		id          string
+		displayName string
+		description string
+		created     int64
+		thinking    *ThinkingSupport
+	}{
+		{"muse-spark-1.1", "Muse Spark 1.1", "Meta Muse Spark 1.1 for agentic coding and long-context reasoning (1M context).", 1767225600, thinking},
+		{"muse-spark-1.2", "Muse Spark 1.2", "Meta Muse Spark 1.2 for agentic coding and long-context reasoning (1M context).", 1780272000, thinking},
+		{"muse-spark-1.2-contributor", "Muse Spark 1.2 Contributor", "Meta Muse Spark 1.2 contributor tier (1M context).", 1780272000, thinking},
+		{"muse-spark-1.3", "Muse Spark 1.3", "Meta Muse Spark 1.3 tuned for long-horizon agentic coding workflows (1M context).", 1787616000, thinkingMax},
+		{"muse-spark-1.3-contributor", "Muse Spark 1.3 Contributor", "Meta Muse Spark 1.3 contributor tier (1M context).", 1787616000, thinking},
+	}
+	models := make([]*ModelInfo, 0, len(defs))
+	for _, def := range defs {
+		levels := append([]string(nil), def.thinking.Levels...)
+		models = append(models, &ModelInfo{
+			ID:                        def.id,
+			Object:                    "model",
+			Created:                   def.created,
+			OwnedBy:                   "meta",
+			Type:                      "muse",
+			DisplayName:               def.displayName,
+			Description:               def.description,
+			ContextLength:             1048576,
+			MaxCompletionTokens:       65536,
+			Thinking:                  &ThinkingSupport{Levels: levels},
+			SupportedInputModalities:  []string{"text", "image"},
+			SupportedOutputModalities: []string{"text"},
+		})
+	}
+	return models
 }
 
 func normalizeAntigravityCapabilityModelID(modelID string) string {
@@ -410,6 +467,14 @@ func LookupStaticModelInfo(modelID string) *ModelInfo {
 			if m != nil && m.ID == modelID {
 				return cloneModelInfo(m)
 			}
+		}
+	}
+
+	// Fall back to hard-coded Muse builtins when the catalog has no muse
+	// section (see GetMuseModels).
+	for _, m := range museBuiltinModelInfos() {
+		if m != nil && m.ID == modelID {
+			return cloneModelInfo(m)
 		}
 	}
 

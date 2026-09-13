@@ -1,7 +1,10 @@
 package executor
 
 import (
+	"context"
+	"io"
 	"net/http"
+	"strings"
 	"testing"
 
 	museauth "github.com/router-for-me/CLIProxyAPI/v7/internal/auth/muse"
@@ -9,6 +12,7 @@ import (
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executor"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v7/sdk/translator"
+	"github.com/tidwall/gjson"
 )
 
 func TestMuseExecutorIdentifier(t *testing.T) {
@@ -105,5 +109,191 @@ func TestMuseRefreshReusesMintedKey(t *testing.T) {
 	}
 	if refreshed != auth {
 		t.Fatalf("refresh should return same auth when key present")
+	}
+}
+
+type museRoundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f museRoundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+const museChatCompletionFixture = `{"id":"chatcmpl-1","object":"chat.completion","created":1,"model":"muse-spark-1.3","choices":[{"index":0,"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":3,"total_tokens":8}}`
+
+// museHarnessMatrix covers every client harness protocol against the same
+// mock Meta upstream: OpenAI-style (OpenCode and friends), Claude Messages
+// (Claude Code, Agent SDK), Gemini generateContent, and Responses (Codex).
+func TestMuseHarnessMatrix(t *testing.T) {
+	tests := []struct {
+		name         string
+		source       sdktranslator.Format
+		payload      string
+		clientUA     string
+		wantEndpoint string
+		wantTextPath string
+	}{
+		{
+			name:         "openai harness",
+			source:       sdktranslator.FormatOpenAI,
+			payload:      `{"model":"muse-spark-1.3","messages":[{"role":"user","content":"hi"}]}`,
+			clientUA:     "opencode/1.0",
+			wantEndpoint: "https://api.meta.ai/v1/chat/completions",
+			wantTextPath: "choices.0.message.content",
+		},
+		{
+			name:         "claude harness",
+			source:       sdktranslator.FormatClaude,
+			payload:      `{"model":"muse-spark-1.3","max_tokens":64,"messages":[{"role":"user","content":"hi"}]}`,
+			clientUA:     "claude-cli/2.1.258 (external, cli)",
+			wantEndpoint: "https://api.meta.ai/v1/chat/completions",
+			wantTextPath: "content.0.text",
+		},
+		{
+			name:         "gemini harness",
+			source:       sdktranslator.FormatGemini,
+			payload:      `{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}`,
+			clientUA:     "gemini-cli/1.0",
+			wantEndpoint: "https://api.meta.ai/v1/chat/completions",
+			wantTextPath: "candidates.0.content.parts.0.text",
+		},
+		{
+			name:         "codex harness",
+			source:       sdktranslator.FormatOpenAIResponse,
+			payload:      `{"model":"muse-spark-1.3","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}]}`,
+			clientUA:     "codex_cli_rs/0.114.0",
+			wantEndpoint: "https://api.meta.ai/v1/responses",
+			wantTextPath: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var upstreamURL, authHeader, versionHeader, upstreamUA, upstreamModel string
+			var upstreamBody []byte
+			ctx := context.WithValue(context.Background(), "cliproxy.roundtripper", museRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				upstreamURL = req.URL.String()
+				authHeader = req.Header.Get("Authorization")
+				versionHeader = req.Header.Get("x-api-version")
+				upstreamUA = req.Header.Get("User-Agent")
+				var errRead error
+				upstreamBody, errRead = io.ReadAll(req.Body)
+				if errRead != nil {
+					return nil, errRead
+				}
+				body := museChatCompletionFixture
+				if tt.source == sdktranslator.FormatOpenAIResponse {
+					body = `{"id":"resp_123","object":"response","status":"completed","model":"muse-spark-1.3","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hello"}]}],"usage":{"total_tokens":10,"input_tokens":6,"output_tokens":4}}`
+				}
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"application/json"}},
+					Body:       io.NopCloser(strings.NewReader(body)),
+				}, nil
+			}))
+
+			executor := NewMuseExecutor(&config.Config{})
+			auth := &cliproxyauth.Auth{
+				Provider: "muse",
+				Metadata: map[string]any{"muse_api_key": "LLM|test-key"},
+			}
+			headers := http.Header{}
+			if tt.clientUA != "" {
+				headers.Set("User-Agent", tt.clientUA)
+			}
+
+			resp, err := executor.Execute(ctx, auth, cliproxyexecutor.Request{
+				Model:   "muse-spark-1.3",
+				Payload: []byte(tt.payload),
+			}, cliproxyexecutor.Options{SourceFormat: tt.source, Headers: headers})
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if upstreamURL != tt.wantEndpoint {
+				t.Fatalf("upstreamURL = %q, want %q", upstreamURL, tt.wantEndpoint)
+			}
+			if authHeader != "Bearer LLM|test-key" {
+				t.Fatalf("Authorization = %q, want minted key", authHeader)
+			}
+			if versionHeader != museauth.MuseAPIVersion {
+				t.Fatalf("x-api-version = %q, want %q", versionHeader, museauth.MuseAPIVersion)
+			}
+			// Cloaking: the foreign harness UA must never reach Meta.
+			if upstreamUA != museUserAgent {
+				t.Fatalf("upstream User-Agent = %q, want cloaked %q", upstreamUA, museUserAgent)
+			}
+			upstreamModel = gjson.GetBytes(upstreamBody, "model").String()
+			if upstreamModel != "muse-spark-1.3" {
+				t.Fatalf("upstream model = %q, want muse-spark-1.3", upstreamModel)
+			}
+			if tt.wantTextPath != "" {
+				if got := gjson.GetBytes(resp.Payload, tt.wantTextPath).String(); got != "hello" {
+					t.Fatalf("response %s = %q, want hello (payload: %s)", tt.wantTextPath, got, resp.Payload)
+				}
+			} else if len(resp.Payload) == 0 {
+				t.Fatalf("empty translated response")
+			}
+		})
+	}
+}
+
+func TestMuseCloakNeverKeepsTransportIdentity(t *testing.T) {
+	var upstreamUA string
+	ctx := context.WithValue(context.Background(), "cliproxy.roundtripper", museRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		upstreamUA = req.Header.Get("User-Agent")
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(museChatCompletionFixture)),
+		}, nil
+	}))
+
+	executor := NewMuseExecutor(&config.Config{})
+	auth := &cliproxyauth.Auth{
+		Provider: "muse",
+		Metadata: map[string]any{"muse_api_key": "LLM|test-key", "cloak_mode": "never"},
+	}
+	_, err := executor.Execute(ctx, auth, cliproxyexecutor.Request{
+		Model:   "muse-spark-1.3",
+		Payload: []byte(`{"model":"muse-spark-1.3","messages":[{"role":"user","content":"hi"}]}`),
+	}, cliproxyexecutor.Options{
+		SourceFormat: sdktranslator.FormatOpenAI,
+		Headers:      http.Header{"User-Agent": []string{"claude-cli/9.9"}},
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if upstreamUA != "" {
+		t.Fatalf("cloak=never upstream UA = %q, want untouched (empty)", upstreamUA)
+	}
+}
+
+func TestMuseCloakAutoPassesNativeClient(t *testing.T) {
+	var upstreamUA string
+	ctx := context.WithValue(context.Background(), "cliproxy.roundtripper", museRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		upstreamUA = req.Header.Get("User-Agent")
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(museChatCompletionFixture)),
+		}, nil
+	}))
+
+	executor := NewMuseExecutor(&config.Config{})
+	auth := &cliproxyauth.Auth{
+		Provider: "muse",
+		Metadata: map[string]any{"muse_api_key": "LLM|test-key"},
+	}
+	_, err := executor.Execute(ctx, auth, cliproxyexecutor.Request{
+		Model:   "muse-spark-1.3",
+		Payload: []byte(`{"model":"muse-spark-1.3","messages":[{"role":"user","content":"hi"}]}`),
+	}, cliproxyexecutor.Options{
+		SourceFormat: sdktranslator.FormatOpenAI,
+		Headers:      http.Header{"User-Agent": []string{"muse-code/0.9"}},
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if upstreamUA != "" {
+		t.Fatalf("native client upstream UA = %q, want passthrough (empty)", upstreamUA)
 	}
 }

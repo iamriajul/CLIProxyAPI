@@ -62,10 +62,9 @@ func (e *MuseExecutor) PrepareRequest(req *http.Request, auth *cliproxyauth.Auth
 		attrs = auth.Attributes
 	}
 	util.ApplyCustomHeadersFromAttrs(req, attrs)
-	// Custom headers must not drop the mandatory version header.
-	if strings.TrimSpace(req.Header.Get("x-api-version")) == "" {
-		req.Header.Set("x-api-version", museauth.MuseAPIVersion)
-	}
+	// Cloak last so the official-client fingerprint wins; the version header
+	// is reasserted inside and can never be dropped by custom expansion.
+	applyMuseCloakHeaders(req, museCloakForRequest(e.cfg, auth, nil))
 	return nil
 }
 
@@ -127,7 +126,7 @@ func (e *MuseExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, req
 	body = normalizeMuseTools(body)
 	reporter.SetTranslatedReasoningEffort(body, e.Identifier())
 
-	url := museBaseURL(auth) + "/v1/chat/completions"
+	url := museBaseURL(auth) + "/chat/completions"
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return resp, err
@@ -138,9 +137,7 @@ func (e *MuseExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, req
 		attrs = auth.Attributes
 	}
 	util.ApplyCustomHeadersFromAttrs(httpReq, attrs)
-	if strings.TrimSpace(httpReq.Header.Get("x-api-version")) == "" {
-		httpReq.Header.Set("x-api-version", museauth.MuseAPIVersion)
-	}
+	applyMuseCloakHeaders(httpReq, museCloakForRequest(e.cfg, auth, opts.Headers))
 	var authID, authLabel, authType, authValue string
 	if auth != nil {
 		authID = auth.ID
@@ -241,7 +238,7 @@ func (e *MuseExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Aut
 	body = normalizeMuseTools(body)
 	reporter.SetTranslatedReasoningEffort(body, e.Identifier())
 
-	url := museBaseURL(auth) + "/v1/chat/completions"
+	url := museBaseURL(auth) + "/chat/completions"
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -252,9 +249,7 @@ func (e *MuseExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Aut
 		attrs = auth.Attributes
 	}
 	util.ApplyCustomHeadersFromAttrs(httpReq, attrs)
-	if strings.TrimSpace(httpReq.Header.Get("x-api-version")) == "" {
-		httpReq.Header.Set("x-api-version", museauth.MuseAPIVersion)
-	}
+	applyMuseCloakHeaders(httpReq, museCloakForRequest(e.cfg, auth, opts.Headers))
 	var authID, authLabel, authType, authValue string
 	if auth != nil {
 		authID = auth.ID
@@ -370,7 +365,7 @@ func (e *MuseExecutor) executeResponses(ctx context.Context, auth *cliproxyauth.
 	body = normalizeMuseTools(body)
 	reporter.SetTranslatedReasoningEffort(body, e.Identifier())
 
-	url := museBaseURL(auth) + "/v1/responses"
+	url := museBaseURL(auth) + "/responses"
 	httpReq, errNewRequest := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if errNewRequest != nil {
 		return resp, errNewRequest
@@ -381,9 +376,7 @@ func (e *MuseExecutor) executeResponses(ctx context.Context, auth *cliproxyauth.
 		attrs = auth.Attributes
 	}
 	util.ApplyCustomHeadersFromAttrs(httpReq, attrs)
-	if strings.TrimSpace(httpReq.Header.Get("x-api-version")) == "" {
-		httpReq.Header.Set("x-api-version", museauth.MuseAPIVersion)
-	}
+	applyMuseCloakHeaders(httpReq, museCloakForRequest(e.cfg, auth, opts.Headers))
 
 	var authID, authLabel, authType, authValue string
 	if auth != nil {
@@ -479,7 +472,7 @@ func (e *MuseExecutor) executeResponsesStream(ctx context.Context, auth *cliprox
 	body = normalizeMuseTools(body)
 	reporter.SetTranslatedReasoningEffort(body, e.Identifier())
 
-	url := museBaseURL(auth) + "/v1/responses"
+	url := museBaseURL(auth) + "/responses"
 	httpReq, errNewRequest := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if errNewRequest != nil {
 		return nil, errNewRequest
@@ -490,9 +483,7 @@ func (e *MuseExecutor) executeResponsesStream(ctx context.Context, auth *cliprox
 		attrs = auth.Attributes
 	}
 	util.ApplyCustomHeadersFromAttrs(httpReq, attrs)
-	if strings.TrimSpace(httpReq.Header.Get("x-api-version")) == "" {
-		httpReq.Header.Set("x-api-version", museauth.MuseAPIVersion)
-	}
+	applyMuseCloakHeaders(httpReq, museCloakForRequest(e.cfg, auth, opts.Headers))
 
 	var authID, authLabel, authType, authValue string
 	if auth != nil {
@@ -701,7 +692,10 @@ func applyMuseHeaders(r *http.Request, token string, stream bool) {
 func museBaseURL(auth *cliproxyauth.Auth) string {
 	if auth != nil && auth.Attributes != nil {
 		if raw := strings.TrimRight(strings.TrimSpace(auth.Attributes["base_url"]), "/"); raw != "" {
-			return raw
+			if strings.HasSuffix(strings.ToLower(raw), "/v1") {
+				return raw
+			}
+			return raw + "/v1"
 		}
 	}
 	return museauth.MuseAPIBaseURL

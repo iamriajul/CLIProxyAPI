@@ -177,3 +177,27 @@ func TestWithCodexBuiltinsIncludesImage25Models(t *testing.T) {
 		}
 	}
 }
+
+func TestGetMuseModelsFallsBackWhenCatalogSectionEmpty(t *testing.T) {
+	// A remote catalog refresh without a muse section replaces the embedded
+	// one wholesale; Muse credentials must stay routable via builtins.
+	modelsCatalogStore.mu.Lock()
+	previous := modelsCatalogStore.data
+	modelsCatalogStore.data = &staticModelsJSON{}
+	modelsCatalogStore.mu.Unlock()
+	t.Cleanup(func() {
+		modelsCatalogStore.mu.Lock()
+		modelsCatalogStore.data = previous
+		modelsCatalogStore.mu.Unlock()
+	})
+
+	models := GetMuseModels()
+	if len(models) != len(museBuiltinModelIDs()) {
+		t.Fatalf("GetMuseModels() with empty catalog = %d models, want %d builtins", len(models), len(museBuiltinModelIDs()))
+	}
+	for _, want := range museBuiltinModelIDs() {
+		if got := LookupStaticModelInfo(want); got == nil || got.ID != want {
+			t.Fatalf("LookupStaticModelInfo(%q) with empty catalog = %+v, want %q", want, got, want)
+		}
+	}
+}
