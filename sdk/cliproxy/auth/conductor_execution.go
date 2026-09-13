@@ -416,6 +416,8 @@ func requestToFormat(provider string, executor ProviderExecutor, req cliproxyexe
 		return sdktranslator.FormatOpenAI
 	case "opencode", "opencode-go", "opencode_go":
 		return sdktranslator.FormatOpenAI
+	case "zai", "glm", "zhipu":
+		return sdktranslator.FormatClaude
 	case "antigravity":
 		return sdktranslator.FormatAntigravity
 	case "devin":

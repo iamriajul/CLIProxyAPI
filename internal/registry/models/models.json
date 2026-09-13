@@ -5108,5 +5108,420 @@
         ]
       }
     }
+  ],
+  "zai": [
+    {
+      "id": "glm-4.5",
+      "object": "model",
+      "created": 1789257600,
+      "owned_by": "zai",
+      "type": "zai",
+      "display_name": "GLM-4.5",
+      "description": "GLM-4.5 via Z.AI.",
+      "context_length": 131072,
+      "max_completion_tokens": 98304,
+      "supportedInputModalities": [
+        "text"
+      ],
+      "supportedOutputModalities": [
+        "text"
+      ],
+      "thinking": {
+        "levels": [
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      }
+    },
+    {
+      "id": "glm-4.5-air",
+      "object": "model",
+      "created": 1789257600,
+      "owned_by": "zai",
+      "type": "zai",
+      "display_name": "GLM-4.5-Air",
+      "description": "GLM-4.5-Air via Z.AI.",
+      "context_length": 131072,
+      "max_completion_tokens": 98304,
+      "supportedInputModalities": [
+        "text"
+      ],
+      "supportedOutputModalities": [
+        "text"
+      ],
+      "thinking": {
+        "levels": [
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      }
+    },
+    {
+      "id": "glm-4.5-flash",
+      "object": "model",
+      "created": 1789257600,
+      "owned_by": "zai",
+      "type": "zai",
+      "display_name": "GLM-4.5-Flash",
+      "description": "GLM-4.5-Flash via Z.AI.",
+      "context_length": 131072,
+      "max_completion_tokens": 98304,
+      "supportedInputModalities": [
+        "text"
+      ],
+      "supportedOutputModalities": [
+        "text"
+      ],
+      "thinking": {
+        "levels": [
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      }
+    },
+    {
+      "id": "glm-4.5v",
+      "object": "model",
+      "created": 1789257600,
+      "owned_by": "zai",
+      "type": "zai",
+      "display_name": "GLM-4.5V",
+      "description": "GLM-4.5V via Z.AI.",
+      "context_length": 64000,
+      "max_completion_tokens": 16384,
+      "supportedInputModalities": [
+        "text",
+        "image"
+      ],
+      "supportedOutputModalities": [
+        "text"
+      ],
+      "thinking": {
+        "levels": [
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      }
+    },
+    {
+      "id": "glm-4.6",
+      "object": "model",
+      "created": 1789257600,
+      "owned_by": "zai",
+      "type": "zai",
+      "display_name": "GLM-4.6",
+      "description": "GLM-4.6 via Z.AI.",
+      "context_length": 204800,
+      "max_completion_tokens": 131072,
+      "supportedInputModalities": [
+        "text"
+      ],
+      "supportedOutputModalities": [
+        "text"
+      ],
+      "thinking": {
+        "levels": [
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      }
+    },
+    {
+      "id": "glm-4.6v",
+      "object": "model",
+      "created": 1789257600,
+      "owned_by": "zai",
+      "type": "zai",
+      "display_name": "GLM-4.6V",
+      "description": "GLM-4.6V via Z.AI.",
+      "context_length": 128000,
+      "max_completion_tokens": 32768,
+      "supportedInputModalities": [
+        "text",
+        "image"
+      ],
+      "supportedOutputModalities": [
+        "text"
+      ],
+      "thinking": {
+        "levels": [
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      }
+    },
+    {
+      "id": "glm-4.7",
+      "object": "model",
+      "created": 1789257600,
+      "owned_by": "zai",
+      "type": "zai",
+      "display_name": "GLM-4.7",
+      "description": "GLM-4.7 via Z.AI.",
+      "context_length": 204800,
+      "max_completion_tokens": 131072,
+      "supportedInputModalities": [
+        "text"
+      ],
+      "supportedOutputModalities": [
+        "text"
+      ],
+      "thinking": {
+        "levels": [
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      }
+    },
+    {
+      "id": "glm-4.7-flash",
+      "object": "model",
+      "created": 1789257600,
+      "owned_by": "zai",
+      "type": "zai",
+      "display_name": "GLM-4.7-Flash",
+      "description": "GLM-4.7-Flash via Z.AI.",
+      "context_length": 200000,
+      "max_completion_tokens": 131072,
+      "supportedInputModalities": [
+        "text"
+      ],
+      "supportedOutputModalities": [
+        "text"
+      ],
+      "thinking": {
+        "levels": [
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      }
+    },
+    {
+      "id": "glm-4.7-flashx",
+      "object": "model",
+      "created": 1789257600,
+      "owned_by": "zai",
+      "type": "zai",
+      "display_name": "GLM-4.7-FlashX",
+      "description": "GLM-4.7-FlashX via Z.AI.",
+      "context_length": 200000,
+      "max_completion_tokens": 131072,
+      "supportedInputModalities": [
+        "text"
+      ],
+      "supportedOutputModalities": [
+        "text"
+      ],
+      "thinking": {
+        "levels": [
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      }
+    },
+    {
+      "id": "glm-5",
+      "object": "model",
+      "created": 1789257600,
+      "owned_by": "zai",
+      "type": "zai",
+      "display_name": "GLM-5",
+      "description": "GLM-5 via Z.AI.",
+      "context_length": 204800,
+      "max_completion_tokens": 131072,
+      "supportedInputModalities": [
+        "text"
+      ],
+      "supportedOutputModalities": [
+        "text"
+      ],
+      "thinking": {
+        "levels": [
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      }
+    },
+    {
+      "id": "glm-5-turbo",
+      "object": "model",
+      "created": 1789257600,
+      "owned_by": "zai",
+      "type": "zai",
+      "display_name": "GLM-5-Turbo",
+      "description": "GLM-5-Turbo via Z.AI.",
+      "context_length": 200000,
+      "max_completion_tokens": 131072,
+      "supportedInputModalities": [
+        "text"
+      ],
+      "supportedOutputModalities": [
+        "text"
+      ],
+      "thinking": {
+        "levels": [
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      }
+    },
+    {
+      "id": "glm-5.1",
+      "object": "model",
+      "created": 1789257600,
+      "owned_by": "zai",
+      "type": "zai",
+      "display_name": "GLM-5.1",
+      "description": "GLM-5.1 via Z.AI.",
+      "context_length": 200000,
+      "max_completion_tokens": 131072,
+      "supportedInputModalities": [
+        "text"
+      ],
+      "supportedOutputModalities": [
+        "text"
+      ],
+      "thinking": {
+        "levels": [
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      }
+    },
+    {
+      "id": "glm-5.2",
+      "object": "model",
+      "created": 1789257600,
+      "owned_by": "zai",
+      "type": "zai",
+      "display_name": "GLM-5.2",
+      "description": "GLM-5.2 via Z.AI.",
+      "context_length": 1000000,
+      "max_completion_tokens": 131072,
+      "supportedInputModalities": [
+        "text"
+      ],
+      "supportedOutputModalities": [
+        "text"
+      ],
+      "thinking": {
+        "levels": [
+          "high",
+          "max"
+        ]
+      }
+    },
+    {
+      "id": "glm-5.3",
+      "object": "model",
+      "created": 1789257600,
+      "owned_by": "zai",
+      "type": "zai",
+      "display_name": "GLM-5.3",
+      "description": "GLM-5.3 via Z.AI.",
+      "context_length": 1000000,
+      "max_completion_tokens": 131072,
+      "supportedInputModalities": [
+        "text"
+      ],
+      "supportedOutputModalities": [
+        "text"
+      ],
+      "thinking": {
+        "levels": [
+          "low",
+          "high",
+          "max"
+        ]
+      }
+    },
+    {
+      "id": "glm-5.3-flash",
+      "object": "model",
+      "created": 1789257600,
+      "owned_by": "zai",
+      "type": "zai",
+      "display_name": "GLM-5.3-Flash",
+      "description": "GLM-5.3-Flash via Z.AI.",
+      "context_length": 1000000,
+      "max_completion_tokens": 131072,
+      "supportedInputModalities": [
+        "text",
+        "image"
+      ],
+      "supportedOutputModalities": [
+        "text"
+      ],
+      "thinking": {
+        "levels": [
+          "low",
+          "high",
+          "max"
+        ]
+      }
+    },
+    {
+      "id": "glm-5v-turbo",
+      "object": "model",
+      "created": 1789257600,
+      "owned_by": "zai",
+      "type": "zai",
+      "display_name": "GLM-5V-Turbo",
+      "description": "GLM-5V-Turbo via Z.AI.",
+      "context_length": 200000,
+      "max_completion_tokens": 131072,
+      "supportedInputModalities": [
+        "text",
+        "image"
+      ],
+      "supportedOutputModalities": [
+        "text"
+      ],
+      "thinking": {
+        "levels": [
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      }
+    }
   ]
 }

@@ -14,6 +14,7 @@ func init() {
 	registerRefreshLead("muse", func() Authenticator { return NewMuseAuthenticator() })
 	registerRefreshLead("muse-code", func() Authenticator { return NewMuseAuthenticator() })
 	registerRefreshLead("xai", func() Authenticator { return NewXAIAuthenticator() })
+	registerRefreshLead("zai", func() Authenticator { return NewZaiAuthenticator() })
 	registerRefreshLead("devin", func() Authenticator { return NewDevinAuthenticator() })
 }
 

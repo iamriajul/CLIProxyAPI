@@ -794,7 +794,7 @@ nonstream-keepalive-interval: 0
 
 # Global OAuth model name aliases (per channel)
 # These aliases rename model IDs for both model listing and request routing.
-# Supported channels: vertex, aistudio, antigravity, claude, codex, kimi, muse, opencode, xai.
+# Supported channels: vertex, aistudio, antigravity, claude, codex, kimi, muse, opencode, xai, zai.
 # NOTE: Aliases do not apply to gemini-api-key, interactions-api-key, codex-api-key, xai-api-key, claude-api-key, openai-compatibility, or vertex-api-key.
 # NOTE: Because aliases affect the merged /v1 model list and merged request routing, overlapping
 # client-visible names can become ambiguous across providers. For strict backend pinning, use
@@ -841,6 +841,9 @@ nonstream-keepalive-interval: 0
 #   muse:
 #     - name: "muse-spark-1.3"
 #       alias: "muse-latest"
+#   zai:
+#     - name: "glm-5.3"
+#       alias: "glm-latest"
 #   xai:
 #     - name: "grok-4.3"
 #       alias: "grok-latest"
@@ -866,6 +869,8 @@ nonstream-keepalive-interval: 0
 #     - "muse-spark-1.1"
 #   opencode:
 #     - "ox-alpha-free"
+#   zai:
+#     - "glm-4.5-flash"
 #   xai:
 #     - "grok-3-mini"
 
@@ -910,6 +915,11 @@ nonstream-keepalive-interval: 0
 #       match:
 #         - "context_length_exceeded"
 #       action: "stop"
+#   zai:
+#     - status: 429
+#       match:
+#         - "rate_limit"
+#       action: "continue-and-cooldown"
 #   xai:
 #     - status: 400
 #       match:
