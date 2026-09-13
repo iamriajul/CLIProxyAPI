@@ -292,3 +292,56 @@ func TestGetDevinModelsFallback(t *testing.T) {
 		t.Errorf("info.DisplayName = %q, want SWE-2", info.DisplayName)
 	}
 }
+
+func TestGetMuseModelsFallsBackWhenCatalogSectionEmpty(t *testing.T) {
+	// A remote catalog refresh without a muse section replaces the embedded
+	// one wholesale; Muse credentials must stay routable via builtins.
+	modelsCatalogStore.mu.Lock()
+	previous := modelsCatalogStore.data
+	modelsCatalogStore.data = &staticModelsJSON{}
+	modelsCatalogStore.mu.Unlock()
+	t.Cleanup(func() {
+		modelsCatalogStore.mu.Lock()
+		modelsCatalogStore.data = previous
+		modelsCatalogStore.mu.Unlock()
+	})
+
+	models := GetMuseModels()
+	if len(models) != len(museBuiltinModelIDs()) {
+		t.Fatalf("GetMuseModels() with empty catalog = %d models, want %d builtins", len(models), len(museBuiltinModelIDs()))
+	}
+	for _, want := range museBuiltinModelIDs() {
+		if got := LookupStaticModelInfo(want); got == nil || got.ID != want {
+			t.Fatalf("LookupStaticModelInfo(%q) with empty catalog = %+v, want %q", want, got, want)
+		}
+	}
+}
+
+func TestGetMuseModelsMergesPartialCatalogSection(t *testing.T) {
+	// A partial remote section must not drop the remaining builtins.
+	modelsCatalogStore.mu.Lock()
+	previous := modelsCatalogStore.data
+	modelsCatalogStore.data = &staticModelsJSON{
+		Muse: []*ModelInfo{{ID: "muse-spark-9", DisplayName: "Future Spark", Type: "muse"}},
+	}
+	modelsCatalogStore.mu.Unlock()
+	t.Cleanup(func() {
+		modelsCatalogStore.mu.Lock()
+		modelsCatalogStore.data = previous
+		modelsCatalogStore.mu.Unlock()
+	})
+
+	models := GetMuseModels()
+	if len(models) != len(museBuiltinModelIDs())+1 {
+		t.Fatalf("GetMuseModels() with partial catalog = %d models, want %d", len(models), len(museBuiltinModelIDs())+1)
+	}
+	ids := make(map[string]bool, len(models))
+	for _, m := range models {
+		ids[m.ID] = true
+	}
+	for _, want := range append(append([]string(nil), museBuiltinModelIDs()...), "muse-spark-9") {
+		if !ids[want] {
+			t.Fatalf("merged models missing %q (got %v)", want, ids)
+		}
+	}
+}
