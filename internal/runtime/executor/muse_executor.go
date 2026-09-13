@@ -127,6 +127,9 @@ func (e *MuseExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, req
 	requestPath := helps.PayloadRequestPath(opts)
 	body = helps.ApplyPayloadConfigWithRequest(e.cfg, baseModel, to.String(), from.String(), "", body, originalTranslated, requestedModel, requestPath, opts.Headers)
 	body = normalizeMuseTools(body)
+	// Meta rejects tool names over 64 chars; remap those to short aliases and
+	// restore originals on the way back so the harness keeps working.
+	body, toolNames := remapMuseToolNames(body)
 	reporter.SetTranslatedReasoningEffort(body, e.Identifier())
 
 	url := museBaseURL(auth) + "/chat/completions"
@@ -188,6 +191,7 @@ func (e *MuseExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, req
 	reporter.Publish(ctx, helps.ParseOpenAIUsage(data))
 	var param any
 	out := sdktranslator.TranslateNonStream(ctx, to, responseFormat, req.Model, opts.OriginalRequest, body, data, &param)
+	out = restoreMuseToolNamesInJSON(out, responseFormat, toolNames)
 	if responseFormat == sdktranslator.FormatOpenAIResponse {
 		out = helps.EnsureResponsesUsageDetails(out)
 	}
@@ -239,6 +243,8 @@ func (e *MuseExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Aut
 	requestPath := helps.PayloadRequestPath(opts)
 	body = helps.ApplyPayloadConfigWithRequest(e.cfg, baseModel, to.String(), from.String(), "", body, originalTranslated, requestedModel, requestPath, opts.Headers)
 	body = normalizeMuseTools(body)
+	// See Execute: remap overlong tool names for Meta, restore on the way back.
+	body, toolNames := remapMuseToolNames(body)
 	reporter.SetTranslatedReasoningEffort(body, e.Identifier())
 
 	url := museBaseURL(auth) + "/chat/completions"
@@ -309,6 +315,7 @@ func (e *MuseExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Aut
 			streamUsage.ObserveOpenAIStream(line)
 			chunks := helps.TranslateStreamWithClaudeInputTokens(ctx, to, responseFormat, req.Model, opts.OriginalRequest, body, bytes.Clone(line), &param, claudeInputTokens)
 			for i := range chunks {
+				chunks[i] = restoreMuseToolNamesInStreamLine(chunks[i], responseFormat, toolNames)
 				select {
 				case out <- cliproxyexecutor.StreamChunk{Payload: chunks[i]}:
 				case <-ctx.Done():
@@ -318,6 +325,7 @@ func (e *MuseExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Aut
 		}
 		doneChunks := helps.TranslateStreamWithClaudeInputTokens(ctx, to, responseFormat, req.Model, opts.OriginalRequest, body, []byte("[DONE]"), &param, claudeInputTokens)
 		for i := range doneChunks {
+			doneChunks[i] = restoreMuseToolNamesInStreamLine(doneChunks[i], responseFormat, toolNames)
 			select {
 			case out <- cliproxyexecutor.StreamChunk{Payload: doneChunks[i]}:
 			case <-ctx.Done():
@@ -366,6 +374,7 @@ func (e *MuseExecutor) executeResponses(ctx context.Context, auth *cliproxyauth.
 	requestPath := helps.PayloadRequestPath(opts)
 	body = helps.ApplyPayloadConfigWithRequest(e.cfg, baseModel, "openai-response", opts.SourceFormat.String(), "", body, req.Payload, requestedModel, requestPath, opts.Headers)
 	body = normalizeMuseTools(body)
+	body, toolNames := remapMuseToolNames(body)
 	reporter.SetTranslatedReasoningEffort(body, e.Identifier())
 
 	url := museBaseURL(auth) + "/responses"
@@ -439,6 +448,7 @@ func (e *MuseExecutor) executeResponses(ctx context.Context, auth *cliproxyauth.
 		var param any
 		out = sdktranslator.TranslateNonStream(ctx, sdktranslator.FormatOpenAIResponse, responseFormat, req.Model, opts.OriginalRequest, body, data, &param)
 	}
+	out = restoreMuseToolNamesInJSON(out, responseFormat, toolNames)
 	resp = cliproxyexecutor.Response{Payload: out, Headers: httpResp.Header.Clone()}
 	return resp, nil
 }
@@ -473,6 +483,7 @@ func (e *MuseExecutor) executeResponsesStream(ctx context.Context, auth *cliprox
 	requestPath := helps.PayloadRequestPath(opts)
 	body = helps.ApplyPayloadConfigWithRequest(e.cfg, baseModel, "openai-response", opts.SourceFormat.String(), "", body, req.Payload, requestedModel, requestPath, opts.Headers)
 	body = normalizeMuseTools(body)
+	body, toolNames := remapMuseToolNames(body)
 	reporter.SetTranslatedReasoningEffort(body, e.Identifier())
 
 	url := museBaseURL(auth) + "/responses"
@@ -541,7 +552,7 @@ func (e *MuseExecutor) executeResponsesStream(ctx context.Context, auth *cliprox
 
 		emitTranslatedLine := func(line []byte) bool {
 			if responseFormat == sdktranslator.FormatOpenAIResponse {
-				chunkPayload := append(bytes.Clone(line), '\n')
+				chunkPayload := restoreMuseToolNamesInStreamLine(append(bytes.Clone(line), '\n'), responseFormat, toolNames)
 				select {
 				case out <- cliproxyexecutor.StreamChunk{Payload: chunkPayload}:
 					return true
@@ -551,6 +562,7 @@ func (e *MuseExecutor) executeResponsesStream(ctx context.Context, auth *cliprox
 			}
 			chunks := sdktranslator.TranslateStream(ctx, sdktranslator.FormatOpenAIResponse, responseFormat, req.Model, opts.OriginalRequest, body, line, &param)
 			for i := range chunks {
+				chunks[i] = restoreMuseToolNamesInStreamLine(chunks[i], responseFormat, toolNames)
 				select {
 				case out <- cliproxyexecutor.StreamChunk{Payload: chunks[i]}:
 				case <-ctx.Done():
