@@ -355,7 +355,7 @@ func tokenAccountingSemanticsFor(provider, executorType string) tokenAccountingS
 			return tokenAccountingSemanticsSeparateReasoning
 		}
 	}
-	for _, marker := range []string{"openai", "codex", "xai", "grok", "kimi", "muse", "opencode", "qwen", "deepseek", "openrouter"} {
+	for _, marker := range []string{"openai", "codex", "xai", "grok", "kimi", "muse", "opencode", "zai", "qwen", "deepseek", "openrouter"} {
 		if strings.Contains(value, marker) {
 			return tokenAccountingSemanticsSubset
 		}

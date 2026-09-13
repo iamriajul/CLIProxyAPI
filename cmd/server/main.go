@@ -81,6 +81,7 @@ func main() {
 	var antigravityLogin bool
 	var kimiLogin bool
 	var museLogin bool
+	var zaiLogin bool
 	var xaiLogin bool
 	var vertexImport string
 	var vertexImportPrefix string
@@ -101,6 +102,7 @@ func main() {
 	flag.BoolVar(&antigravityLogin, "antigravity-login", false, "Login to Antigravity using OAuth")
 	flag.BoolVar(&kimiLogin, "kimi-login", false, "Login to Kimi using OAuth")
 	flag.BoolVar(&museLogin, "muse-login", false, "Login to Muse using OAuth")
+	flag.BoolVar(&zaiLogin, "zai-login", false, "Login to Z.AI using OAuth")
 	flag.BoolVar(&xaiLogin, "xai-login", false, "Login to xAI using OAuth")
 	flag.StringVar(&configPath, "config", DefaultConfigPath, "Configure File Path")
 	flag.StringVar(&vertexImport, "vertex-import", "", "Import Vertex service account key JSON file")
@@ -590,7 +592,7 @@ func main() {
 		CallbackPort: oauthCallbackPort,
 	}
 
-	commandMode := vertexImport != "" || antigravityLogin || codexLogin || codexDeviceLogin || claudeLogin || kimiLogin || museLogin || xaiLogin
+	commandMode := vertexImport != "" || antigravityLogin || codexLogin || codexDeviceLogin || claudeLogin || kimiLogin || museLogin || zaiLogin || xaiLogin
 	cloudConfigMissing := isCloudDeploy && !configFileExists
 	homeMode := configLoadedFromHome || (cfg != nil && cfg.Home.Enabled)
 	exampleAPIKeySafeMode := shouldEnableExampleAPIKeySafeMode(cfg, commandMode, tuiMode, standalone, cloudConfigMissing, homeMode)
@@ -664,6 +666,8 @@ func main() {
 		cmd.DoKimiLogin(cfg, options)
 	} else if museLogin {
 		cmd.DoMuseLogin(cfg, options)
+	} else if zaiLogin {
+		cmd.DoZaiLogin(cfg, options)
 	} else if xaiLogin {
 		cmd.DoXAILogin(cfg, options)
 	} else {
