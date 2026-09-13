@@ -310,3 +310,30 @@ func TestGetMuseModelsMergesPartialCatalogSection(t *testing.T) {
 		}
 	}
 }
+
+func TestGetOpencodeModelsCoverGatewayLanes(t *testing.T) {
+	if got := len(GetOpencodeModels()); got < 37 {
+		t.Fatalf("GetOpencodeModels() = %d, want >= 37 live Zen lanes", got)
+	}
+	for channel, want := range map[string]string{
+		"opencode": "glm-5.2", "opencode-go": "glm-5.2",
+	} {
+		found := false
+		for _, m := range GetStaticModelDefinitionsByChannel(channel) {
+			if m != nil && m.ID == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("channel %q missing model %q", channel, want)
+		}
+	}
+	if got := LookupStaticModelInfo("glm-5.2"); got == nil {
+		t.Fatalf("LookupStaticModelInfo(glm-5.2) = nil")
+	}
+	// Anthropic-route lanes keep working when the catalog section is wiped.
+	if got := OpencodeUpstreamRoute("minimax-m2.5"); got != "anthropic" {
+		t.Fatalf("minimax route = %q", got)
+	}
+}
