@@ -115,3 +115,23 @@ existing api-call proxy with no new routes.
 grep -q ResolveMuseOAuthToken internal/api/handlers/management/api_tools.go
 go test ./internal/api/handlers/management/ -run TestResolveTokenForAuthUnwrapsMuseCombinedCredential
 ```
+
+## opencode-provider
+
+**OpenCode Zen Go gateway provider (API-key auth, tri-route executor)**
+
+Zen Go keys are subscription API keys pasted from the Zen console (no
+OAuth): `POST /v0/management/opencode/import` validates against the live
+gateway models endpoint and saves a type-opencode auth file. The executor
+routes per model per the reference catalog: Claude-protocol lanes through the
+Claude executor, Responses-native lanes through /v1/responses, everything
+else through OpenAI chat completions; gateway lanes that reject tool_choice
+have it stripped. Models ride a static snapshot (live Zen lane list merged
+at build time) upserted as builtins so catalog refreshes cannot drop them.
+
+```bash
+grep -q "opencode/import" internal/api/server_management.go
+go test ./internal/auth/opencode/...
+go test ./internal/runtime/executor/ -run 'TestOpencode|TestMuseHarnessMatrix'
+go test ./internal/registry/ -run TestGetOpencodeModelsCoverGatewayLanes
+```
