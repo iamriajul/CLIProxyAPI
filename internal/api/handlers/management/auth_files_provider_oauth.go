@@ -20,6 +20,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/auth/kimi"
 	metaauth "github.com/router-for-me/CLIProxyAPI/v7/internal/auth/meta"
 	xaiauth "github.com/router-for-me/CLIProxyAPI/v7/internal/auth/xai"
+	zaiauth "github.com/router-for-me/CLIProxyAPI/v7/internal/auth/zai"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/misc"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/pluginhost"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/util"
@@ -1020,4 +1021,165 @@ func PopulateAuthContext(ctx context.Context, c *gin.Context) context.Context {
 		Headers: c.Request.Header,
 	}
 	return coreauth.WithRequestInfo(ctx, info)
+}
+
+// RequestZaiToken starts the Z.AI browser authorization-code flow.
+// Z.AI's allowlist rejects loopback redirect URIs for this client, so the
+// authorize URL carries the zcode:// native-scheme callback and the user
+// pastes the resulting URL (or bare code) back through the oauth-callback
+// endpoint, exactly like the xAI manual flow.
+func (h *Handler) RequestZaiToken(c *gin.Context) {
+	ctx := context.Background()
+	ctx = PopulateAuthContext(ctx, c)
+
+	fmt.Println("Initializing Z.AI authentication...")
+
+	state, errState := misc.GenerateRandomState()
+	if errState != nil {
+		log.Errorf("Failed to generate state parameter: %v", errState)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate state parameter"})
+		return
+	}
+
+	authSvc := zaiauth.NewZaiAuth(h.cfg)
+	redirectURI := zaiauth.RedirectURI()
+	deviceFlow, errStart := authSvc.StartDeviceFlow(ctx, state)
+	if errStart != nil {
+		log.Errorf("Failed to start Z.AI authorization flow: %v", errStart)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to start authorization flow"})
+		return
+	}
+	authURL := strings.TrimSpace(deviceFlow.VerificationURIComplete)
+	if authURL == "" {
+		authURL = strings.TrimSpace(deviceFlow.VerificationURI)
+	}
+
+	RegisterOAuthSession(state, "zai")
+
+	go func() {
+		pollCtx, cancelPoll := context.WithCancel(ctx)
+		defer cancelPoll()
+		go watchOAuthSessionCancel(pollCtx, cancelPoll, state, "zai")
+
+		fmt.Println("Waiting for Z.AI authentication...")
+		waitFile := filepath.Join(h.cfg.AuthDir, fmt.Sprintf(".oauth-zai-%s.oauth", state))
+		deadline := time.Now().Add(zaiauth.MaxPollDuration)
+		var code string
+		for {
+			if !IsOAuthSessionPending(state, "zai") {
+				return
+			}
+			if time.Now().After(deadline) {
+				log.Error("zai oauth flow timed out")
+				SetOAuthSessionError(state, "Timeout waiting for authorization code")
+				return
+			}
+			if data, errRead := os.ReadFile(waitFile); errRead == nil {
+				var m map[string]string
+				_ = json.Unmarshal(data, &m)
+				_ = os.Remove(waitFile)
+				if errStr := strings.TrimSpace(m["error"]); errStr != "" {
+					log.Errorf("Z.AI authentication failed: %s", errStr)
+					SetOAuthSessionError(state, "Authentication failed")
+					return
+				}
+				if payloadState := strings.TrimSpace(m["state"]); payloadState != "" && payloadState != state {
+					log.Error("Z.AI authentication failed: state mismatch")
+					SetOAuthSessionError(state, "Authentication failed: state mismatch")
+					return
+				}
+				code = strings.TrimSpace(m["code"])
+				if code == "" {
+					log.Error("Z.AI authentication failed: code not found")
+					SetOAuthSessionError(state, "Authentication failed: code not found")
+					return
+				}
+				break
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+
+		parsedCode, _, errParse := zaiauth.ParsePastedCallback(code, state)
+		if errParse != nil {
+			log.Errorf("Z.AI authentication failed: %v", errParse)
+			SetOAuthSessionError(state, oauthSessionErrorWithCause("Authentication failed", errParse))
+			return
+		}
+		if !IsOAuthSessionPending(state, "zai") {
+			return
+		}
+
+		bundle, errWait := authSvc.WaitForAuthorization(pollCtx, parsedCode, state, redirectURI)
+		if errWait != nil {
+			if !IsOAuthSessionPending(state, "zai") {
+				return
+			}
+			log.Errorf("Z.AI authentication failed: %v", errWait)
+			SetOAuthSessionError(state, oauthSessionErrorWithCause("Authentication failed", errWait))
+			return
+		}
+		if !IsOAuthSessionPending(state, "zai") {
+			return
+		}
+
+		tokenStorage := authSvc.CreateTokenStorage(bundle)
+		if tokenStorage == nil || strings.TrimSpace(tokenStorage.AccessToken) == "" {
+			log.Error("Z.AI token exchange returned empty api key")
+			SetOAuthSessionError(state, "Failed to exchange token")
+			return
+		}
+
+		fileName := zaiauth.CredentialFileName(tokenStorage.Email, tokenStorage.UserID)
+		label := strings.TrimSpace(tokenStorage.Email)
+		if label == "" {
+			label = "Z.AI"
+		}
+
+		metadata := map[string]any{
+			"type":         "zai",
+			"access_token": tokenStorage.AccessToken,
+			"base_url":     zaiauth.ZaiAnthropicBaseURL,
+			"auth_kind":    "oauth",
+		}
+		if tokenStorage.Email != "" {
+			metadata["email"] = tokenStorage.Email
+		}
+		if tokenStorage.UserID != "" {
+			metadata["user_id"] = tokenStorage.UserID
+		}
+
+		record := &coreauth.Auth{
+			ID:       fileName,
+			Provider: "zai",
+			FileName: fileName,
+			Label:    label,
+			Storage:  tokenStorage,
+			Metadata: metadata,
+			Attributes: map[string]string{
+				"auth_kind": "oauth",
+				"base_url":  zaiauth.ZaiAnthropicBaseURL,
+			},
+		}
+		if errGuard := guardOAuthSessionPendingForSave(state, "zai"); errGuard != nil {
+			return
+		}
+		savedPath, errSave := h.saveTokenRecord(ctx, record)
+		if errSave != nil {
+			log.Errorf("Failed to save Z.AI token to file: %v", errSave)
+			SetOAuthSessionError(state, "Failed to save token to file")
+			return
+		}
+
+		CompleteOAuthSession(state)
+		fmt.Printf("Authentication successful! Token saved to %s\n", savedPath)
+		fmt.Println("You can now use Z.AI services through this CLI")
+	}()
+
+	c.JSON(200, gin.H{
+		"status":     "ok",
+		"url":        authURL,
+		"state":      state,
+		"flow":       "oauth-code-manual",
+		"expires_in": int(zaiauth.MaxPollDuration / time.Second),
+	})
 }
