@@ -257,3 +257,45 @@ func TestGetOpencodeModelsCoverGatewayLanes(t *testing.T) {
 		t.Fatalf("minimax route = %q", got)
 	}
 }
+
+func TestGetZaiModelsCoverCodingPlan(t *testing.T) {
+	if got := len(GetZaiModels()); got < 16 {
+		t.Fatalf("GetZaiModels() = %d, want >= 16 GLM models", got)
+	}
+	for channel, want := range map[string]string{
+		"zai": "glm-5.3",
+	} {
+		found := false
+		for _, m := range GetStaticModelDefinitionsByChannel(channel) {
+			if m != nil && m.ID == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("channel %q missing model %q", channel, want)
+		}
+	}
+	if got := LookupStaticModelInfo("glm-5.3-flash"); got == nil {
+		t.Fatalf("LookupStaticModelInfo(glm-5.3-flash) = nil")
+	}
+	if ZaiUsesOpenAIRoute("glm-5.3") {
+		t.Fatalf("glm-5.3 should ride the anthropic route")
+	}
+	if !ZaiUsesOpenAIRoute("glm-5.3-flash") {
+		t.Fatalf("glm-5.3-flash should ride the openai route")
+	}
+	// Builtins survive a wiped catalog section.
+	modelsCatalogStore.mu.Lock()
+	previous := modelsCatalogStore.data
+	modelsCatalogStore.data = &staticModelsJSON{}
+	modelsCatalogStore.mu.Unlock()
+	t.Cleanup(func() {
+		modelsCatalogStore.mu.Lock()
+		modelsCatalogStore.data = previous
+		modelsCatalogStore.mu.Unlock()
+	})
+	if got := len(GetZaiModels()); got < 16 {
+		t.Fatalf("GetZaiModels() with empty catalog = %d", got)
+	}
+}

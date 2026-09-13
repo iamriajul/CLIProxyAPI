@@ -370,6 +370,8 @@ func NormalizeOAuthProvider(provider string) (string, error) {
 		return "kimi", nil
 	case "muse", "muse-code", "muse_code", "musecode":
 		return "muse", nil
+	case "zai", "zhipu", "glm", "zai-coding-plan":
+		return "zai", nil
 	case "xai", "x-ai", "x.ai", "grok":
 		return "xai", nil
 	default:
