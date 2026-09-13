@@ -183,6 +183,9 @@ func (s *Service) registerModelsForAuthWithConfigAndCache(ctx context.Context, c
 	case "kimi", "kimi-ai", "kimi.ai", "kimi.com":
 		models = registry.GetKimiModels()
 		models = applyExcludedModels(models, excluded)
+	case "opencode", "opencode-go", "opencode_go":
+		models = registry.GetOpencodeModels()
+		models = applyExcludedModels(models, excluded)
 	case "xai":
 		models = registry.GetXAIModels()
 		if entry := resolveConfigXAIKeyForConfig(cfg, a); entry != nil {
