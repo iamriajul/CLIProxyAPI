@@ -152,6 +152,36 @@ func TestOpencodeNoToolChoiceOnDeepseek(t *testing.T) {
 	}
 }
 
+func TestOpencodeToolChoiceKeptOnVisionExp(t *testing.T) {
+	// The vision-exp lane explicitly keeps tool_choice: the explicit lane set
+	// must not over-strip the way substring matching would.
+	var upstreamBody []byte
+	ctx := context.WithValue(context.Background(), "cliproxy.roundtripper", opencodeRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		var err error
+		upstreamBody, err = io.ReadAll(req.Body)
+		if err != nil {
+			return nil, err
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(opencodeChatFixture)),
+		}, nil
+	}))
+
+	executor := NewOpenCodeExecutor(&config.Config{})
+	_, err := executor.Execute(ctx, opencodeTestAuth(), cliproxyexecutor.Request{
+		Model:   "deepseek-v4-flash-vision-exp",
+		Payload: []byte(`{"model":"deepseek-v4-flash-vision-exp","messages":[{"role":"user","content":"hi"}],"tool_choice":"auto","tools":[{"type":"function","function":{"name":"f","parameters":{"type":"object"}}}]}`),
+	}, cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatOpenAI})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if got := gjson.GetBytes(upstreamBody, "tool_choice").String(); got != "auto" {
+		t.Fatalf("tool_choice = %q, want preserved auto on vision-exp", got)
+	}
+}
+
 func TestOpencodeMissingKeyUnauthorized(t *testing.T) {
 	executor := NewOpenCodeExecutor(&config.Config{})
 	auth := &cliproxyauth.Auth{Provider: "opencode"}

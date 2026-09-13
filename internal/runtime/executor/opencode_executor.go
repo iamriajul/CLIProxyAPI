@@ -102,7 +102,7 @@ func (e *OpenCodeExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth,
 	from := opts.SourceFormat
 	if from.String() == "claude" && opencodeUpstreamRoute(req.Model) == "anthropic" {
 		e.ensureAttributes(auth)
-		auth.Attributes["base_url"] = opencodeAnthropicBaseURL()
+		auth.Attributes["base_url"] = opencodeAnthropicBaseURL(auth)
 		return e.ClaudeExecutor.Execute(ctx, auth, req, opts)
 	}
 	if from == sdktranslator.FormatOpenAIResponse {
@@ -214,7 +214,7 @@ func (e *OpenCodeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth
 	from := opts.SourceFormat
 	if from.String() == "claude" && opencodeUpstreamRoute(req.Model) == "anthropic" {
 		e.ensureAttributes(auth)
-		auth.Attributes["base_url"] = opencodeAnthropicBaseURL()
+		auth.Attributes["base_url"] = opencodeAnthropicBaseURL(auth)
 		return e.ClaudeExecutor.ExecuteStream(ctx, auth, req, opts)
 	}
 	if from == sdktranslator.FormatOpenAIResponse {
@@ -358,7 +358,7 @@ func (e *OpenCodeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth
 func (e *OpenCodeExecutor) CountTokens(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
 	if opts.SourceFormat.String() == "claude" && opencodeUpstreamRoute(req.Model) == "anthropic" {
 		e.ensureAttributes(auth)
-		auth.Attributes["base_url"] = opencodeAnthropicBaseURL()
+		auth.Attributes["base_url"] = opencodeAnthropicBaseURL(auth)
 		return e.ClaudeExecutor.CountTokens(ctx, auth, req, opts)
 	}
 	baseModel := thinking.ParseSuffix(req.Model).ModelName
@@ -366,10 +366,11 @@ func (e *OpenCodeExecutor) CountTokens(ctx context.Context, auth *cliproxyauth.A
 	from := opts.SourceFormat
 	responseFormat := cliproxyexecutor.ResponseFormatOrSource(opts)
 	to := sdktranslator.FromString("openai")
-	isCompat := helps.APIKeyModelIsCompat(req)
-	translated := helps.TranslateRequestWithAPIKeyModelCompatibility(ctx, opts.Headers, e.cfg, from, to, baseModel, req.Payload, false, isCompat)
+	// Mirror the Execute translation exactly (same helper, same thinking
+	// provider) so counts cannot diverge from the payload actually sent.
+	translated := helps.TranslateRequestWithCodexMultiAgentV2(ctx, opts.Headers, e.cfg, from, to, baseModel, bytes.Clone(req.Payload), false)
 
-	translated, err := helps.ApplyRequestThinking(translated, req, opts, from.String(), to.String(), e.Identifier())
+	translated, err := helps.ApplyRequestThinking(translated, req, opts, from.String(), "opencode", e.Identifier())
 	if err != nil {
 		return cliproxyexecutor.Response{}, err
 	}
@@ -425,8 +426,13 @@ func opencodeBaseURL(auth *cliproxyauth.Auth) string {
 	return opencodeauth.OpenCodeGoAPIBaseURL
 }
 
-// opencodeAnthropicBaseURL resolves the Claude-protocol gateway base (no /v1 suffix).
-func opencodeAnthropicBaseURL() string {
+// opencodeAnthropicBaseURL resolves the Claude-protocol gateway base (no /v1
+// suffix), honoring a per-credential base_url override like the chat base
+// does instead of pinning the default Zen gateway.
+func opencodeAnthropicBaseURL(auth *cliproxyauth.Auth) string {
+	if raw := strings.TrimSpace(opencodeauth.ResolveBaseURL(authMetadata(auth), authAttributes(auth))); raw != "" {
+		return strings.TrimSuffix(strings.TrimRight(raw, "/"), "/v1")
+	}
 	return strings.TrimSuffix(opencodeauth.OpenCodeGoAPIBaseURL, "/v1")
 }
 
@@ -457,11 +463,22 @@ func normalizeOpencodeUpstreamModel(model string) string {
 	return strings.TrimSpace(thinking.ParseSuffix(model).ModelName)
 }
 
-// opencodeNoToolChoiceModels matches lanes whose gateway rejects tool_choice
-// (measured contract notes: deepseek flash/pro lanes, every MiMo lane).
-func opencodeNoToolChoiceModels(model string) bool {
-	lowered := strings.ToLower(strings.TrimSpace(thinking.ParseSuffix(model).ModelName))
-	return strings.Contains(lowered, "deepseek") || strings.HasPrefix(lowered, "mimo")
+// opencodeNoToolChoiceModels lists the exact Zen lanes whose gateway rejects
+// tool_choice (reference contract notes). The vision-exp lane explicitly keeps
+// it, so substring matching would over-strip — hence the explicit set.
+var opencodeNoToolChoiceModels = map[string]bool{
+	"deepseek-v4-flash": true,
+	"deepseek-v4-pro":   true,
+	"mimo-v2-omni":      true,
+	"mimo-v2-pro":       true,
+	"mimo-v2.5":         true,
+	"mimo-v2.5-pro":     true,
+}
+
+// opencodeRejectsToolChoice reports whether the lane rejects tool_choice.
+func opencodeRejectsToolChoice(model string) bool {
+	key := strings.ToLower(strings.TrimSpace(thinking.ParseSuffix(model).ModelName))
+	return opencodeNoToolChoiceModels[key]
 }
 
 // normalizeOpencodeTools converts `custom` tools to `function` tools, inlines
@@ -499,11 +516,8 @@ func normalizeOpencodeTools(body []byte, model string) []byte {
 			}
 		}
 	}
-	if opencodeNoToolChoiceModels(model) {
+	if opencodeRejectsToolChoice(model) {
 		if updated, err := sjson.DeleteBytes(body, "tool_choice"); err == nil {
-			body = updated
-		}
-		if updated, err := sjson.DeleteBytes(body, "parallel_tool_calls"); err == nil {
 			body = updated
 		}
 	}

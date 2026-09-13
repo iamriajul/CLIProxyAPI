@@ -764,9 +764,6 @@ nonstream-keepalive-interval: 0
 #   muse:
 #     - name: "muse-spark-1.3"
 #       alias: "muse-latest"
-#   opencode:
-#     - name: "glm-5.2"
-#       alias: "opencode-glm"
 #   xai:
 #     - name: "grok-4.3"
 #       alias: "grok-latest"
@@ -836,11 +833,6 @@ nonstream-keepalive-interval: 0
 #       match:
 #         - "context_length_exceeded"
 #       action: "stop"
-#   opencode:
-#     - status: 429
-#       match:
-#         - "usage_limit_exceeded"
-#       action: "continue-and-cooldown"
 #   xai:
 #     - status: 400
 #       match:

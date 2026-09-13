@@ -20,6 +20,14 @@ var opencodeResponsesRouteModels = map[string]bool{
 	"muse-spark-1.3-contributor": true,
 }
 
+// Note on the responses set: routing is source-driven, not model-driven —
+// Responses input goes to /v1/responses, everything else to /chat/completions
+// (or Claude delegation for anthropic lanes). Live-probed 2026-09-13: the Zen
+// gateway validates models on /chat/completions after auth (fake key +
+// gpt-5.6-luna → AuthError, fake key + bogus id → ModelError), so chat serves
+// the Responses-native lanes too. This map stays as forward-looking data and
+// documents each lane's native protocol.
+
 // OpencodeUpstreamRoute reports the gateway wire protocol for a model:
 // "anthropic" for the Claude-protocol lanes, "responses" for Responses-native
 // lanes, "chat" for everything else.
