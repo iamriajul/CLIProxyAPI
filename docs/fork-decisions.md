@@ -68,3 +68,35 @@ on every PR. It runs only where `dev` exists.
 ```bash
 grep -q "github.repository == 'router-for-me/CLIProxyAPI'" .github/workflows/auto-retarget-main-pr-to-dev.yml
 ```
+
+## muse-builtin-fallback
+
+**Muse models survive a remote catalog without a muse section**
+
+The startup updater replaces the embedded catalog wholesale with the remote
+`router-for-me/models` one, which ships no `muse` section — that silently
+unregisters every Muse credential (empty `/v1/models`, reported against the
+first fork release). The Spark family is upserted over the catalog entries
+(same pattern as `WithCodexBuiltins`/`WithXAIBuiltins`), so a missing or
+partial section can never drop Muse models.
+
+```bash
+grep -q WithMuseBuiltins internal/registry/model_definitions.go
+go test ./internal/registry/ -run 'TestGetMuseModelsFallsBackWhenCatalogSectionEmpty|TestGetMuseModelsMergesPartialCatalogSection'
+```
+
+## muse-cloak
+
+**Muse requests carry the official-client fingerprint in every harness**
+
+Claude Code, Agent SDK, Codex, Gemini CLI, and OpenAI-style clients all reach
+Muse subscriptions through OpenAI/Responses translation, and the upstream
+request is cloaked to the Muse client family (`User-Agent: muse-code` plus the
+mandatory `x-api-version`) instead of leaking the calling harness or Go's
+transport default. Per-credential `cloak_mode` (`auto` default, `always`,
+`never`) in the muse auth JSON, global `disable-muse-cloak-mode` kill-switch.
+
+```bash
+grep -q DisableMuseCloakMode internal/config/config.go
+go test ./internal/runtime/executor/ -run 'TestMuseHarnessMatrix|TestMuseCloakNeverKeepsTransportIdentity|TestMuseCloakAutoPassesNativeClient|TestResolveMuseCloakMode|TestDetectMuseNativeRequest|TestMuseShouldCloakContract|TestApplyMuseCloakHeaders'
+```

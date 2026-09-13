@@ -183,6 +183,13 @@ transient-error-cooldown-seconds: 0
 # "auto" behavior (cloak only non-Claude-Code clients).
 disable-claude-cloak-mode: false
 
+# When true, globally disable Muse request cloaking (the official Muse client
+# fingerprint on Model API requests), so upstream requests keep whatever
+# identity the transport would otherwise carry. Individual Muse credentials can
+# still select a mode via a "cloak_mode" value ("auto", "always", "never") in
+# the muse auth JSON. Default false cloaks every non-native client ("auto").
+disable-muse-cloak-mode: false
+
 # Claude Code compatibility settings.
 claude-code:
   # When true, return original model IDs in Anthropic model list responses instead of cloaked IDs.
