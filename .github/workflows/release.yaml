@@ -59,6 +59,15 @@ jobs:
           git log --reverse --pretty=format:'- %s (%h)' "$changelog_range" |
             grep -Ev '^- (docs:|test:)' > "$changelog_entries_file" || true
 
+          # Fork cap: a tag with no ancestor tag would otherwise embed the full
+          # repo history and exceed GitHub's release-notes body limit (HTTP 422).
+          # Record the pre-cap size and mark the notes when the cap bites.
+          changelog_entries_lines="$(wc -l < "$changelog_entries_file" | tr -d ' ')"
+          head -n 300 "$changelog_entries_file" > "$changelog_entries_file.capped" && mv "$changelog_entries_file.capped" "$changelog_entries_file"
+          if [[ "$changelog_entries_lines" -gt 300 ]]; then
+            printf '\n(changelog truncated to the first 300 of %s entries)\n' "$changelog_entries_lines" >> "$changelog_entries_file"
+          fi
+
           gh api "repos/${GH_REPO}/releases/generate-notes" \
             -f tag_name="$GITHUB_REF_NAME" \
             --jq .body > "$generated_notes_file"
@@ -78,6 +87,14 @@ jobs:
             fi
             cat "$generated_notes_file"
           } > "$changelog_notes_file"
+
+          # Fork cap: keep the combined notes safely under GitHub's body limit
+          # even when both sources above span the full repo history.
+          changelog_notes_bytes="$(wc -c < "$changelog_notes_file" | tr -d ' ')"
+          head -c 100000 "$changelog_notes_file" > "$changelog_notes_file.capped" && mv "$changelog_notes_file.capped" "$changelog_notes_file"
+          if [[ "$changelog_notes_bytes" -gt 100000 ]]; then
+            printf '\n(release notes truncated to 100KB of %s bytes)\n' "$changelog_notes_bytes" >> "$changelog_notes_file"
+          fi
 
           {
             cat "$release_notes_file"
