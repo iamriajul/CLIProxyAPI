@@ -162,7 +162,7 @@ func TestMuseHarnessMatrix(t *testing.T) {
 			payload:      `{"model":"muse-spark-1.3","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}]}`,
 			clientUA:     "codex_cli_rs/0.114.0",
 			wantEndpoint: "https://api.meta.ai/v1/responses",
-			wantTextPath: "",
+			wantTextPath: "output.0.content.0.text",
 		},
 	}
 
@@ -229,8 +229,6 @@ func TestMuseHarnessMatrix(t *testing.T) {
 				if got := gjson.GetBytes(resp.Payload, tt.wantTextPath).String(); got != "hello" {
 					t.Fatalf("response %s = %q, want hello (payload: %s)", tt.wantTextPath, got, resp.Payload)
 				}
-			} else if len(resp.Payload) == 0 {
-				t.Fatalf("empty translated response")
 			}
 		})
 	}

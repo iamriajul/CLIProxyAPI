@@ -48,15 +48,23 @@ func TestResolveMuseCloakModeGlobalDisableForcesNever(t *testing.T) {
 }
 
 func TestDetectMuseNativeRequest(t *testing.T) {
-	native := http.Header{"User-Agent": []string{"muse-code/1.2.3"}}
-	if !detectMuseNativeRequest(native) {
-		t.Fatalf("muse UA should count as native")
+	nativeCases := map[string]http.Header{
+		"muse-code client": {"User-Agent": []string{"muse-code/1.2.3"}},
+		"muse slash token": {"User-Agent": []string{"muse/0.9"}},
+		"mixed case token": {"User-Agent": []string{"Muse-Code/2.0"}},
+	}
+	for name, headers := range nativeCases {
+		if !detectMuseNativeRequest(headers) {
+			t.Fatalf("%s should count as native", name)
+		}
 	}
 	for name, headers := range map[string]http.Header{
-		"empty":       {},
-		"claude code": {"User-Agent": []string{"claude-cli/2.1.258 (external, cli)"}},
-		"go default":  {"User-Agent": []string{"Go-http-client/2.0"}},
-		"codex":       {"User-Agent": []string{"codex_cli_rs/0.114.0"}},
+		"empty":            {},
+		"claude code":      {"User-Agent": []string{"claude-cli/2.1.258 (external, cli)"}},
+		"go default":       {"User-Agent": []string{"Go-http-client/2.0"}},
+		"codex":            {"User-Agent": []string{"codex_cli_rs/0.114.0"}},
+		"substring trap":   {"User-Agent": []string{"amusement-park/1.0"}},
+		"bare muse suffix": {"User-Agent": []string{"supermuse/3.1"}},
 	} {
 		if detectMuseNativeRequest(headers) {
 			t.Fatalf("%s should not count as native", name)
@@ -104,6 +112,23 @@ func TestApplyMuseCloakHeaders(t *testing.T) {
 	}
 	if got := passthrough.Header.Get("x-api-version"); got != "1.0.0" {
 		t.Fatalf("passthrough x-api-version = %q, want 1.0.0", got)
+	}
+
+	// Never mode preserves an intentional operator version pin instead of
+	// overwriting it with the default.
+	pinned := newRequest()
+	pinned.Header.Set("x-api-version", "9.9.9")
+	applyMuseCloakHeaders(pinned, false)
+	if got := pinned.Header.Get("x-api-version"); got != "9.9.9" {
+		t.Fatalf("pinned x-api-version = %q, want 9.9.9", got)
+	}
+
+	// Cloak mode pins the version even over an operator value.
+	forced := newRequest()
+	forced.Header.Set("x-api-version", "9.9.9")
+	applyMuseCloakHeaders(forced, true)
+	if got := forced.Header.Get("x-api-version"); got != "1.0.0" {
+		t.Fatalf("cloaked x-api-version = %q, want 1.0.0", got)
 	}
 
 	// Cloaking repairs a version header dropped by custom expansion.

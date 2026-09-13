@@ -64,6 +64,9 @@ func (e *MuseExecutor) PrepareRequest(req *http.Request, auth *cliproxyauth.Auth
 	util.ApplyCustomHeadersFromAttrs(req, attrs)
 	// Cloak last so the official-client fingerprint wins; the version header
 	// is reasserted inside and can never be dropped by custom expansion.
+	// Note: this path carries no downstream headers, so auto mode always
+	// cloaks here — Execute paths thread opts.Headers through for native
+	// Muse detection instead.
 	applyMuseCloakHeaders(req, museCloakForRequest(e.cfg, auth, nil))
 	return nil
 }

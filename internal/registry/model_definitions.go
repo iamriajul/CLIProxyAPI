@@ -118,14 +118,12 @@ func GetXAIModels() []*ModelInfo {
 
 // GetMuseModels returns the standard Muse (Meta muse-spark) model definitions.
 // The remote models catalog does not carry a muse section yet, and a catalog
-// refresh replaces the embedded one wholesale — so when the catalog section
-// is empty the hard-coded family below keeps Muse credentials routable.
-// Once the remote catalog ships muse models they take precedence.
+// refresh replaces the embedded one wholesale — so the hard-coded Spark
+// family below is upserted over the catalog entries (same pattern as
+// WithCodexBuiltins/WithXAIBuiltins): builtins win on ID conflict, and a
+// missing or partial catalog section can never unregister Muse credentials.
 func GetMuseModels() []*ModelInfo {
-	if models := cloneModelInfos(getModels().Muse); len(models) > 0 {
-		return models
-	}
-	return museBuiltinModelInfos()
+	return WithMuseBuiltins(cloneModelInfos(getModels().Muse))
 }
 
 // WithCodexBuiltins injects hard-coded Codex-only model definitions that should
@@ -145,6 +143,13 @@ func WithCodexBuiltins(models []*ModelInfo) []*ModelInfo {
 // not depend on remote models.json updates.
 func WithXAIBuiltins(models []*ModelInfo) []*ModelInfo {
 	return upsertModelInfos(models, xaiBuiltinImageModelInfo(), xaiBuiltinImageQualityModelInfo(), xaiBuiltinImage20ModelInfo(), xaiBuiltinVideoModelInfo(), xaiBuiltinVideo15ModelInfo(), xaiBuiltinVideo15PreviewModelInfo())
+}
+
+// WithMuseBuiltins injects the hard-coded Muse Spark family over catalog
+// entries so Muse credentials stay routable when the remote catalog section
+// is missing or partial. Builtins win on ID conflict.
+func WithMuseBuiltins(models []*ModelInfo) []*ModelInfo {
+	return upsertModelInfos(models, museBuiltinModelInfos()...)
 }
 
 // museBuiltinModelIDs lists the Muse Spark family served through subscriptions.
@@ -460,21 +465,13 @@ func LookupStaticModelInfo(modelID string) *ModelInfo {
 		data.Kimi,
 		data.Antigravity,
 		data.XAI,
-		data.Muse,
+		GetMuseModels(),
 	}
 	for _, models := range allModels {
 		for _, m := range models {
 			if m != nil && m.ID == modelID {
 				return cloneModelInfo(m)
 			}
-		}
-	}
-
-	// Fall back to hard-coded Muse builtins when the catalog has no muse
-	// section (see GetMuseModels).
-	for _, m := range museBuiltinModelInfos() {
-		if m != nil && m.ID == modelID {
-			return cloneModelInfo(m)
 		}
 	}
 

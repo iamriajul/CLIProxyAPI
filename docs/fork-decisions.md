@@ -76,13 +76,13 @@ grep -q "github.repository == 'router-for-me/CLIProxyAPI'" .github/workflows/aut
 The startup updater replaces the embedded catalog wholesale with the remote
 `router-for-me/models` one, which ships no `muse` section — that silently
 unregisters every Muse credential (empty `/v1/models`, reported against the
-first fork release). `GetMuseModels` and `LookupStaticModelInfo` fall back to
-hard-coded Spark definitions when the catalog section is empty; a future
-remote muse section takes precedence untouched.
+first fork release). The Spark family is upserted over the catalog entries
+(same pattern as `WithCodexBuiltins`/`WithXAIBuiltins`), so a missing or
+partial section can never drop Muse models.
 
 ```bash
-grep -q museBuiltinModelInfos internal/registry/model_definitions.go
-go test ./internal/registry/ -run TestGetMuseModelsFallsBackWhenCatalogSectionEmpty
+grep -q WithMuseBuiltins internal/registry/model_definitions.go
+go test ./internal/registry/ -run 'TestGetMuseModelsFallsBackWhenCatalogSectionEmpty|TestGetMuseModelsMergesPartialCatalogSection'
 ```
 
 ## muse-cloak

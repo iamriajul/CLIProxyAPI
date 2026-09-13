@@ -67,13 +67,20 @@ func normalizeMuseCloakMode(raw string) string {
 }
 
 // detectMuseNativeRequest reports whether downstream client headers already
-// identify a native Muse client. Only an explicit muse product token counts;
-// anything else (including empty) is treated as foreign.
+// identify a native Muse client. Only an explicit Muse product token counts:
+// a whitespace-delimited token of "muse", "muse/…", or anything containing
+// "muse-code". A bare "muse" substring would also match unrelated agents
+// (e.g. "supermuse/3.1"), so it is deliberately not enough.
 func detectMuseNativeRequest(headers http.Header) bool {
 	if len(headers) == 0 {
 		return false
 	}
-	return strings.Contains(strings.ToLower(headers.Get("User-Agent")), "muse")
+	for _, token := range strings.Fields(strings.ToLower(headers.Get("User-Agent"))) {
+		if token == "muse" || strings.HasPrefix(token, "muse/") || strings.Contains(token, "muse-code") {
+			return true
+		}
+	}
+	return false
 }
 
 // museShouldCloak applies the mode contract for one request.
@@ -95,14 +102,17 @@ func museCloakForRequest(cfg *config.Config, auth *cliproxyauth.Auth, clientHead
 }
 
 // applyMuseCloakHeaders enforces the official-client fingerprint on an
-// already-built upstream request. The x-api-version header is mandatory on
-// the Model API and is (re)asserted here so custom-header expansion can never
-// drop it; the User-Agent is pinned to the Muse family only when cloaking.
+// already-built upstream request. When cloaking, the mandatory version and
+// the Muse User-Agent are pinned (cloak wins over custom expansion, mirroring
+// the Codex cloaker). Otherwise an intentional operator version pin is
+// preserved and the version is only filled when empty.
 func applyMuseCloakHeaders(r *http.Request, cloak bool) {
 	if r == nil {
 		return
 	}
-	r.Header.Set("x-api-version", museauth.MuseAPIVersion)
+	if cloak || strings.TrimSpace(r.Header.Get("x-api-version")) == "" {
+		r.Header.Set("x-api-version", museauth.MuseAPIVersion)
+	}
 	if cloak {
 		r.Header.Set("User-Agent", museUserAgent)
 	}
