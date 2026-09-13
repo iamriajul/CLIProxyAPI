@@ -342,3 +342,15 @@ func replaceOAuthSessionStoreForTest(t *testing.T, store *oauthSessionStore) {
 		oauthSessions = original
 	})
 }
+
+func TestNormalizeOAuthProviderCoversZai(t *testing.T) {
+	for _, alias := range []string{"zai", "zhipu", "glm", "zai-coding-plan"} {
+		got, err := NormalizeOAuthProvider(alias)
+		if err != nil || got != "zai" {
+			t.Fatalf("NormalizeOAuthProvider(%q) = %q, %v; want zai, nil", alias, got, err)
+		}
+		if _, err := NormalizeOAuthCallbackProvider(alias); err != nil {
+			t.Fatalf("NormalizeOAuthCallbackProvider(%q) err = %v", alias, err)
+		}
+	}
+}
