@@ -42,6 +42,7 @@ type staticModelsJSON struct {
 	XAI         []*ModelInfo `json:"xai"`
 	Devin       []*ModelInfo `json:"devin"`
 	Meta        []*ModelInfo `json:"meta"`
+	Opencode    []*ModelInfo `json:"opencode"`
 }
 
 // GetClaudeModels returns the standard Claude model definitions.
@@ -129,6 +130,10 @@ func GetXAIModels() []*ModelInfo {
 	return WithXAIBuiltins(cloneModelInfos(getModels().XAI))
 }
 
+// GetOpencodeModels returns OpenCode Zen Go gateway model definitions.
+func GetOpencodeModels() []*ModelInfo {
+	return WithOpencodeBuiltins(cloneModelInfos(getModels().Opencode))
+}
 // WithCodexBuiltins injects hard-coded Codex-only model definitions that should
 // not depend on remote models.json updates. Built-ins replace any matching IDs
 // already present in the provided slice.
@@ -448,6 +453,7 @@ func cloneModelInfos(models []*ModelInfo) []*ModelInfo {
 //   - devin
 //   - copilot
 //   - meta
+//   - opencode
 func GetStaticModelDefinitionsByChannel(channel string) []*ModelInfo {
 	return cloneModelInfos(staticModelDefinitionsByChannel(strings.ToLower(strings.TrimSpace(channel))))
 }
@@ -481,6 +487,8 @@ func staticModelDefinitionsByChannel(channel string) []*ModelInfo {
 		return devinModelDefinitions()
 	case "meta", "muse":
 		return data.Meta
+	case "opencode", "opencode-go", "opencode_go":
+		return GetOpencodeModels()
 	default:
 		return nil
 	}
@@ -559,6 +567,7 @@ func lookupStaticModelInfo(modelID string, additionalCatalog []*ModelInfo) *Mode
 		data.Copilot,
 		// Keep the existing lookup order for bare IDs shared with independent catalogs.
 		additionalCatalog,
+		GetOpencodeModels(),
 	} {
 		if model := findStaticModel(models, modelID); model != nil {
 			return cloneModelInfo(model)
