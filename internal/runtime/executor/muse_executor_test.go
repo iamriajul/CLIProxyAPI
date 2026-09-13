@@ -295,3 +295,40 @@ func TestMuseCloakAutoPassesNativeClient(t *testing.T) {
 		t.Fatalf("native client upstream UA = %q, want passthrough (empty)", upstreamUA)
 	}
 }
+
+func TestMuseLongToolNameRoundTrip(t *testing.T) {
+	// Reproduces the Claude Agent SDK report: a 68-char mcp__ tool name must
+	// go upstream Meta-compliant and come back with its original name.
+	original := longMCPName("mcp__plugin_claude-web-search-router__", 68)
+	if len([]rune(original)) != 68 {
+		t.Fatalf("fixture length = %d, want 68", len([]rune(original)))
+	}
+	var upstreamName string
+	ctx := context.WithValue(context.Background(), "cliproxy.roundtripper", museRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		body, _ := io.ReadAll(req.Body)
+		upstreamName = gjson.GetBytes(body, "tools.0.function.name").String()
+		completion := `{"id":"chatcmpl-1","object":"chat.completion","created":1,"model":"muse-spark-1.3","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"` + upstreamName + `","arguments":"{}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":5,"completion_tokens":3,"total_tokens":8}}`
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(completion)),
+		}, nil
+	}))
+
+	executor := NewMuseExecutor(&config.Config{})
+	auth := &cliproxyauth.Auth{
+		Provider: "muse",
+		Metadata: map[string]any{"muse_api_key": "LLM|test-key"},
+	}
+	payload := []byte(`{"model":"muse-spark-1.3","max_tokens":64,"messages":[{"role":"user","content":"hi"}],"tools":[{"name":"` + original + `","description":"d","input_schema":{"type":"object"}}]}`)
+	resp, err := executor.Execute(ctx, auth, cliproxyexecutor.Request{Model: "muse-spark-1.3", Payload: payload}, cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatClaude})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if len([]rune(upstreamName)) > 64 {
+		t.Fatalf("upstream tool name length = %d, want <= 64", len([]rune(upstreamName)))
+	}
+	if got := gjson.GetBytes(resp.Payload, "content.0.name").String(); got != original {
+		t.Fatalf("restored tool name = %q, want original %q (payload %s)", got, original, resp.Payload)
+	}
+}
