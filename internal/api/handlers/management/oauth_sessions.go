@@ -368,6 +368,10 @@ func NormalizeOAuthProvider(provider string) (string, error) {
 		return "codex", nil
 	case "antigravity", "anti-gravity":
 		return "antigravity", nil
+	case "kimi":
+		return "kimi", nil
+	case "muse", "muse-code", "muse_code", "musecode":
+		return "muse", nil
 	case "xai", "x-ai", "x.ai", "grok":
 		return "xai", nil
 	case "devin", "cognition":
