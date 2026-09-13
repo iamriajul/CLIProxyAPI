@@ -492,23 +492,22 @@ func ResolveMuseAPIKey(metadata map[string]any, attributes map[string]string) st
 				}
 			}
 		}
-		// Direct Meta API key stored flat (pay-as-you-go or imported subscription key).
+		// Direct Meta subscription key stored flat under api_key (imported
+		// credential). Only the known LLM| minted-key shape is accepted here;
+		// anything else belongs in an openai-compatibility entry, not a muse file.
 		if v, ok := metadata["api_key"].(string); ok && strings.TrimSpace(v) != "" {
 			candidate := strings.TrimSpace(v)
-			if !strings.HasPrefix(candidate, "{") {
-				// Prefer explicit muse_api_key when present; otherwise a raw LLM| key
-				// stored as api_key is still usable for inference.
-				if strings.HasPrefix(candidate, "LLM|") || strings.Count(candidate, "|") >= 1 || len(candidate) >= 16 {
-					return candidate
-				}
+			if strings.HasPrefix(candidate, "LLM|") {
+				return candidate
 			}
 		}
 	}
 	if attributes != nil {
-		for _, key := range []string{"muse_api_key", "api_key"} {
-			if v := strings.TrimSpace(attributes[key]); v != "" && !strings.HasPrefix(v, "{") {
-				return v
-			}
+		if v := strings.TrimSpace(attributes["muse_api_key"]); v != "" && !strings.HasPrefix(v, "{") {
+			return v
+		}
+		if v := strings.TrimSpace(attributes["api_key"]); strings.HasPrefix(v, "LLM|") {
+			return v
 		}
 	}
 	return ""

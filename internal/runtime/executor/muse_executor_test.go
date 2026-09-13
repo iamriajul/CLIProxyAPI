@@ -7,11 +7,32 @@ import (
 	museauth "github.com/router-for-me/CLIProxyAPI/v7/internal/auth/muse"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
+	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executor"
+	sdktranslator "github.com/router-for-me/CLIProxyAPI/v7/sdk/translator"
 )
 
 func TestMuseExecutorIdentifier(t *testing.T) {
 	if got := NewMuseExecutor(&config.Config{}).Identifier(); got != "muse" {
 		t.Fatalf("Identifier = %q, want muse", got)
+	}
+}
+
+func TestMuseRequestToFormatMatchesWireProtocol(t *testing.T) {
+	executor := NewMuseExecutor(&config.Config{})
+	for _, source := range []sdktranslator.Format{
+		sdktranslator.FormatOpenAI,
+		sdktranslator.FormatClaude,
+		sdktranslator.FormatGemini,
+		sdktranslator.FormatCodex,
+	} {
+		got := executor.RequestToFormat(cliproxyexecutor.Request{}, cliproxyexecutor.Options{SourceFormat: source})
+		if got != sdktranslator.FormatOpenAI {
+			t.Fatalf("RequestToFormat(%v) = %v, want OpenAI (executor always posts to /v1/chat/completions)", source, got)
+		}
+	}
+	got := executor.RequestToFormat(cliproxyexecutor.Request{}, cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatOpenAIResponse})
+	if got != sdktranslator.FormatOpenAIResponse {
+		t.Fatalf("RequestToFormat(responses) = %v, want OpenAIResponse", got)
 	}
 }
 

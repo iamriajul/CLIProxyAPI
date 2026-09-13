@@ -295,6 +295,17 @@ func TestResolveMuseAPIKey(t *testing.T) {
 	if got := ResolveMuseOAuthToken(metadata, nil); got != "oauth-token" {
 		t.Fatalf("ResolveMuseOAuthToken = %q, want oauth-token", got)
 	}
+	// A flat api_key only counts when it has the minted LLM| shape; anything
+	// else belongs in openai-compatibility, not a muse file.
+	if got := ResolveMuseAPIKey(map[string]any{"api_key": "LLM|flat"}, nil); got != "LLM|flat" {
+		t.Fatalf("ResolveMuseAPIKey flat LLM| = %q, want LLM|flat", got)
+	}
+	if got := ResolveMuseAPIKey(map[string]any{"api_key": "sk-payg-1234567890abcdef"}, nil); got != "" {
+		t.Fatalf("ResolveMuseAPIKey payg = %q, want empty", got)
+	}
+	if got := ResolveMuseAPIKey(nil, map[string]string{"api_key": "sk-payg-1234567890abcdef"}); got != "" {
+		t.Fatalf("ResolveMuseAPIKey attr payg = %q, want empty", got)
+	}
 }
 
 func TestCredentialFileName(t *testing.T) {

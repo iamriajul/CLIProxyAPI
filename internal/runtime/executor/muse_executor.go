@@ -39,12 +39,10 @@ func NewMuseExecutor(cfg *config.Config) *MuseExecutor {
 func (e *MuseExecutor) Identifier() string { return "muse" }
 
 // RequestToFormat reports the upstream request format used after auth selection.
+// Muse always sends OpenAI-format payloads (chat completions or responses).
 func (e *MuseExecutor) RequestToFormat(_ cliproxyexecutor.Request, opts cliproxyexecutor.Options) sdktranslator.Format {
 	if opts.SourceFormat == sdktranslator.FormatOpenAIResponse {
 		return sdktranslator.FormatOpenAIResponse
-	}
-	if opts.SourceFormat == sdktranslator.FormatClaude {
-		return sdktranslator.FormatClaude
 	}
 	return sdktranslator.FormatOpenAI
 }
