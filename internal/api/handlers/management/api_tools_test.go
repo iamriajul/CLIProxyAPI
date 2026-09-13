@@ -315,3 +315,31 @@ func TestAuthByIndexDistinguishesSharedAPIKeysAcrossProviders(t *testing.T) {
 		t.Fatalf("authByIndex(compat) returned %q, want %q", gotCompat.ID, compatAuth.ID)
 	}
 }
+
+func TestResolveTokenForAuthUnwrapsMuseCombinedCredential(t *testing.T) {
+	h := &Handler{cfg: &config.Config{}}
+	combined := `{"oauthAccessToken":"oauth-token-123","apiKey":"LLM|minted-key"}`
+	auth := &coreauth.Auth{
+		Provider: "muse",
+		Metadata: map[string]any{"access_token": combined},
+	}
+	token, err := h.resolveTokenForAuth(context.Background(), auth, "")
+	if err != nil {
+		t.Fatalf("resolveTokenForAuth err = %v", err)
+	}
+	if token != "oauth-token-123" {
+		t.Fatalf("token = %q, want unwrapped account token", token)
+	}
+
+	native := &coreauth.Auth{
+		Provider: "muse",
+		Metadata: map[string]any{"access_token": "oauth-plain", "muse_api_key": "LLM|x"},
+	}
+	token, err = h.resolveTokenForAuth(context.Background(), native, "")
+	if err != nil {
+		t.Fatalf("resolveTokenForAuth native err = %v", err)
+	}
+	if token != "oauth-plain" {
+		t.Fatalf("native token = %q, want oauth-plain", token)
+	}
+}

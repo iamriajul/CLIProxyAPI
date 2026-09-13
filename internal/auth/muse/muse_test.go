@@ -23,12 +23,13 @@ func overrideEndpoints(t *testing.T, device, token, key string) {
 }
 
 func TestRequestDeviceCodePostsClientID(t *testing.T) {
-	var gotClientID, gotAPIVersion, gotContentType string
+	var gotClientID, gotAPIVersion, gotContentType, gotUA string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
 		gotClientID = r.PostForm.Get("client_id")
 		gotAPIVersion = r.Header.Get("x-api-version")
 		gotContentType = r.Header.Get("Content-Type")
+		gotUA = r.Header.Get("User-Agent")
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"device_code":               "device-abc",
@@ -55,6 +56,9 @@ func TestRequestDeviceCodePostsClientID(t *testing.T) {
 	}
 	if !strings.HasPrefix(gotContentType, "application/x-www-form-urlencoded") {
 		t.Fatalf("Content-Type = %q, want form urlencoded", gotContentType)
+	}
+	if gotUA != UserAgent {
+		t.Fatalf("User-Agent = %q, want official family %q", gotUA, UserAgent)
 	}
 	if deviceCode.DeviceCode != "device-abc" || deviceCode.UserCode != "ABCD-1234" {
 		t.Fatalf("device code = %+v", deviceCode)
@@ -137,10 +141,11 @@ func TestPollForTokenTerminalErrors(t *testing.T) {
 }
 
 func TestRequestKeySendsOnboardAndVersion(t *testing.T) {
-	var gotAuth, gotVersion, gotBody string
+	var gotAuth, gotVersion, gotBody, gotUA string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
 		gotVersion = r.Header.Get("x-api-version")
+		gotUA = r.Header.Get("User-Agent")
 		buf := make([]byte, 1024)
 		n, _ := r.Body.Read(buf)
 		gotBody = string(buf[:n])
@@ -165,6 +170,9 @@ func TestRequestKeySendsOnboardAndVersion(t *testing.T) {
 	}
 	if gotVersion != MuseAPIVersion {
 		t.Fatalf("x-api-version = %q", gotVersion)
+	}
+	if gotUA != UserAgent {
+		t.Fatalf("User-Agent = %q, want official family %q", gotUA, UserAgent)
 	}
 	if !strings.Contains(gotBody, `"onboard":true`) {
 		t.Fatalf("body = %q, want onboard:true", gotBody)
