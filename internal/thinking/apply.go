@@ -31,6 +31,8 @@ var nativeProviderAppliers = map[string]ProviderApplier{
 	"kimi.ai":     nil,
 	"kimi.com":    nil,
 	"xai":         nil,
+	"opencode":    nil,
+	"opencode-go": nil,
 }
 
 // pluginProviderAppliers maps plugin-owned provider names to their implementations.
@@ -724,7 +726,10 @@ func extractThinkingConfigFromGetter(get func(string) ojson.Result, provider str
 	case "codex", "xai":
 		return extractCodexConfigFromGetter(get)
 	case "kimi", "kimi-ai", "kimi.ai", "kimi.com":
+	case "kimi", "kimi-ai", "kimi.ai", "kimi.com":
 		return extractKimiConfigFromGetter(get)
+	case "opencode", "opencode-go", "opencode_go":
+		return extractOpenAIConfigFromGetter(get)
 	default:
 		return ThinkingConfig{}
 	}
