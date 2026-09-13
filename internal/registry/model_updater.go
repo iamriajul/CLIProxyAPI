@@ -224,6 +224,7 @@ func detectChangedProviders(oldData, newData *staticModelsJSON) []string {
 		{"devin", oldData.Devin, newData.Devin},
 		{"meta", oldData.Meta, newData.Meta},
 		{"muse", oldData.Muse, newData.Muse},
+		{"opencode", oldData.Opencode, newData.Opencode},
 	}
 
 	seen := make(map[string]bool, len(sections))
@@ -352,6 +353,7 @@ func validateModelsCatalog(data *staticModelsJSON) error {
 		{name: "xai", models: data.XAI},
 		{name: "meta", models: data.Meta},
 		{name: "muse", models: data.Muse},
+		{name: "opencode", models: data.Opencode},
 	}
 
 	for _, section := range requiredSections {
