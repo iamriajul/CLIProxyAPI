@@ -68,3 +68,70 @@ on every PR. It runs only where `dev` exists.
 ```bash
 grep -q "github.repository == 'router-for-me/CLIProxyAPI'" .github/workflows/auto-retarget-main-pr-to-dev.yml
 ```
+
+## muse-builtin-fallback
+
+**Muse models survive a remote catalog without a muse section**
+
+The startup updater replaces the embedded catalog wholesale with the remote
+`router-for-me/models` one, which ships no `muse` section — that silently
+unregisters every Muse credential (empty `/v1/models`, reported against the
+first fork release). The Spark family is upserted over the catalog entries
+(same pattern as `WithCodexBuiltins`/`WithXAIBuiltins`), so a missing or
+partial section can never drop Muse models.
+
+```bash
+grep -q WithMuseBuiltins internal/registry/model_definitions.go
+go test ./internal/registry/ -run 'TestGetMuseModelsFallsBackWhenCatalogSectionEmpty|TestGetMuseModelsMergesPartialCatalogSection'
+```
+
+## muse-cloak
+
+**Muse requests carry the official-client fingerprint in every harness**
+
+Claude Code, Agent SDK, Codex, Gemini CLI, and OpenAI-style clients all reach
+Muse subscriptions through OpenAI/Responses translation, and the upstream
+request is cloaked to the Muse client family (`User-Agent: muse-code` plus the
+mandatory `x-api-version`) instead of leaking the calling harness or Go's
+transport default. Per-credential `cloak_mode` (`auto` default, `always`,
+`never`) in the muse auth JSON, global `disable-muse-cloak-mode` kill-switch.
+
+```bash
+grep -q DisableMuseCloakMode internal/config/config.go
+go test ./internal/runtime/executor/ -run 'TestMuseHarnessMatrix|TestMuseCloakNeverKeepsTransportIdentity|TestMuseCloakAutoPassesNativeClient|TestResolveMuseCloakMode|TestDetectMuseNativeRequest|TestMuseShouldCloakContract|TestApplyMuseCloakHeaders'
+```
+
+## muse-quota-probe
+
+**Management api-call resolves the Muse account token for quota probes**
+
+Muse files may store the credential as combined JSON; quota callers need the
+account token, not the blob. `resolveTokenForAuth` unwraps it via
+`ResolveMuseOAuthToken` for muse providers and otherwise behaves exactly as
+before, so the key endpoint doubles as the usage endpoint through the
+existing api-call proxy with no new routes.
+
+```bash
+grep -q ResolveMuseOAuthToken internal/api/handlers/management/api_tools.go
+go test ./internal/api/handlers/management/ -run TestResolveTokenForAuthUnwrapsMuseCombinedCredential
+```
+
+## opencode-provider
+
+**OpenCode Zen Go gateway provider (API-key auth, tri-route executor)**
+
+Zen Go keys are subscription API keys pasted from the Zen console (no
+OAuth): `POST /v0/management/opencode/import` validates against the live
+gateway models endpoint and saves a type-opencode auth file. The executor
+routes per model per the reference catalog: Claude-protocol lanes through the
+Claude executor, Responses-native lanes through /v1/responses, everything
+else through OpenAI chat completions; gateway lanes that reject tool_choice
+have it stripped. Models ride a static snapshot (live Zen lane list merged
+at build time) upserted as builtins so catalog refreshes cannot drop them.
+
+```bash
+grep -q "opencode/import" internal/api/server_management.go
+go test ./internal/auth/opencode/...
+go test ./internal/runtime/executor/ -run 'TestOpencode|TestMuseHarnessMatrix'
+go test ./internal/registry/ -run TestGetOpencodeModelsCoverGatewayLanes
+```
