@@ -39,6 +39,7 @@ type staticModelsJSON struct {
 	Devin       []*ModelInfo `json:"devin"`
 	Meta        []*ModelInfo `json:"meta"`
 	Opencode    []*ModelInfo `json:"opencode"`
+	ZAI         []*ModelInfo `json:"zai"`
 }
 
 // GetClaudeModels returns the standard Claude model definitions.
@@ -249,6 +250,11 @@ func GetXAIModels() []*ModelInfo {
 // GetOpencodeModels returns OpenCode Zen Go gateway model definitions.
 func GetOpencodeModels() []*ModelInfo {
 	return WithOpencodeBuiltins(cloneModelInfos(getModels().Opencode))
+}
+
+// GetZaiModels returns Z.AI GLM model definitions.
+func GetZaiModels() []*ModelInfo {
+	return WithZaiBuiltins(cloneModelInfos(getModels().ZAI))
 }
 // WithCodexBuiltins injects hard-coded Codex-only model definitions that should
 // not depend on remote models.json updates. Built-ins replace any matching IDs
@@ -530,6 +536,7 @@ func cloneModelInfos(models []*ModelInfo) []*ModelInfo {
 //   - devin
 //   - meta
 //   - opencode
+//   - zai
 func GetStaticModelDefinitionsByChannel(channel string) []*ModelInfo {
 	key := strings.ToLower(strings.TrimSpace(channel))
 	switch key {
@@ -557,6 +564,8 @@ func GetStaticModelDefinitionsByChannel(channel string) []*ModelInfo {
 		return GetMetaModels()
 	case "opencode", "opencode-go", "opencode_go":
 		return GetOpencodeModels()
+	case "zai", "glm", "zhipu":
+		return GetZaiModels()
 	default:
 		return nil
 	}
@@ -612,6 +621,7 @@ func LookupStaticModelInfo(modelID string) *ModelInfo {
 		GetDevinModels(),
 		GetMetaModels(),
 		GetOpencodeModels(),
+		GetZaiModels(),
 	}
 	for _, models := range allModels {
 		for _, m := range models {
