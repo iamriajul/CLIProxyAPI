@@ -18,6 +18,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/auth/claude"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/auth/codex"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/auth/kimi"
+	museauth "github.com/router-for-me/CLIProxyAPI/v7/internal/auth/muse"
 	xaiauth "github.com/router-for-me/CLIProxyAPI/v7/internal/auth/xai"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/misc"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/pluginhost"
@@ -714,6 +715,125 @@ func (h *Handler) RequestKimiToken(c *gin.Context) {
 	}
 	if deviceFlow.ExpiresIn > 0 {
 		response["expires_in"] = deviceFlow.ExpiresIn
+	}
+	c.JSON(200, response)
+}
+
+// RequestMuseToken starts the Muse device-code flow and mints the subscription key.
+func (h *Handler) RequestMuseToken(c *gin.Context) {
+	ctx := context.Background()
+	ctx = PopulateAuthContext(ctx, c)
+
+	fmt.Println("Initializing Muse authentication...")
+
+	state := fmt.Sprintf("mse-%d", time.Now().UnixNano())
+	museAuthSvc := museauth.NewMuseAuth(h.cfg)
+
+	deviceFlow, errStartDeviceFlow := museAuthSvc.StartDeviceFlow(ctx)
+	if errStartDeviceFlow != nil {
+		log.Errorf("Failed to start Muse device flow: %v", errStartDeviceFlow)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to start device authorization flow"})
+		return
+	}
+	authURL := strings.TrimSpace(deviceFlow.VerificationURIComplete)
+	if authURL == "" {
+		authURL = strings.TrimSpace(deviceFlow.VerificationURI)
+	}
+
+	RegisterOAuthSession(state, "muse")
+
+	go func() {
+		pollCtx, cancelPoll := context.WithCancel(ctx)
+		defer cancelPoll()
+		go watchOAuthSessionCancel(pollCtx, cancelPoll, state, "muse")
+
+		fmt.Println("Waiting for Muse authentication...")
+		bundle, errWaitForAuthorization := museAuthSvc.WaitForAuthorization(pollCtx, deviceFlow)
+		if errWaitForAuthorization != nil {
+			if !IsOAuthSessionPending(state, "muse") {
+				return
+			}
+			log.Errorf("Muse authentication failed: %v", errWaitForAuthorization)
+			SetOAuthSessionError(state, oauthSessionErrorWithCause("Authentication failed", errWaitForAuthorization))
+			return
+		}
+		if !IsOAuthSessionPending(state, "muse") {
+			return
+		}
+
+		tokenStorage := museAuthSvc.CreateTokenStorage(bundle)
+		if tokenStorage == nil || strings.TrimSpace(tokenStorage.MuseAPIKey) == "" {
+			log.Error("Muse token exchange returned empty subscription key")
+			SetOAuthSessionError(state, "Failed to exchange token")
+			return
+		}
+
+		fileName := museauth.CredentialFileName(tokenStorage.Email, tokenStorage.UserID)
+		label := strings.TrimSpace(tokenStorage.Email)
+		if label == "" {
+			label = "Muse"
+		}
+
+		metadata := map[string]any{
+			"type":          "muse",
+			"access_token":  tokenStorage.AccessToken,
+			"refresh_token": tokenStorage.RefreshToken,
+			"token_type":    tokenStorage.TokenType,
+			"muse_api_key":  tokenStorage.MuseAPIKey,
+			"base_url":      museauth.MuseAPIBaseURL,
+			"auth_kind":     "oauth",
+		}
+		if tokenStorage.Email != "" {
+			metadata["email"] = tokenStorage.Email
+		}
+		if tokenStorage.UserID != "" {
+			metadata["user_id"] = tokenStorage.UserID
+		}
+		if tokenStorage.SubsTierID != "" {
+			metadata["subs_tier_id"] = tokenStorage.SubsTierID
+		}
+		if tokenStorage.SubsTierName != "" {
+			metadata["subs_tier_name"] = tokenStorage.SubsTierName
+		}
+		if tokenStorage.IsSubsActive != nil {
+			metadata["is_subs_active"] = *tokenStorage.IsSubsActive
+		}
+
+		record := &coreauth.Auth{
+			ID:       fileName,
+			Provider: "muse",
+			FileName: fileName,
+			Label:    label,
+			Storage:  tokenStorage,
+			Metadata: metadata,
+			Attributes: map[string]string{
+				"auth_kind": "oauth",
+				"base_url":  museauth.MuseAPIBaseURL,
+			},
+		}
+		if errGuard := guardOAuthSessionPendingForSave(state, "muse"); errGuard != nil {
+			return
+		}
+		savedPath, errSave := h.saveTokenRecord(ctx, record)
+		if errSave != nil {
+			log.Errorf("Failed to save Muse token to file: %v", errSave)
+			SetOAuthSessionError(state, "Failed to save token to file")
+			return
+		}
+
+		CompleteOAuthSession(state)
+		fmt.Printf("Authentication successful! Token saved to %s\n", savedPath)
+		fmt.Println("You can now use Muse services through this CLI")
+	}()
+
+	response := gin.H{"status": "ok", "url": authURL, "state": state, "flow": "device"}
+	if userCode := strings.TrimSpace(deviceFlow.UserCode); userCode != "" {
+		response["user_code"] = userCode
+	}
+	if deviceFlow.ExpiresIn > 0 {
+		response["expires_in"] = deviceFlow.ExpiresIn
+	} else {
+		response["expires_in"] = int(museauth.MaxPollDuration / time.Second)
 	}
 	c.JSON(200, response)
 }
