@@ -18,6 +18,29 @@ func TestGetStaticModelDefinitionsByChannelSupportsKimiAndKimiAI(t *testing.T) {
 	}
 }
 
+func TestGetMuseModelsIncludesSparkFamily(t *testing.T) {
+	for _, channel := range []string{"muse", "muse-code", "muse_code"} {
+		models := GetStaticModelDefinitionsByChannel(channel)
+		if len(models) < 5 {
+			t.Fatalf("GetStaticModelDefinitionsByChannel(%q) = %d models, want >= 5", channel, len(models))
+		}
+		ids := make(map[string]bool, len(models))
+		for _, m := range models {
+			if m != nil {
+				ids[m.ID] = true
+			}
+		}
+		for _, want := range []string{"muse-spark-1.1", "muse-spark-1.2", "muse-spark-1.2-contributor", "muse-spark-1.3", "muse-spark-1.3-contributor"} {
+			if !ids[want] {
+				t.Fatalf("channel %q missing model %q (got %v)", channel, want, ids)
+			}
+		}
+	}
+	if got := LookupStaticModelInfo("muse-spark-1.3"); got == nil || got.ID != "muse-spark-1.3" {
+		t.Fatalf("LookupStaticModelInfo(muse-spark-1.3) = %+v, want muse-spark-1.3", got)
+	}
+}
+
 func TestModelOverrideHeadersFromEmbeddedModels(t *testing.T) {
 	const wantUA = "codex-tui/0.154.0 (Mac OS 26.5.2; arm64) iTerm.app/3.6.11 (codex-tui; 0.154.0)"
 	got := ModelOverrideHeaders("gpt-5.6-luna")
@@ -276,5 +299,85 @@ func TestGetDevinModelsFallback(t *testing.T) {
 	}
 	if info.DisplayName != "SWE-2" {
 		t.Errorf("info.DisplayName = %q, want SWE-2", info.DisplayName)
+	}
+}
+
+func TestGetMuseModelsFallsBackWhenCatalogSectionEmpty(t *testing.T) {
+	// A remote catalog refresh without a muse section replaces the embedded
+	// one wholesale; Muse credentials must stay routable via builtins.
+	modelsCatalogStore.mu.Lock()
+	previous := modelsCatalogStore.data
+	modelsCatalogStore.data = &staticModelsJSON{}
+	modelsCatalogStore.mu.Unlock()
+	t.Cleanup(func() {
+		modelsCatalogStore.mu.Lock()
+		modelsCatalogStore.data = previous
+		modelsCatalogStore.mu.Unlock()
+	})
+
+	models := GetMuseModels()
+	if len(models) != len(museBuiltinModelIDs()) {
+		t.Fatalf("GetMuseModels() with empty catalog = %d models, want %d builtins", len(models), len(museBuiltinModelIDs()))
+	}
+	for _, want := range museBuiltinModelIDs() {
+		if got := LookupStaticModelInfo(want); got == nil || got.ID != want {
+			t.Fatalf("LookupStaticModelInfo(%q) with empty catalog = %+v, want %q", want, got, want)
+		}
+	}
+}
+
+func TestGetMuseModelsMergesPartialCatalogSection(t *testing.T) {
+	// A partial remote section must not drop the remaining builtins.
+	modelsCatalogStore.mu.Lock()
+	previous := modelsCatalogStore.data
+	modelsCatalogStore.data = &staticModelsJSON{
+		Muse: []*ModelInfo{{ID: "muse-spark-9", DisplayName: "Future Spark", Type: "muse"}},
+	}
+	modelsCatalogStore.mu.Unlock()
+	t.Cleanup(func() {
+		modelsCatalogStore.mu.Lock()
+		modelsCatalogStore.data = previous
+		modelsCatalogStore.mu.Unlock()
+	})
+
+	models := GetMuseModels()
+	if len(models) != len(museBuiltinModelIDs())+1 {
+		t.Fatalf("GetMuseModels() with partial catalog = %d models, want %d", len(models), len(museBuiltinModelIDs())+1)
+	}
+	ids := make(map[string]bool, len(models))
+	for _, m := range models {
+		ids[m.ID] = true
+	}
+	for _, want := range append(append([]string(nil), museBuiltinModelIDs()...), "muse-spark-9") {
+		if !ids[want] {
+			t.Fatalf("merged models missing %q (got %v)", want, ids)
+		}
+	}
+}
+
+func TestGetOpencodeModelsCoverGatewayLanes(t *testing.T) {
+	if got := len(GetOpencodeModels()); got < 37 {
+		t.Fatalf("GetOpencodeModels() = %d, want >= 37 live Zen lanes", got)
+	}
+	for channel, want := range map[string]string{
+		"opencode": "glm-5.2", "opencode-go": "glm-5.2",
+	} {
+		found := false
+		for _, m := range GetStaticModelDefinitionsByChannel(channel) {
+			if m != nil && m.ID == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("channel %q missing model %q", channel, want)
+		}
+	}
+	if got := LookupStaticModelInfo("glm-5.2"); got == nil {
+		t.Fatalf("LookupStaticModelInfo(glm-5.2) = nil")
+	}
+	// Anthropic-route lanes keep working when the catalog section is wiped.
+	if got := OpencodeUpstreamRoute("minimax-m2.5"); got != "anthropic" {
+		t.Fatalf("minimax route = %q", got)
 	}
 }
