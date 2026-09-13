@@ -151,6 +151,14 @@ type Config struct {
 	// the auth/OAuth token file). Default false preserves the per-client "auto" behavior.
 	DisableClaudeCloakMode bool `yaml:"disable-claude-cloak-mode" json:"disable-claude-cloak-mode"`
 
+	// DisableMuseCloakMode globally disables Muse request cloaking when true.
+	// Cloaking presents Muse Model API requests with the official Muse client
+	// fingerprint instead of the calling harness identity. When true, every
+	// Muse credential behaves as cloak mode "never"; a "cloak_mode" value in
+	// the muse auth JSON otherwise selects "auto" (default), "always", or
+	// "never" per credential.
+	DisableMuseCloakMode bool `yaml:"disable-muse-cloak-mode" json:"disable-muse-cloak-mode"`
+
 	// OpenAICompatibility defines OpenAI API compatibility configurations for external providers.
 	OpenAICompatibility []OpenAICompatibility `yaml:"openai-compatibility" json:"openai-compatibility"`
 
