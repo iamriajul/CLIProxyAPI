@@ -42,6 +42,9 @@ func TestParsePastedCallback(t *testing.T) {
 	if err != nil || code != "qrs" || state != "s1" {
 		t.Fatalf("fragment: got %q %q %v", code, state, err)
 	}
+	if _, _, err = ParsePastedCallback("https://chat.z.ai/api/oauth/authorize?client_id=x&state=s1", "s1"); err == nil {
+		t.Fatalf("expected error for URL-shaped paste without a code")
+	}
 	if _, _, err = ParsePastedCallback("qrs#s1", "other"); err == nil {
 		t.Fatalf("expected state mismatch error")
 	}

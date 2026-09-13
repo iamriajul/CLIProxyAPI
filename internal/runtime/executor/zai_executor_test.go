@@ -130,3 +130,113 @@ func TestZaiResponsesInputTranslatesToChat(t *testing.T) {
 		t.Fatalf("empty translated response")
 	}
 }
+
+const zaiClaudeFixture = `{"id":"msg_1","type":"message","role":"assistant","model":"glm-5.3","content":[{"type":"text","text":"hello"}],"stop_reason":"end_turn","usage":{"input_tokens":5,"output_tokens":3}}`
+
+func zaiStampedAuth() *cliproxyauth.Auth {
+	// Mirrors a persisted login record: base_url stamped with the Anthropic base.
+	return &cliproxyauth.Auth{
+		Provider:   "zai",
+		Attributes: map[string]string{"base_url": "https://api.z.ai/api/anthropic", "auth_kind": "oauth"},
+		Metadata:   map[string]any{"access_token": "ak-123.sk-456"},
+	}
+}
+
+func TestZaiOpenAILaneIgnoresAnthropicStamp(t *testing.T) {
+	// Regression: the coding lane must not POST to .../api/anthropic/chat/completions.
+	var upstreamURL string
+	ctx := context.WithValue(context.Background(), "cliproxy.roundtripper", zaiRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		upstreamURL = req.URL.String()
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(zaiChatFixture)),
+		}, nil
+	}))
+
+	executor := NewZaiExecutor(&config.Config{})
+	_, err := executor.Execute(ctx, zaiStampedAuth(), cliproxyexecutor.Request{
+		Model:   "glm-5.3-flash",
+		Payload: []byte(`{"model":"glm-5.3-flash","messages":[{"role":"user","content":"hi"}]}`),
+	}, cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatOpenAI})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if upstreamURL != "https://api.z.ai/api/coding/paas/v4/chat/completions" {
+		t.Fatalf("upstreamURL = %q, want the coding lane", upstreamURL)
+	}
+}
+
+func TestZaiClaudeLaneSendsVerbatimKey(t *testing.T) {
+	// Regression: delegation stamped Bearer on non-Anthropic hosts, which Z.AI
+	// rejects. The native lane must send the key verbatim to /messages.
+	var upstreamURL, authHeader string
+	var upstreamBody []byte
+	ctx := context.WithValue(context.Background(), "cliproxy.roundtripper", zaiRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		upstreamURL = req.URL.String()
+		authHeader = req.Header.Get("Authorization")
+		var err error
+		upstreamBody, err = io.ReadAll(req.Body)
+		if err != nil {
+			return nil, err
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(zaiClaudeFixture)),
+		}, nil
+	}))
+
+	executor := NewZaiExecutor(&config.Config{})
+	resp, err := executor.Execute(ctx, zaiStampedAuth(), cliproxyexecutor.Request{
+		Model:   "glm-5.3",
+		Payload: []byte(`{"model":"glm-5.3","messages":[{"role":"user","content":"hi"}]}`),
+	}, cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatOpenAI})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if upstreamURL != "https://api.z.ai/api/anthropic/messages" {
+		t.Fatalf("upstreamURL = %q", upstreamURL)
+	}
+	if authHeader != "ak-123.sk-456" {
+		t.Fatalf("Authorization = %q, want raw key without Bearer", authHeader)
+	}
+	if got := gjson.GetBytes(upstreamBody, "model").String(); got != "glm-5.3" {
+		t.Fatalf("upstream model = %q", got)
+	}
+	if len(resp.Payload) == 0 {
+		t.Fatalf("empty translated response")
+	}
+}
+
+func TestZaiClaudeSourceStaysNative(t *testing.T) {
+	var upstreamURL, authHeader string
+	ctx := context.WithValue(context.Background(), "cliproxy.roundtripper", zaiRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		upstreamURL = req.URL.String()
+		authHeader = req.Header.Get("Authorization")
+		_, _ = io.ReadAll(req.Body)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(zaiClaudeFixture)),
+		}, nil
+	}))
+
+	executor := NewZaiExecutor(&config.Config{})
+	resp, err := executor.Execute(ctx, zaiStampedAuth(), cliproxyexecutor.Request{
+		Model:   "glm-5.3",
+		Payload: []byte(`{"model":"glm-5.3","max_tokens":64,"messages":[{"role":"user","content":"hi"}]}`),
+	}, cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatClaude})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if upstreamURL != "https://api.z.ai/api/anthropic/messages" {
+		t.Fatalf("upstreamURL = %q", upstreamURL)
+	}
+	if authHeader != "ak-123.sk-456" {
+		t.Fatalf("Authorization = %q, want raw key", authHeader)
+	}
+	if got := gjson.GetBytes(resp.Payload, "content.0.text").String(); got != "hello" {
+		t.Fatalf("claude response text = %q (payload %s)", got, resp.Payload)
+	}
+}

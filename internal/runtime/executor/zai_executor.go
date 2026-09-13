@@ -101,9 +101,7 @@ func (e *ZaiExecutor) HttpRequest(ctx context.Context, auth *cliproxyauth.Auth, 
 // Execute performs a non-streaming request to Z.AI.
 func (e *ZaiExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (resp cliproxyexecutor.Response, err error) {
 	if !zaiUsesOpenAIRoute(req.Model) {
-		e.ensureAttributes(auth)
-		auth.Attributes["base_url"] = zaiauth.ZaiAnthropicBaseURL
-		return e.ClaudeExecutor.Execute(ctx, auth, req, opts)
+		return e.executeClaude(ctx, auth, req, opts)
 	}
 	from := opts.SourceFormat
 	if from == sdktranslator.FormatOpenAIResponse {
@@ -213,9 +211,7 @@ func (e *ZaiExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, req 
 // ExecuteStream performs a streaming request to Z.AI.
 func (e *ZaiExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (_ *cliproxyexecutor.StreamResult, err error) {
 	if !zaiUsesOpenAIRoute(req.Model) {
-		e.ensureAttributes(auth)
-		auth.Attributes["base_url"] = zaiauth.ZaiAnthropicBaseURL
-		return e.ClaudeExecutor.ExecuteStream(ctx, auth, req, opts)
+		return e.executeClaudeStream(ctx, auth, req, opts)
 	}
 	if opts.SourceFormat == sdktranslator.FormatOpenAIResponse {
 		return e.executeResponsesStream(ctx, auth, req, opts)
@@ -581,9 +577,7 @@ func (e *ZaiExecutor) executeResponsesStream(ctx context.Context, auth *cliproxy
 // CountTokens estimates token count for Z.AI requests.
 func (e *ZaiExecutor) CountTokens(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
 	if !zaiUsesOpenAIRoute(req.Model) {
-		e.ensureAttributes(auth)
-		auth.Attributes["base_url"] = zaiauth.ZaiAnthropicBaseURL
-		return e.ClaudeExecutor.CountTokens(ctx, auth, req, opts)
+		return e.countClaudeTokens(ctx, auth, req, opts)
 	}
 	baseModel := thinking.ParseSuffix(req.Model).ModelName
 
@@ -628,6 +622,263 @@ func (e *ZaiExecutor) ensureAttributes(auth *cliproxyauth.Auth) {
 	}
 }
 
+// executeClaude serves the Anthropic-protocol GLM lanes natively instead of
+// delegating to ClaudeExecutor: delegation stamps
+// `Authorization: Bearer <key>` on every non-Anthropic host, which Z.AI
+// rejects. The minted key goes out verbatim here, exactly as on the OpenAI
+// lane. Custom `custom`-type tools are left untouched on this lane — only the
+// Meta endpoint is known to reject them.
+func (e *ZaiExecutor) executeClaude(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (resp cliproxyexecutor.Response, err error) {
+	from := opts.SourceFormat
+	responseFormat := cliproxyexecutor.ResponseFormatOrSource(opts)
+
+	baseModel := thinking.ParseSuffix(req.Model).ModelName
+	token := zaiCreds(auth)
+	if strings.TrimSpace(token) == "" {
+		return resp, statusErr{code: http.StatusUnauthorized, msg: "zai executor: missing api key"}
+	}
+
+	reporter := helps.NewExecutorUsageReporter(ctx, e, baseModel, auth)
+	defer reporter.TrackFailure(ctx, &err)
+
+	to := sdktranslator.FromString("claude")
+	originalPayloadSource := req.Payload
+	if len(opts.OriginalRequest) > 0 {
+		originalPayloadSource = opts.OriginalRequest
+	}
+	originalPayload := bytes.Clone(originalPayloadSource)
+	originalTranslated := helps.TranslateRequestWithCodexMultiAgentV2(ctx, opts.Headers, e.cfg, from, to, baseModel, originalPayload, false)
+	body := helps.TranslateRequestWithCodexMultiAgentV2(ctx, opts.Headers, e.cfg, from, to, baseModel, bytes.Clone(req.Payload), false)
+
+	body, err = sjson.SetBytes(body, "model", baseModel)
+	if err != nil {
+		return resp, fmt.Errorf("zai executor: failed to set model in payload: %w", err)
+	}
+	body = helps.SetBoolIfDifferent(body, "stream", false)
+
+	body, err = helps.ApplyRequestThinking(body, req, opts, from.String(), "claude", e.Identifier())
+	if err != nil {
+		return resp, err
+	}
+
+	requestedModel := helps.PayloadRequestedModel(opts, req.Model)
+	requestPath := helps.PayloadRequestPath(opts)
+	body = helps.ApplyPayloadConfigWithRequest(e.cfg, baseModel, to.String(), from.String(), "", body, originalTranslated, requestedModel, requestPath, opts.Headers)
+	reporter.SetTranslatedReasoningEffort(body, e.Identifier())
+
+	url := zaiAnthropicBaseURL(auth) + "/messages"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return resp, err
+	}
+	applyZaiHeaders(httpReq, token, false)
+	var attrs map[string]string
+	if auth != nil {
+		attrs = auth.Attributes
+	}
+	util.ApplyCustomHeadersFromAttrs(httpReq, attrs)
+	var authID, authLabel, authType, authValue string
+	if auth != nil {
+		authID = auth.ID
+		authLabel = auth.Label
+		authType, authValue = auth.AccountInfo()
+	}
+	helps.RecordAPIRequest(ctx, e.cfg, helps.UpstreamRequestLog{
+		URL:       url,
+		Method:    http.MethodPost,
+		Headers:   httpReq.Header.Clone(),
+		Body:      body,
+		Provider:  e.Identifier(),
+		AuthID:    authID,
+		AuthLabel: authLabel,
+		AuthType:  authType,
+		AuthValue: authValue,
+	})
+
+	httpClient := helps.NewProxyAwareHTTPClient(ctx, e.cfg, auth, 0)
+	httpClient = reporter.TrackHTTPClient(httpClient)
+	httpResp, err := httpClient.Do(httpReq)
+	if err != nil {
+		helps.RecordAPIResponseError(ctx, e.cfg, err)
+		return resp, err
+	}
+	defer func() {
+		if errClose := httpResp.Body.Close(); errClose != nil {
+			log.Errorf("zai executor: close response body error: %v", errClose)
+		}
+	}()
+	helps.RecordAPIResponseMetadata(ctx, e.cfg, httpResp.StatusCode, httpResp.Header.Clone())
+	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
+		b, _ := io.ReadAll(httpResp.Body)
+		helps.AppendAPIResponseChunk(ctx, e.cfg, b)
+		helps.LogWithRequestID(ctx).Debugf("request error, error status: %d, error message: %s", httpResp.StatusCode, helps.SummarizeErrorBody(httpResp.Header.Get("Content-Type"), b))
+		err = statusErr{code: httpResp.StatusCode, msg: string(b)}
+		return resp, err
+	}
+	data, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		helps.RecordAPIResponseError(ctx, e.cfg, err)
+		return resp, err
+	}
+	helps.AppendAPIResponseChunk(ctx, e.cfg, data)
+	reporter.Publish(ctx, helps.ParseClaudeUsage(data))
+	var param any
+	out := sdktranslator.TranslateNonStream(ctx, to, responseFormat, req.Model, opts.OriginalRequest, body, data, &param)
+	resp = cliproxyexecutor.Response{Payload: out, Headers: httpResp.Header.Clone()}
+	return resp, nil
+}
+
+// executeClaudeStream streams the Anthropic-protocol GLM lanes with verbatim
+// key auth (see executeClaude for why delegation cannot be used here).
+func (e *ZaiExecutor) executeClaudeStream(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (_ *cliproxyexecutor.StreamResult, err error) {
+	from := opts.SourceFormat
+	responseFormat := cliproxyexecutor.ResponseFormatOrSource(opts)
+
+	baseModel := thinking.ParseSuffix(req.Model).ModelName
+	token := zaiCreds(auth)
+	if strings.TrimSpace(token) == "" {
+		return nil, statusErr{code: http.StatusUnauthorized, msg: "zai executor: missing api key"}
+	}
+
+	reporter := helps.NewExecutorUsageReporter(ctx, e, baseModel, auth)
+	defer reporter.TrackFailure(ctx, &err)
+
+	to := sdktranslator.FromString("claude")
+	originalPayloadSource := req.Payload
+	if len(opts.OriginalRequest) > 0 {
+		originalPayloadSource = opts.OriginalRequest
+	}
+	originalPayload := bytes.Clone(originalPayloadSource)
+	originalTranslated := helps.TranslateRequestWithCodexMultiAgentV2(ctx, opts.Headers, e.cfg, from, to, baseModel, originalPayload, true)
+	body := helps.TranslateRequestWithCodexMultiAgentV2(ctx, opts.Headers, e.cfg, from, to, baseModel, bytes.Clone(req.Payload), true)
+
+	body, err = sjson.SetBytes(body, "model", baseModel)
+	if err != nil {
+		return nil, fmt.Errorf("zai executor: failed to set model in payload: %w", err)
+	}
+	body = helps.SetBoolIfDifferent(body, "stream", true)
+
+	body, err = helps.ApplyRequestThinking(body, req, opts, from.String(), "claude", e.Identifier())
+	if err != nil {
+		return nil, err
+	}
+
+	requestedModel := helps.PayloadRequestedModel(opts, req.Model)
+	requestPath := helps.PayloadRequestPath(opts)
+	body = helps.ApplyPayloadConfigWithRequest(e.cfg, baseModel, to.String(), from.String(), "", body, originalTranslated, requestedModel, requestPath, opts.Headers)
+	reporter.SetTranslatedReasoningEffort(body, e.Identifier())
+
+	url := zaiAnthropicBaseURL(auth) + "/messages"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	applyZaiHeaders(httpReq, token, true)
+	var attrs map[string]string
+	if auth != nil {
+		attrs = auth.Attributes
+	}
+	util.ApplyCustomHeadersFromAttrs(httpReq, attrs)
+	var authID, authLabel, authType, authValue string
+	if auth != nil {
+		authID = auth.ID
+		authLabel = auth.Label
+		authType, authValue = auth.AccountInfo()
+	}
+	helps.RecordAPIRequest(ctx, e.cfg, helps.UpstreamRequestLog{
+		URL:       url,
+		Method:    http.MethodPost,
+		Headers:   httpReq.Header.Clone(),
+		Body:      body,
+		Provider:  e.Identifier(),
+		AuthID:    authID,
+		AuthLabel: authLabel,
+		AuthType:  authType,
+		AuthValue: authValue,
+	})
+
+	httpClient := helps.NewProxyAwareHTTPClient(ctx, e.cfg, auth, 0)
+	httpClient = reporter.TrackHTTPClient(httpClient)
+	httpResp, err := httpClient.Do(httpReq)
+	if err != nil {
+		helps.RecordAPIResponseError(ctx, e.cfg, err)
+		return nil, err
+	}
+	helps.RecordAPIResponseMetadata(ctx, e.cfg, httpResp.StatusCode, httpResp.Header.Clone())
+	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
+		b, _ := io.ReadAll(httpResp.Body)
+		helps.AppendAPIResponseChunk(ctx, e.cfg, b)
+		helps.LogWithRequestID(ctx).Debugf("request error, error status: %d, error message: %s", httpResp.StatusCode, helps.SummarizeErrorBody(httpResp.Header.Get("Content-Type"), b))
+		if errClose := httpResp.Body.Close(); errClose != nil {
+			log.Errorf("zai executor: close response body error: %v", errClose)
+		}
+		err = statusErr{code: httpResp.StatusCode, msg: string(b)}
+		return nil, err
+	}
+	out := make(chan cliproxyexecutor.StreamChunk)
+	go func() {
+		defer close(out)
+		defer func() {
+			if errClose := httpResp.Body.Close(); errClose != nil {
+				log.Errorf("zai executor: close response body error: %v", errClose)
+			}
+		}()
+		scanner := bufio.NewScanner(httpResp.Body)
+		scanner.Buffer(nil, 1_048_576)
+		claudeInputTokens := helps.NewClaudeInputTokenState(from, to, responseFormat, originalPayload)
+		var param any
+		var streamUsage helps.StreamUsageBuffer
+		defer streamUsage.Publish(ctx, reporter)
+		for scanner.Scan() {
+			line := scanner.Bytes()
+			helps.AppendAPIResponseChunk(ctx, e.cfg, line)
+			streamUsage.ObserveClaudeStream(line)
+			chunks := helps.TranslateStreamWithClaudeInputTokens(ctx, to, responseFormat, req.Model, opts.OriginalRequest, body, bytes.Clone(line), &param, claudeInputTokens)
+			for i := range chunks {
+				select {
+				case out <- cliproxyexecutor.StreamChunk{Payload: chunks[i]}:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+		if errScan := scanner.Err(); errScan != nil {
+			helps.RecordAPIResponseError(ctx, e.cfg, errScan)
+			reporter.PublishFailure(ctx, errScan)
+			select {
+			case out <- cliproxyexecutor.StreamChunk{Err: errScan}:
+			case <-ctx.Done():
+			}
+		}
+	}()
+	return &cliproxyexecutor.StreamResult{Headers: httpResp.Header.Clone(), Chunks: out}, nil
+}
+
+// countClaudeTokens estimates token count for Anthropic-protocol lanes with
+// local estimation only (no upstream count_tokens call, no auth involved).
+func (e *ZaiExecutor) countClaudeTokens(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
+	baseModel := thinking.ParseSuffix(req.Model).ModelName
+
+	from := opts.SourceFormat
+	responseFormat := cliproxyexecutor.ResponseFormatOrSource(opts)
+	to := sdktranslator.FromString("claude")
+	translated := helps.TranslateRequestWithCodexMultiAgentV2(ctx, opts.Headers, e.cfg, from, to, baseModel, bytes.Clone(req.Payload), false)
+
+	translated, err := helps.ApplyRequestThinking(translated, req, opts, from.String(), "claude", e.Identifier())
+	if err != nil {
+		return cliproxyexecutor.Response{}, err
+	}
+
+	count, err := helps.CountClaudeInputTokens(translated)
+	if err != nil {
+		return cliproxyexecutor.Response{}, fmt.Errorf("zai executor: token counting failed: %w", err)
+	}
+
+	usageJSON := []byte(fmt.Sprintf(`{"input_tokens":%d}`, count))
+	translatedUsage := sdktranslator.TranslateTokenCount(ctx, to, responseFormat, count, usageJSON)
+	return cliproxyexecutor.Response{Payload: translatedUsage}, nil
+}
+
 func applyZaiHeaders(r *http.Request, token string, stream bool) {
 	r.Header.Set("Content-Type", "application/json")
 	// Verbatim key: Z.AI rejects the Bearer prefix.
@@ -644,14 +895,29 @@ func applyZaiHeaders(r *http.Request, token string, stream bool) {
 	r.Header.Set("Accept", "application/json")
 }
 
-// zaiOpenAIBaseURL resolves the OpenAI-completions lane base.
+// zaiOpenAIBaseURL resolves the OpenAI-completions lane base. Persisted zai
+// auths stamp the Anthropic base into attributes at login, so that exact
+// value is treated as "no override" and maps back to the coding lane;
+// anything else is an explicit operator override and wins for both lanes.
 func zaiOpenAIBaseURL(auth *cliproxyauth.Auth) string {
+	if auth != nil && auth.Attributes != nil {
+		if raw := strings.TrimRight(strings.TrimSpace(auth.Attributes["base_url"]), "/"); raw != "" && raw != strings.TrimRight(zaiauth.ZaiAnthropicBaseURL, "/") {
+			return raw
+		}
+	}
+	return zaiauth.ZaiOpenAIBaseURL
+}
+
+// zaiAnthropicBaseURL resolves the Claude-protocol lane base (no /v1
+// suffix), honoring an explicit per-credential override like the chat base
+// does instead of pinning the default Z.AI endpoint.
+func zaiAnthropicBaseURL(auth *cliproxyauth.Auth) string {
 	if auth != nil && auth.Attributes != nil {
 		if raw := strings.TrimRight(strings.TrimSpace(auth.Attributes["base_url"]), "/"); raw != "" {
 			return raw
 		}
 	}
-	return zaiauth.ZaiOpenAIBaseURL
+	return zaiauth.ZaiAnthropicBaseURL
 }
 
 // zaiCreds extracts the provisioned Z.AI key from auth.

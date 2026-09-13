@@ -18,7 +18,6 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/util"
 	log "github.com/sirupsen/logrus"
-	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -50,8 +49,6 @@ const (
 	// MaxPollDuration bounds waiting on user authorization.
 	MaxPollDuration = 30 * time.Minute
 )
-
-var zaiRefreshGroup singleflight.Group
 
 var (
 	zaiTokenEndpoint         = ZaiTokenURL
@@ -178,8 +175,11 @@ func ParsePastedCallback(input, sessionState string) (code, state string, err er
 				}
 			}
 		}
+		// A URL-shaped paste without a code is a wrong paste (e.g. the
+		// authorize URL), not a bare code — fail instead of sending the
+		// whole URL to the token endpoint as the code.
 		if code == "" {
-			code = trimmed
+			return "", "", fmt.Errorf("zai: no authorization code found in callback URL")
 		}
 	} else if idx := strings.Index(trimmed, "#"); idx >= 0 {
 		code = strings.TrimSpace(trimmed[:idx])
@@ -440,7 +440,7 @@ func (a *ZaiAuth) MintKey(ctx context.Context, oauthAccessToken string) (string,
 		return "", fmt.Errorf("zai key provisioning failed: no organization/project on account")
 	}
 
-	keysURL := fmt.Sprintf("%s/api/biz/v1/organization/%s/projects/%s/api_keys", zaiAPIBaseEndpoint, organizationID, projectID)
+	keysURL := fmt.Sprintf("%s/api/biz/v1/organization/%s/projects/%s/api_keys", zaiAPIBaseEndpoint, url.PathEscape(organizationID), url.PathEscape(projectID))
 	listRaw, err := a.getBizJSON(ctx, keysURL, bizToken)
 	if err != nil {
 		return "", fmt.Errorf("zai api key list: %w", err)

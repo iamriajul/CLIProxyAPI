@@ -147,7 +147,9 @@ short-lived token; the business-API sequence (biz login, default
 org/project, find-or-create cli-proxy-api key, copy secret) mints the
 durable id.secret key stored as the credential. GLM lanes ride Anthropic by
 default with glm-5.3-flash on the OpenAI coding lane; the key is sent
-verbatim (Z.AI rejects Bearer). No refresh: minted keys are durable.
+verbatim on every path (Z.AI rejects Bearer, which the shared Claude
+delegation would otherwise stamp — so the Anthropic lanes run natively, not
+delegated). No refresh: minted keys are durable.
 
 ```bash
 grep -q "zai-auth-url" internal/api/server_management.go
