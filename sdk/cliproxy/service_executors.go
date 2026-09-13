@@ -295,6 +295,7 @@ func baselineExecutorAuths() []*coreauth.Auth {
 		"kimi",
 		"kimi-ai",
 		"kimi.ai",
+		"opencode",
 		"xai",
 		"copilot",
 		"devin",
@@ -395,6 +396,8 @@ func (s *Service) registerExecutorForAuth(a *coreauth.Auth, forceReplace bool) {
 		s.registerExecutor(executor.NewClaudeExecutor(cfg))
 	case "kimi", "kimi-ai", "kimi.ai", "kimi.com":
 		s.registerExecutor(executor.NewKimiExecutor(cfg))
+	case "opencode", "opencode-go", "opencode_go":
+		s.registerExecutor(executor.NewOpenCodeExecutor(cfg))
 	case "xai":
 		if !forceReplace {
 			existingExecutor, hasExecutor := s.ownedExecutor("xai")
