@@ -135,3 +135,23 @@ go test ./internal/auth/opencode/...
 go test ./internal/runtime/executor/ -run 'TestOpencode|TestMuseHarnessMatrix'
 go test ./internal/registry/ -run TestGetOpencodeModelsCoverGatewayLanes
 ```
+
+## zai-oauth
+
+**Z.AI GLM Coding Plan OAuth (browser code + provisioned durable key)**
+
+Z.AI allowlists only the zcode:// native-scheme callback, so login is
+authorize-in-browser plus paste-back through the generic oauth-callback
+endpoint (same UX as the xAI manual flow). The token exchange yields a
+short-lived token; the business-API sequence (biz login, default
+org/project, find-or-create cli-proxy-api key, copy secret) mints the
+durable id.secret key stored as the credential. GLM lanes ride Anthropic by
+default with glm-5.3-flash on the OpenAI coding lane; the key is sent
+verbatim (Z.AI rejects Bearer). No refresh: minted keys are durable.
+
+```bash
+grep -q "zai-auth-url" internal/api/server_management.go
+go test ./internal/auth/zai/...
+go test ./internal/runtime/executor/ -run 'TestZai|TestMuseHarnessMatrix'
+go test ./internal/registry/ -run TestGetOpencodeModelsCoverGatewayLanes
+```
