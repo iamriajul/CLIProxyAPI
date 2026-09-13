@@ -149,11 +149,14 @@ durable id.secret key stored as the credential. GLM lanes ride Anthropic by
 default with glm-5.3-flash on the OpenAI coding lane; the key is sent
 verbatim on every path (Z.AI rejects Bearer, which the shared Claude
 delegation would otherwise stamp — so the Anthropic lanes run natively, not
-delegated). No refresh: minted keys are durable.
+delegated). Dashboard keys paste via POST /v0/management/zai/import
+(validated with a minimal coding-lane completion, same key shape, identical
+routing and quota). No refresh: minted keys are durable.
 
 ```bash
 grep -q "zai-auth-url" internal/api/server_management.go
+grep -q "zai/import" internal/api/server_management.go
 go test ./internal/auth/zai/...
-go test ./internal/runtime/executor/ -run 'TestZai|TestMuseHarnessMatrix'
-go test ./internal/registry/ -run TestGetOpencodeModelsCoverGatewayLanes
+go test ./internal/runtime/executor/ -run 'TestZai'
+go test ./internal/registry/ -run TestGetZaiModelsCoverCodingPlan
 ```

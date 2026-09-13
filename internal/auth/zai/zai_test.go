@@ -181,3 +181,44 @@ func TestCredentialFileName(t *testing.T) {
 		t.Fatalf("name = %q", got)
 	}
 }
+
+func TestValidateKey(t *testing.T) {
+	var gotAuth, gotModel string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		gotModel, _ = body["model"].(string)
+		if !strings.HasSuffix(r.URL.Path, "/chat/completions") {
+			t.Errorf("path = %q, want */chat/completions", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{}})
+	}))
+	defer server.Close()
+	oldEndpoint := zaiCodingValidateEndpoint
+	zaiCodingValidateEndpoint = server.URL
+	defer func() { zaiCodingValidateEndpoint = oldEndpoint }()
+
+	if err := NewZaiAuth(nil).ValidateKey(context.Background(), "ak-1.sk-2"); err != nil {
+		t.Fatalf("ValidateKey err = %v", err)
+	}
+	if gotAuth != "ak-1.sk-2" {
+		t.Fatalf("Authorization = %q, want raw key without Bearer", gotAuth)
+	}
+	if gotModel != "glm-5.2" {
+		t.Fatalf("validation model = %q, want glm-5.2", gotModel)
+	}
+
+	denied := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer denied.Close()
+	zaiCodingValidateEndpoint = denied.URL
+	if err := NewZaiAuth(nil).ValidateKey(context.Background(), "bad"); err == nil {
+		t.Fatalf("expected rejection for 401")
+	}
+	if err := NewZaiAuth(nil).ValidateKey(context.Background(), ""); err == nil {
+		t.Fatalf("expected error for empty key")
+	}
+}

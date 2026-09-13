@@ -182,6 +182,7 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.POST("/auth-files/refresh", s.mgmt.RefreshAuthFiles)
 		mgmt.POST("/vertex/import", s.mgmt.ImportVertexCredential)
 		mgmt.POST("/opencode/import", s.mgmt.ImportOpenCodeKey)
+		mgmt.POST("/zai/import", s.mgmt.ImportZaiKey)
 
 		mgmt.GET("/anthropic-auth-url", s.mgmt.RequestAnthropicToken)
 		mgmt.GET("/codex-auth-url", s.mgmt.RequestCodexToken)

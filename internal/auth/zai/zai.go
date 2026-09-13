@@ -54,6 +54,9 @@ var (
 	zaiTokenEndpoint         = ZaiTokenURL
 	zaiBusinessLoginEndpoint = ZaiBusinessLoginURL
 	zaiAPIBaseEndpoint       = ZaiAPIBaseURL
+	// zaiCodingValidateEndpoint is the lane used to validate pasted dashboard
+	// keys (mirrors the reference chat-completions check with glm-5.2).
+	zaiCodingValidateEndpoint = ZaiOpenAIBaseURL
 )
 
 // RedirectURI returns the OAuth callback URI, honoring an env override for
@@ -514,6 +517,52 @@ func (a *ZaiAuth) CreateTokenStorage(bundle *AuthBundle) *TokenStorage {
 		UserID:      strings.TrimSpace(bundle.UserID),
 		AuthKind:    "oauth",
 	}
+}
+
+// ValidateKey checks a pasted dashboard API key with a minimal chat
+// completion on the coding lane. The key goes out verbatim, like inference.
+func (a *ZaiAuth) ValidateKey(ctx context.Context, apiKey string) error {
+	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" {
+		return fmt.Errorf("zai: api key is required")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"model":      "glm-5.2",
+		"messages":   []any{map[string]any{"role": "user", "content": "hi"}},
+		"max_tokens": 1,
+		"stream":     false,
+	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, zaiCodingValidateEndpoint+"/chat/completions", bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("zai: create validation request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", apiKey)
+
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("zai: validation request failed: %w", err)
+	}
+	defer func() {
+		if errClose := resp.Body.Close(); errClose != nil {
+			log.Errorf("zai: close validation body error: %v", errClose)
+		}
+	}()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("zai: read validation response: %w", err)
+	}
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return fmt.Errorf("zai: api key rejected (status %d)", resp.StatusCode)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("zai: validation failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return nil
 }
 
 // ZaiCreds extracts the minted Z.AI key from auth metadata/attributes.
