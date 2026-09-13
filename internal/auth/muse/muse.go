@@ -34,6 +34,13 @@ const (
 	MuseModelsURL = MuseAPIBaseURL + "/models"
 	// MuseAPIVersion is sent as x-api-version on device, token, key, and model requests.
 	MuseAPIVersion = "1.0.0"
+	// UserAgent identifies Meta-bound requests as the official Muse client family.
+	// Measured basis: Meta's own launcher (api.meta.ai/muse-launcher.sh) sends
+	// muse-code/launcher-2 on every request. The bare family token below avoids
+	// fabricating a component/version we have not measured, while staying
+	// unmistakably inside the official family instead of leaking Go's transport
+	// default or a foreign harness identity.
+	UserAgent = "muse-code"
 	// DeviceCodeGrantType is the OAuth2 device authorization grant type (RFC 8628).
 	DeviceCodeGrantType = "urn:ietf:params:oauth:grant-type:device_code"
 
@@ -142,6 +149,7 @@ func (a *MuseAuth) StartDeviceFlow(ctx context.Context) (*DeviceCodeResponse, er
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("x-api-version", MuseAPIVersion)
+	req.Header.Set("User-Agent", UserAgent)
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
@@ -257,6 +265,7 @@ func (a *MuseAuth) exchangeDeviceCode(ctx context.Context, deviceCode string, in
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("x-api-version", MuseAPIVersion)
+	req.Header.Set("User-Agent", UserAgent)
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
@@ -350,6 +359,7 @@ func RequestMuseKeyWithClient(ctx context.Context, client *http.Client, accessTo
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-api-version", MuseAPIVersion)
+	req.Header.Set("User-Agent", UserAgent)
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 
 	resp, err := client.Do(req)

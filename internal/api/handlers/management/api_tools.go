@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/auth/muse"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/runtime/executor"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
@@ -281,6 +282,15 @@ func (h *Handler) resolveTokenForAuth(ctx context.Context, auth *coreauth.Auth, 
 	if strings.EqualFold(strings.TrimSpace(auth.Provider), "meta") {
 		token, errToken := h.resolveMetaToken(ctx, auth, requestProxyURL)
 		return token, errToken
+	}
+
+	// Muse files may store the credential as combined JSON holding both the
+	// account token and the minted key; api-call consumers (quota probes)
+	// need the account token, so unwrap it instead of returning the blob.
+	if provider := strings.ToLower(strings.TrimSpace(auth.Provider)); provider == "muse" || provider == "muse-code" || provider == "muse_code" {
+		if token := muse.ResolveMuseOAuthToken(auth.Metadata, auth.Attributes); token != "" {
+			return token, nil
+		}
 	}
 
 	return tokenValueForAuth(auth), nil
