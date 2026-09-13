@@ -175,3 +175,19 @@ the dashboard key page directly.
 grep -q "zai/import" internal/api/server_management.go
 go test ./internal/auth/zai/ -run TestValidateKey
 ```
+
+## muse-tool-names
+
+**Overlong tool names are aliased upstream and restored downstream**
+
+Meta rejects tool names over 64 chars (Claude Agent SDK mcp__ names reach
+68+), so the executor remaps non-compliant declarations, tool_choice, and
+history references to deterministic short aliases (head + hash, Codex-ID
+pattern) and restores originals in translated responses and stream chunks
+for every downstream format. Compliant requests pay nothing (nil map,
+passthrough).
+
+```bash
+grep -q remapMuseToolNames internal/runtime/executor/muse_executor.go
+go test ./internal/runtime/executor/ -run 'TestRemapMuse|TestRestore|TestMuse'
+```
