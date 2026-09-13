@@ -100,3 +100,18 @@ transport default. Per-credential `cloak_mode` (`auto` default, `always`,
 grep -q DisableMuseCloakMode internal/config/config.go
 go test ./internal/runtime/executor/ -run 'TestMuseHarnessMatrix|TestMuseCloakNeverKeepsTransportIdentity|TestMuseCloakAutoPassesNativeClient|TestResolveMuseCloakMode|TestDetectMuseNativeRequest|TestMuseShouldCloakContract|TestApplyMuseCloakHeaders'
 ```
+
+## muse-quota-probe
+
+**Management api-call resolves the Muse account token for quota probes**
+
+Muse files may store the credential as combined JSON; quota callers need the
+account token, not the blob. `resolveTokenForAuth` unwraps it via
+`ResolveMuseOAuthToken` for muse providers and otherwise behaves exactly as
+before, so the key endpoint doubles as the usage endpoint through the
+existing api-call proxy with no new routes.
+
+```bash
+grep -q ResolveMuseOAuthToken internal/api/handlers/management/api_tools.go
+go test ./internal/api/handlers/management/ -run TestResolveTokenForAuthUnwrapsMuseCombinedCredential
+```

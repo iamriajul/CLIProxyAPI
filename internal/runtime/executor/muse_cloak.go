@@ -10,11 +10,12 @@ import (
 )
 
 // museUserAgent is the neutral official-client fingerprint sent on Muse Model
-// API requests when cloaking. It names the client family without fabricating
-// version specifics, and replaces both Go's default transport UA and any
-// foreign-harness UA that would otherwise identify Claude Code, the Claude
-// Agent SDK, Codex, or other harnesses to Meta's server.
-const museUserAgent = "muse-code"
+// API requests when cloaking (see museauth.UserAgent for the measured basis).
+// It names the client family without fabricating version specifics, and
+// replaces both Go's default transport UA and any foreign-harness UA that
+// would otherwise identify Claude Code, the Claude Agent SDK, Codex, or other
+// harnesses to Meta's server.
+const museUserAgent = museauth.UserAgent
 
 // Muse cloak modes, mirroring the Claude cloak contract in miniature:
 //   - "auto" (default): cloak unless the downstream request is already a
