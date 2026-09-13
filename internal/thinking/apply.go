@@ -32,6 +32,7 @@ var nativeProviderAppliers = map[string]ProviderApplier{
 	"xai":         nil,
 	"opencode":    nil,
 	"opencode-go": nil,
+	"zai":         nil,
 }
 
 // pluginProviderAppliers maps plugin-owned provider names to their implementations.
@@ -553,6 +554,8 @@ func extractThinkingConfig(body []byte, provider string) ThinkingConfig {
 	case "kimi", "kimi-ai", "kimi.ai", "kimi.com":
 		return extractKimiConfig(body)
 	case "opencode", "opencode-go", "opencode_go":
+		return extractOpenAIConfig(body)
+	case "zai":
 		return extractOpenAIConfig(body)
 	default:
 		return ThinkingConfig{}
