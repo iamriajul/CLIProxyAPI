@@ -1167,6 +1167,14 @@ func applyClaudeHeadersWithNativeProfile(
 			r.Header.Set(hdr, val)
 		}
 	}
+	// Forward the OpenCode Go session header on non-Anthropic upstreams (e.g. the
+	// Zen Go gateway's Claude-protocol lanes). First-party Anthropic is excluded
+	// so it never sees a gateway-specific header.
+	if !isAnthropicBase {
+		if val := helps.HeaderValueCaseInsensitive(incomingHeaders, "x-opencode-session"); val != "" {
+			r.Header.Set("x-opencode-session", val)
+		}
+	}
 	// Per-request UUID, matches Claude Code's x-client-request-id for first-party API.
 	// identityHeader prefers the incoming value for a confirmed client, so a confirmed
 	// helper keeps its own native request ID and this fresh UUID only covers a caller

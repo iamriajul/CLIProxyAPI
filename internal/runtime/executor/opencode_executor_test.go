@@ -193,3 +193,55 @@ func TestOpencodeMissingKeyUnauthorized(t *testing.T) {
 		t.Fatalf("expected unauthorized without key")
 	}
 }
+
+func TestOpencodeForwardsIncomingSessionHeader(t *testing.T) {
+	var upstreamSession string
+	ctx := context.WithValue(context.Background(), "cliproxy.roundtripper", opencodeRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		upstreamSession = req.Header.Get("x-opencode-session")
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(opencodeChatFixture)),
+		}, nil
+	}))
+
+	executor := NewOpenCodeExecutor(&config.Config{})
+	headers := http.Header{}
+	headers.Set("x-opencode-session", "sess-downstream-123")
+	_, err := executor.Execute(ctx, opencodeTestAuth(), cliproxyexecutor.Request{
+		Model:   "glm-5.2",
+		Payload: []byte(`{"model":"glm-5.2","messages":[{"role":"user","content":"hi"}]}`),
+	}, cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatOpenAI, Headers: headers})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if upstreamSession != "sess-downstream-123" {
+		t.Fatalf("x-opencode-session = %q, want passthrough sess-downstream-123", upstreamSession)
+	}
+}
+
+func TestOpencodeSynthesizesSessionHeader(t *testing.T) {
+	var upstreamSession string
+	ctx := context.WithValue(context.Background(), "cliproxy.roundtripper", opencodeRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		upstreamSession = req.Header.Get("x-opencode-session")
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(opencodeChatFixture)),
+		}, nil
+	}))
+
+	executor := NewOpenCodeExecutor(&config.Config{})
+	headers := http.Header{}
+	headers.Set("X-Claude-Code-Session-Id", "claude-sess-456")
+	_, err := executor.Execute(ctx, opencodeTestAuth(), cliproxyexecutor.Request{
+		Model:   "glm-5.2",
+		Payload: []byte(`{"model":"glm-5.2","messages":[{"role":"user","content":"hi"}]}`),
+	}, cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatClaude, Headers: headers})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if strings.TrimSpace(upstreamSession) == "" {
+		t.Fatalf("x-opencode-session should be synthesized from Claude session, got empty")
+	}
+}
