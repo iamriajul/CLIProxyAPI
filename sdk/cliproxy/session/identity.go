@@ -354,6 +354,7 @@ func hasExplicitSession(headers map[string][]string, payload []byte) bool {
 		"X-Codex-Turn-Metadata",
 		"X-Openai-Subagent",
 		"X-Http-Session-Id",
+		"X-Opencode-Session",
 		"X-Session-ID",
 		"X-Session-Affinity",
 		"X-Parent-Session-ID",
