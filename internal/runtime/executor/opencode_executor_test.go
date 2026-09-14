@@ -241,7 +241,7 @@ func TestOpencodeSynthesizesSessionHeader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if strings.TrimSpace(upstreamSession) == "" {
-		t.Fatalf("x-opencode-session should be synthesized from Claude session, got empty")
+	if upstreamSession != "claude:claude-sess-456" {
+		t.Fatalf("x-opencode-session = %q, want canonical claude:claude-sess-456 fallback", upstreamSession)
 	}
 }

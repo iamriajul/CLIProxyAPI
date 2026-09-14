@@ -437,7 +437,7 @@ func opencodeIncomingSessionID(headers http.Header) string {
 	if headers == nil {
 		return ""
 	}
-	return cliproxysession.NormalizeExplicitID(headers.Get("x-opencode-session"))
+	return cliproxysession.NormalizeExplicitID(helps.HeaderValueCaseInsensitive(headers, "x-opencode-session"))
 }
 
 // opencodeUpstreamSessionID resolves the session ID sent upstream to the Zen Go

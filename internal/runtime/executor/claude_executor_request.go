@@ -26,6 +26,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/util"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executor"
+	cliproxysession "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/session"
 	log "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -1172,7 +1173,9 @@ func applyClaudeHeadersWithNativeProfile(
 	// so it never sees a gateway-specific header.
 	if !isAnthropicBase {
 		if val := helps.HeaderValueCaseInsensitive(incomingHeaders, "x-opencode-session"); val != "" {
-			r.Header.Set("x-opencode-session", val)
+			if normalized := cliproxysession.NormalizeExplicitID(val); normalized != "" {
+				r.Header.Set("x-opencode-session", normalized)
+			}
 		}
 	}
 	// Per-request UUID, matches Claude Code's x-client-request-id for first-party API.
