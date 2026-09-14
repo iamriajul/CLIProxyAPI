@@ -26,6 +26,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
+	cliproxysession "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/session"
 	log "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -1400,6 +1401,16 @@ func applyClaudeHeadersWithNativeProfile(
 		} {
 			if val := helps.HeaderValueCaseInsensitive(incomingHeaders, hdr); val != "" {
 				r.Header.Set(hdr, val)
+			}
+		}
+	}
+	// Forward the OpenCode Go session header on non-Anthropic upstreams (e.g. the
+	// Zen Go gateway's Claude-protocol lanes). First-party Anthropic is excluded
+	// so it never sees a gateway-specific header.
+	if !isAnthropicBase {
+		if val := helps.HeaderValueCaseInsensitive(incomingHeaders, "x-opencode-session"); val != "" {
+			if normalized := cliproxysession.NormalizeExplicitID(val); normalized != "" {
+				r.Header.Set("x-opencode-session", normalized)
 			}
 		}
 	}
