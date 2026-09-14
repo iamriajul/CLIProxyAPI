@@ -85,7 +85,7 @@ func (object sessionObject) Get(path string) gjson.Result {
 //  2. Claude Code metadata.user_id session
 //  3. Session-Id / Session_id (Codex and compatible clients)
 //  4. X-Http-Session-Id (Antigravity CLI)
-//  5. X-Session-ID / X-Session-Affinity / X-Slot-Session-Id
+//  5. X-Opencode-Session / X-Session-ID / X-Session-Affinity / X-Slot-Session-Id
 //  6. X-Conversation-Id / X-Thread-Id / X-Client-Request-Id
 //  7. Gemini cachedContent
 //  8. OpenAI thread_id
@@ -473,6 +473,30 @@ func ExtractSessionInfo(headers http.Header, payload []byte, metadata map[string
 	}
 
 	// 5. OpenCode / Pi Slot / Task / Generic Headers
+	if sid := sessionHeaderValue(headers, "X-Opencode-Session"); sid != "" {
+		info.ClientType = "opencode"
+		info.SessionID = "affinity:" + sid
+		parentAffinity := sessionHeaderValue(headers, "X-Parent-Session-Affinity")
+		if parentAffinity == "" {
+			parentAffinity = sessionHeaderValue(headers, "X-Parent-Session-ID")
+		}
+		if parentAffinity == "" {
+			parentAffinity = sessionHeaderValue(headers, "X-Parent-ID")
+		}
+		if parentAffinity == "" {
+			parentAffinity = sessionHeaderValue(headers, "X-Parent-Id")
+		}
+		if parentAffinity != "" && parentAffinity != sid {
+			info.ParentSessionID = "affinity:" + parentAffinity
+			info.AgentName = "subagent"
+		} else if parentCandidate != "" && parentCandidate != sid {
+			info.ParentSessionID = "affinity:" + parentCandidate
+			info.AgentName = "subagent"
+		} else {
+			info.AgentName = "main"
+		}
+		return finalizeSessionInfo(info)
+	}
 	if sid := sessionHeaderValue(headers, "X-Session-ID"); sid != "" {
 		info.ClientType = "generic"
 		info.SessionID = "header:" + sid
