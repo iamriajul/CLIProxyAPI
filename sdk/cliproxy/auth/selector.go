@@ -1590,7 +1590,7 @@ func CanonicalSessionID(headers http.Header, payload []byte, metadata map[string
 //  1. X-Claude-Code-Session-Id
 //  2. Claude Code metadata.user_id session
 //  3. Session-Id / Session_id (Codex and compatible clients)
-//  4. X-Session-ID
+//  4. X-Opencode-Session / X-Session-ID
 //  5. X-Session-Affinity (OpenCode)
 //  6. X-Client-Request-Id (pi Responses)
 //  7. session_id / sessionId
