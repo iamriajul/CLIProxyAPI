@@ -18,6 +18,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/util"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executor"
+	cliproxysession "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/session"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v7/sdk/translator"
 	log "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
@@ -103,6 +104,7 @@ func (e *OpenCodeExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth,
 	if from.String() == "claude" && opencodeUpstreamRoute(req.Model) == "anthropic" {
 		e.ensureAttributes(auth)
 		auth.Attributes["base_url"] = opencodeAnthropicBaseURL(auth)
+		ensureOpencodeSessionHeader(&opts, sessionPayloadForOptions(req, opts))
 		return e.ClaudeExecutor.Execute(ctx, auth, req, opts)
 	}
 	if from == sdktranslator.FormatOpenAIResponse {
@@ -150,11 +152,12 @@ func (e *OpenCodeExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth,
 		return resp, err
 	}
 	applyOpencodeHeaders(httpReq, token, false)
+	applyOpencodeSessionHeader(httpReq, opencodeUpstreamSessionID(opts.Headers, originalPayloadSource, opts.Metadata))
 	var attrs map[string]string
 	if auth != nil {
 		attrs = auth.Attributes
 	}
-	util.ApplyCustomHeadersFromAttrs(httpReq, attrs)
+	util.ApplyCustomHeadersFromAttrs(httpReq, attrs, opts.Headers)
 	var authID, authLabel, authType, authValue string
 	if auth != nil {
 		authID = auth.ID
@@ -215,6 +218,7 @@ func (e *OpenCodeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth
 	if from.String() == "claude" && opencodeUpstreamRoute(req.Model) == "anthropic" {
 		e.ensureAttributes(auth)
 		auth.Attributes["base_url"] = opencodeAnthropicBaseURL(auth)
+		ensureOpencodeSessionHeader(&opts, sessionPayloadForOptions(req, opts))
 		return e.ClaudeExecutor.ExecuteStream(ctx, auth, req, opts)
 	}
 	if from == sdktranslator.FormatOpenAIResponse {
@@ -266,11 +270,12 @@ func (e *OpenCodeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth
 		return nil, err
 	}
 	applyOpencodeHeaders(httpReq, token, true)
+	applyOpencodeSessionHeader(httpReq, opencodeUpstreamSessionID(opts.Headers, originalPayloadSource, opts.Metadata))
 	var attrs map[string]string
 	if auth != nil {
 		attrs = auth.Attributes
 	}
-	util.ApplyCustomHeadersFromAttrs(httpReq, attrs)
+	util.ApplyCustomHeadersFromAttrs(httpReq, attrs, opts.Headers)
 	var authID, authLabel, authType, authValue string
 	if auth != nil {
 		authID = auth.ID
@@ -418,6 +423,69 @@ func applyOpencodeHeaders(r *http.Request, token string, stream bool) {
 	r.Header.Set("Accept", "application/json")
 }
 
+// sessionPayloadForOptions returns the downstream payload used for session
+// resolution: the original request when preserved, else the current payload.
+func sessionPayloadForOptions(req cliproxyexecutor.Request, opts cliproxyexecutor.Options) []byte {
+	if len(opts.OriginalRequest) > 0 {
+		return opts.OriginalRequest
+	}
+	return req.Payload
+}
+
+// opencodeIncomingSessionID returns the downstream x-opencode-session value, if present.
+func opencodeIncomingSessionID(headers http.Header) string {
+	if headers == nil {
+		return ""
+	}
+	return cliproxysession.NormalizeExplicitID(helps.HeaderValueCaseInsensitive(headers, "x-opencode-session"))
+}
+
+// opencodeUpstreamSessionID resolves the session ID sent upstream to the Zen Go
+// gateway. It prefers the downstream x-opencode-session verbatim so prompt
+// caching stays aligned, and otherwise falls back to the canonical affinity
+// identity (explicit Claude/Codex/session signals, then derived/message-hash
+// identities) so requests without any session signal still route efficiently
+// instead of failing with upstream MissingSessionID.
+func opencodeUpstreamSessionID(headers http.Header, payload []byte, metadata map[string]any) string {
+	if v := opencodeIncomingSessionID(headers); v != "" {
+		return v
+	}
+	if id := strings.TrimSpace(cliproxyauth.CanonicalSessionID(headers, payload, metadata)); id != "" {
+		return id
+	}
+	return ""
+}
+
+// applyOpencodeSessionHeader sets x-opencode-session on the upstream request.
+func applyOpencodeSessionHeader(r *http.Request, sessionID string) {
+	if r == nil {
+		return
+	}
+	if strings.TrimSpace(sessionID) == "" {
+		return
+	}
+	r.Header.Set("x-opencode-session", strings.TrimSpace(sessionID))
+}
+
+// ensureOpencodeSessionHeader makes sure opts.Headers carries an x-opencode-session
+// value before delegating to the Claude executor on anthropic-routed lanes.
+func ensureOpencodeSessionHeader(opts *cliproxyexecutor.Options, payload []byte) {
+	if opts == nil {
+		return
+	}
+	if opencodeIncomingSessionID(opts.Headers) != "" {
+		return
+	}
+	sessionID := opencodeUpstreamSessionID(opts.Headers, payload, opts.Metadata)
+	if sessionID == "" {
+		return
+	}
+	if opts.Headers == nil {
+		opts.Headers = make(http.Header)
+	}
+	opts.Headers.Set("x-opencode-session", sessionID)
+}
+
 // opencodeBaseURL resolves the chat/responses gateway base (always /v1-suffixed).
 func opencodeBaseURL(auth *cliproxyauth.Auth) string {
 	if raw := strings.TrimSpace(opencodeauth.ResolveBaseURL(authMetadata(auth), authAttributes(auth))); raw != "" {
@@ -562,11 +630,12 @@ func (e *OpenCodeExecutor) executeResponses(ctx context.Context, auth *cliproxya
 		return resp, errNewRequest
 	}
 	applyOpencodeHeaders(httpReq, token, false)
+	applyOpencodeSessionHeader(httpReq, opencodeUpstreamSessionID(opts.Headers, sessionPayloadForOptions(req, opts), opts.Metadata))
 	var attrs map[string]string
 	if auth != nil {
 		attrs = auth.Attributes
 	}
-	util.ApplyCustomHeadersFromAttrs(httpReq, attrs)
+	util.ApplyCustomHeadersFromAttrs(httpReq, attrs, opts.Headers)
 
 	var authID, authLabel, authType, authValue string
 	if auth != nil {
@@ -668,11 +737,12 @@ func (e *OpenCodeExecutor) executeResponsesStream(ctx context.Context, auth *cli
 		return nil, errNewRequest
 	}
 	applyOpencodeHeaders(httpReq, token, true)
+	applyOpencodeSessionHeader(httpReq, opencodeUpstreamSessionID(opts.Headers, sessionPayloadForOptions(req, opts), opts.Metadata))
 	var attrs map[string]string
 	if auth != nil {
 		attrs = auth.Attributes
 	}
-	util.ApplyCustomHeadersFromAttrs(httpReq, attrs)
+	util.ApplyCustomHeadersFromAttrs(httpReq, attrs, opts.Headers)
 
 	var authID, authLabel, authType, authValue string
 	if auth != nil {
