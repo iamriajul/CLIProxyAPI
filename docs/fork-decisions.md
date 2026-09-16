@@ -23,26 +23,6 @@ protects. Changes confined to fork-owned files (no upstream counterpart, e.g.
 `.github/workflows/docker-ghcr.yml`) cannot conflict on sync and need no
 section.
 
-## muse-code-oauth
-
-**Muse Code subscription OAuth (muse-spark models)**
-
-Device-code login against `auth.meta.com` (client `1031625952748946`),
-subscription key mint at `api.meta.ai/muse-code/key`, durable `muse` auth
-files, native `muse` executor against `https://api.meta.ai/v1` with the
-mandatory `x-api-version` header, `muse-spark-*` model catalog, `muse`
-thinking levels, `muse-auth-url` management route, TUI entry, and
-`--muse-login` CLI. Upstream issue
-`router-for-me/CLIProxyAPI#5777`; drop this commit when upstream ships it.
-
-```bash
-go test ./internal/auth/muse/...
-go test ./internal/registry/ -run TestGetMuseModelsIncludesSparkFamily
-go test ./internal/runtime/executor/ -run 'TestMuseRequestToFormatMatchesWireProtocol|TestMusePrepareRequestAddsVersionAndKey|TestMusePrepareRequestCombinedCredential|TestMuseRefreshReusesMintedKey|TestNormalizeMuseToolsConvertsCustom'
-grep -q 'muse-auth-url' internal/api/server_management.go
-grep -q 'GetMuseModels' sdk/cliproxy/service_models.go
-```
-
 ## release-notes-cap
 **Fork release notes cap the changelog at 300 entries**
 
@@ -69,53 +49,6 @@ on every PR. It runs only where `dev` exists.
 grep -q "github.repository == 'router-for-me/CLIProxyAPI'" .github/workflows/auto-retarget-main-pr-to-dev.yml
 ```
 
-## muse-builtin-fallback
-
-**Muse models survive a remote catalog without a muse section**
-
-The startup updater replaces the embedded catalog wholesale with the remote
-`router-for-me/models` one, which ships no `muse` section — that silently
-unregisters every Muse credential (empty `/v1/models`, reported against the
-first fork release). The Spark family is upserted over the catalog entries
-(same pattern as `WithCodexBuiltins`/`WithXAIBuiltins`), so a missing or
-partial section can never drop Muse models.
-
-```bash
-grep -q WithMuseBuiltins internal/registry/model_definitions.go
-go test ./internal/registry/ -run 'TestGetMuseModelsFallsBackWhenCatalogSectionEmpty|TestGetMuseModelsMergesPartialCatalogSection'
-```
-
-## muse-cloak
-
-**Muse requests carry the official-client fingerprint in every harness**
-
-Claude Code, Agent SDK, Codex, Gemini CLI, and OpenAI-style clients all reach
-Muse subscriptions through OpenAI/Responses translation, and the upstream
-request is cloaked to the Muse client family (`User-Agent: muse-code` plus the
-mandatory `x-api-version`) instead of leaking the calling harness or Go's
-transport default. Per-credential `cloak_mode` (`auto` default, `always`,
-`never`) in the muse auth JSON, global `disable-muse-cloak-mode` kill-switch.
-
-```bash
-grep -q DisableMuseCloakMode internal/config/config.go
-go test ./internal/runtime/executor/ -run 'TestMuseHarnessMatrix|TestMuseCloakNeverKeepsTransportIdentity|TestMuseCloakAutoPassesNativeClient|TestResolveMuseCloakMode|TestDetectMuseNativeRequest|TestMuseShouldCloakContract|TestApplyMuseCloakHeaders'
-```
-
-## muse-quota-probe
-
-**Management api-call resolves the Muse account token for quota probes**
-
-Muse files may store the credential as combined JSON; quota callers need the
-account token, not the blob. `resolveTokenForAuth` unwraps it via
-`ResolveMuseOAuthToken` for muse providers and otherwise behaves exactly as
-before, so the key endpoint doubles as the usage endpoint through the
-existing api-call proxy with no new routes.
-
-```bash
-grep -q ResolveMuseOAuthToken internal/api/handlers/management/api_tools.go
-go test ./internal/api/handlers/management/ -run TestResolveTokenForAuthUnwrapsMuseCombinedCredential
-```
-
 ## opencode-provider
 
 **OpenCode Zen Go gateway provider (API-key auth, tri-route executor)**
@@ -132,7 +65,7 @@ at build time) upserted as builtins so catalog refreshes cannot drop them.
 ```bash
 grep -q "opencode/import" internal/api/server_management.go
 go test ./internal/auth/opencode/...
-go test ./internal/runtime/executor/ -run 'TestOpencode|TestMuseHarnessMatrix'
+go test ./internal/runtime/executor/ -run 'TestOpencode'
 go test ./internal/registry/ -run TestGetOpencodeModelsCoverGatewayLanes
 ```
 
