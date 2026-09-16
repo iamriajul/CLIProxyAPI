@@ -1,7 +1,7 @@
 // Code generated from the oh-my-pi model catalog (extracted 2026-09-13).
 // DO NOT EDIT BY HAND — regenerate from the reference dump. It mirrors the
 // models.json sections so gateway credentials stay routable when the remote
-// catalog carries no matching section (same pattern as the Muse builtins).
+// catalog carries no matching section (same pattern as the Codex/XAI builtins).
 package registry
 
 import "strings"
