@@ -59,8 +59,10 @@ gateway models endpoint and saves a type-opencode auth file. The executor
 routes per model per the reference catalog: Claude-protocol lanes through the
 Claude executor, Responses-native lanes through /v1/responses, everything
 else through OpenAI chat completions; gateway lanes that reject tool_choice
-have it stripped. Models ride a static snapshot (live Zen lane list merged
-at build time) upserted as builtins so catalog refreshes cannot drop them.
+have it stripped. Models ride live models.dev `opencode-go` sections
+refreshed every 3 hours (was: a static oh-my-pi snapshot merged at build
+time — correct at integration, but already drifting within days); the
+embedded catalog plus builtins stay as the offline fallback.
 
 ```bash
 grep -q "opencode/import" internal/api/server_management.go
@@ -76,10 +78,11 @@ go test ./internal/registry/ -run TestGetOpencodeModelsCoverGatewayLanes
 Z.AI allowlists only the zcode:// native-scheme callback, so login is
 authorize-in-browser plus paste-back through the generic oauth-callback
 endpoint (same UX as the xAI manual flow). The token exchange yields a
-short-lived token; the business-API sequence (biz login, default
-org/project, find-or-create cli-proxy-api key, copy secret) mints the
 durable id.secret key stored as the credential. GLM lanes ride Anthropic by
-default with glm-5.3-flash on the OpenAI coding lane; the key is sent
+default with glm-5.3-flash on the OpenAI coding lane; lane windows and
+capabilities ride live models.dev `zai-coding-plan` sections refreshed every
+3 hours (was: a static 16-model oh-my-pi snapshot mixing pay-per-token
+families — the plan itself has 7 lanes); the key is sent
 verbatim on every path (Z.AI rejects Bearer, which the shared Claude
 delegation would otherwise stamp — so the Anthropic lanes run natively, not
 delegated). Dashboard keys paste via POST /v0/management/zai/import
@@ -107,4 +110,22 @@ the dashboard key page directly.
 ```bash
 grep -q "zai/import" internal/api/server_management.go
 go test ./internal/auth/zai/ -run TestValidateKey
+```
+
+## modelsdev-catalog
+
+**OpenCode Go + Z.AI model data rides live models.dev sections**
+
+`internal/registry/modelsdev*.go` fetches `https://models.dev/api.json`
+every 3 hours, filters exactly `opencode-go` and `zai-coding-plan`
+(never Zen `opencode` or pay-per-token `zai`), and overlays the live
+sections over the embedded catalog plus builtins. New upstream lanes
+appear with no repo work; `go run ./cmd/fetch_modelsdev_models`
+refreshes the offline snapshots. Runs under Home mode, skipped by
+`--local-model`.
+
+```bash
+go test ./internal/registry/ -run 'TestConvertModelsDevCatalog|TestModelsDevLive|TestTryRefreshModelsDev|TestGetOpencodeModelsCoverGatewayLanes|TestGetZaiModelsCoverCodingPlan|TestModelsDevLiveBeatsFallback'
+go test ./cmd/fetch_modelsdev_models/
+go test ./cmd/server/ -run 'TestModelCatalogUpdaterPlan'
 ```
