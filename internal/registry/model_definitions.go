@@ -246,22 +246,26 @@ func GetXAIModels() []*ModelInfo {
 
 // GetOpencodeModels returns OpenCode Zen Go gateway model definitions.
 // Live models.dev data wins when present; the embedded catalog plus
-// builtins stay as the offline fallback.
+// builtins stay as the offline fallback. Fallback entries carry the
+// converter's Explicit flags (restored after JSON load) so harness
+// constraints match the live overlay exactly.
 func GetOpencodeModels() []*ModelInfo {
 	if live := GetModelsDevLive("opencode"); len(live) > 0 {
 		return live
 	}
-	return WithOpencodeBuiltins(cloneModelInfos(getModels().Opencode))
+	return markModelsDevExplicit(WithOpencodeBuiltins(cloneModelInfos(getModels().Opencode)))
 }
 
 // GetZaiModels returns Z.AI GLM model definitions.
 // Live models.dev data wins when present; the embedded catalog plus
-// builtins stay as the offline fallback.
+// builtins stay as the offline fallback. Fallback entries carry the
+// converter's Explicit flags (restored after JSON load) so harness
+// constraints match the live overlay exactly.
 func GetZaiModels() []*ModelInfo {
 	if live := GetModelsDevLive("zai"); len(live) > 0 {
 		return live
 	}
-	return WithZaiBuiltins(cloneModelInfos(getModels().ZAI))
+	return markModelsDevExplicit(WithZaiBuiltins(cloneModelInfos(getModels().ZAI)))
 }
 
 // WithCodexBuiltins injects hard-coded Codex-only model definitions that should

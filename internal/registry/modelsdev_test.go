@@ -15,10 +15,14 @@ func loadModelsDevFixture(t *testing.T) []byte {
 }
 
 func TestConvertModelsDevCatalogGolden(t *testing.T) {
-	opencode, zai, err := ConvertModelsDevCatalog(loadModelsDevFixture(t))
+	sections, err := ConvertModelsDevCatalog(loadModelsDevFixture(t))
 	if err != nil {
 		t.Fatalf("ConvertModelsDevCatalog: %v", err)
 	}
+	if !sections.HasOpencode || !sections.HasZai {
+		t.Fatalf("presence = %v/%v, want true/true", sections.HasOpencode, sections.HasZai)
+	}
+	opencode, zai := sections.Opencode, sections.Zai
 	if len(opencode) != 2 || len(zai) != 2 {
 		t.Fatalf("got %d opencode / %d zai, want 2 / 2", len(opencode), len(zai))
 	}
@@ -103,30 +107,71 @@ func lvl(m *ModelInfo) []string {
 }
 
 func TestConvertModelsDevCatalogIgnoresZen(t *testing.T) {
-	opencode, zai, err := ConvertModelsDevCatalog(loadModelsDevFixture(t))
+	sections, err := ConvertModelsDevCatalog(loadModelsDevFixture(t))
 	if err != nil {
 		t.Fatalf("ConvertModelsDevCatalog: %v", err)
 	}
-	for _, m := range append(append([]*ModelInfo{}, opencode...), zai...) {
+	for _, m := range append(append([]*ModelInfo{}, sections.Opencode...), sections.Zai...) {
 		if m.ID == "zen-only-model" {
 			t.Fatal("Zen (opencode) model leaked into Go/plan output")
 		}
 	}
 }
 
-func TestConvertModelsDevCatalogMissingProviders(t *testing.T) {
-	if _, _, err := ConvertModelsDevCatalog([]byte(`{"other": {"models": {}}}`)); err == nil {
+func TestConvertModelsDevCatalogPresence(t *testing.T) {
+	if _, err := ConvertModelsDevCatalog([]byte(`{"other": {"models": {}}}`)); err == nil {
 		t.Fatal("expected error when neither provider key exists")
 	}
-	// One provider present is fine; the other comes back empty.
-	oc, zai, err := ConvertModelsDevCatalog([]byte(`{"opencode-go": {"models": {}}}`))
+	// A missing key reports absent with a nil slice — the store must keep
+	// previous data, never wipe it.
+	sections, err := ConvertModelsDevCatalog([]byte(`{"zai-coding-plan": {"models": {"glm-4.7": {"id": "glm-4.7", "limit": {"context": 1, "output": 1}}}}}`))
 	if err != nil {
 		t.Fatalf("single provider: %v", err)
 	}
-	if len(oc) != 0 || len(zai) != 0 {
-		t.Fatalf("got %d/%d, want 0/0", len(oc), len(zai))
+	if sections.HasOpencode || sections.Opencode != nil {
+		t.Fatalf("opencode presence = %v/%v, want false/nil", sections.HasOpencode, sections.Opencode)
 	}
-	if _, _, err := ConvertModelsDevCatalog([]byte(`[]`)); err == nil {
+	if !sections.HasZai || len(sections.Zai) != 1 {
+		t.Fatalf("zai presence = %v/%d, want true/1", sections.HasZai, len(sections.Zai))
+	}
+	// A present-but-empty section converts cleanly; storing or publishing
+	// it is the caller's refusal (store keeps previous, CLI fails loudly).
+	sections, err = ConvertModelsDevCatalog([]byte(`{"opencode-go": {"models": {}}}`))
+	if err != nil {
+		t.Fatalf("empty section: %v", err)
+	}
+	if !sections.HasOpencode || len(sections.Opencode) != 0 {
+		t.Fatalf("empty opencode presence = %v/%d, want true/0", sections.HasOpencode, len(sections.Opencode))
+	}
+	if _, err := ConvertModelsDevCatalog([]byte(`[]`)); err == nil {
 		t.Fatal("expected error for non-object payload")
+	}
+}
+
+func TestConvertModelsDevCatalogDedupsIDs(t *testing.T) {
+	sections, err := ConvertModelsDevCatalog([]byte(`{"opencode-go": {"models": {
+		"b-key": {"id": "same", "name": "Second", "limit": {"context": 2, "output": 2}},
+		"a-key": {"id": "same", "name": "First", "limit": {"context": 1, "output": 1}}
+	}}}`))
+	if err != nil {
+		t.Fatalf("ConvertModelsDevCatalog: %v", err)
+	}
+	if len(sections.Opencode) != 1 {
+		t.Fatalf("got %d models, want 1 deduped", len(sections.Opencode))
+	}
+	if got := sections.Opencode[0].DisplayName; got != "First" {
+		t.Fatalf("dedup winner = %q, want First (sorted-key order)", got)
+	}
+}
+
+func TestModelsDevReleaseUnixFormats(t *testing.T) {
+	if got := modelsDevReleaseUnix("2026-06-13"); got != 1781308800 {
+		t.Fatalf("date-only = %d", got)
+	}
+	if got := modelsDevReleaseUnix("2026-06-13T00:00:00Z"); got != 1781308800 {
+		t.Fatalf("rfc3339 = %d", got)
+	}
+	if got := modelsDevReleaseUnix("not-a-date"); got != 0 {
+		t.Fatalf("garbage = %d, want 0", got)
 	}
 }
