@@ -121,6 +121,7 @@ func TestModelCatalogUpdaterPlan(t *testing.T) {
 		wantModels      bool
 		wantCodexClient bool
 		wantDevin       bool
+		wantModelsDev   bool
 	}{
 		{
 			name:            "normal CPA refreshes all catalogs",
@@ -129,14 +130,16 @@ func TestModelCatalogUpdaterPlan(t *testing.T) {
 			wantModels:      true,
 			wantCodexClient: true,
 			wantDevin:       true,
+			wantModelsDev:   true,
 		},
 		{
-			name:            "home mode keeps models.json local and refreshes codex templates and devin",
+			name:            "home mode keeps models.json local and refreshes codex templates, devin, and models.dev",
 			localModel:      false,
 			homeEnabled:     true,
 			wantModels:      false,
 			wantCodexClient: true,
 			wantDevin:       true,
+			wantModelsDev:   true,
 		},
 		{
 			name:            "local-model disables all remote catalogs",
@@ -145,6 +148,7 @@ func TestModelCatalogUpdaterPlan(t *testing.T) {
 			wantModels:      false,
 			wantCodexClient: false,
 			wantDevin:       false,
+			wantModelsDev:   false,
 		},
 		{
 			name:            "local-model disables all remote catalogs even under home",
@@ -153,14 +157,15 @@ func TestModelCatalogUpdaterPlan(t *testing.T) {
 			wantModels:      false,
 			wantCodexClient: false,
 			wantDevin:       false,
+			wantModelsDev:   false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotModels, gotCodex, gotDevin := modelCatalogUpdaterPlan(tt.localModel, tt.homeEnabled)
-			if gotModels != tt.wantModels || gotCodex != tt.wantCodexClient || gotDevin != tt.wantDevin {
-				t.Fatalf("modelCatalogUpdaterPlan(%v, %v) = (%v, %v, %v), want (%v, %v, %v)",
-					tt.localModel, tt.homeEnabled, gotModels, gotCodex, gotDevin, tt.wantModels, tt.wantCodexClient, tt.wantDevin)
+			gotModels, gotCodex, gotDevin, gotModelsDev := modelCatalogUpdaterPlan(tt.localModel, tt.homeEnabled)
+			if gotModels != tt.wantModels || gotCodex != tt.wantCodexClient || gotDevin != tt.wantDevin || gotModelsDev != tt.wantModelsDev {
+				t.Fatalf("modelCatalogUpdaterPlan(%v, %v) = (%v, %v, %v, %v), want (%v, %v, %v, %v)",
+					tt.localModel, tt.homeEnabled, gotModels, gotCodex, gotDevin, gotModelsDev, tt.wantModels, tt.wantCodexClient, tt.wantDevin, tt.wantModelsDev)
 			}
 		})
 	}
