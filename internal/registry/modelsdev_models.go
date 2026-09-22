@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+
+	log "github.com/sirupsen/logrus"
 )
 
 // modelsdevLiveStore holds the last successfully converted models.dev
@@ -44,9 +46,13 @@ func GetModelsDevRevision() uint64 {
 
 // loadModelsDevLiveFromBytes converts api.json bytes and stores the live
 // sections. It returns the provider names whose sections changed
-// ("opencode" and/or "zai").
+// ("opencode" and/or "zai"). Update contract: only sections whose provider
+// key is present AND non-empty are stored — a missing or empty section keeps
+// the previous live data, so an upstream glitch can never wipe last-good
+// state or fire a spurious refresh. revision advances only on semantic
+// change, never on untracked byte churn.
 func loadModelsDevLiveFromBytes(data []byte, source string) ([]string, error) {
-	opencode, zai, err := ConvertModelsDevCatalog(data)
+	sections, err := ConvertModelsDevCatalog(data)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", source, err)
 	}
@@ -58,16 +64,26 @@ func loadModelsDevLiveFromBytes(data []byte, source string) ([]string, error) {
 		return nil, nil
 	}
 	var changed []string
-	if modelSectionChanged(modelsdevCatalogStore.opencode, opencode) {
-		changed = append(changed, "opencode")
+	if sections.HasOpencode && len(sections.Opencode) > 0 {
+		if modelSectionChanged(modelsdevCatalogStore.opencode, sections.Opencode) {
+			modelsdevCatalogStore.opencode = sections.Opencode
+			changed = append(changed, "opencode")
+		}
+	} else if sections.HasOpencode {
+		log.Warnf("%s: opencode-go section empty, keeping previous live data", source)
 	}
-	if modelSectionChanged(modelsdevCatalogStore.zai, zai) {
-		changed = append(changed, "zai")
+	if sections.HasZai && len(sections.Zai) > 0 {
+		if modelSectionChanged(modelsdevCatalogStore.zai, sections.Zai) {
+			modelsdevCatalogStore.zai = sections.Zai
+			changed = append(changed, "zai")
+		}
+	} else if sections.HasZai {
+		log.Warnf("%s: zai-coding-plan section empty, keeping previous live data", source)
 	}
-	modelsdevCatalogStore.opencode = opencode
-	modelsdevCatalogStore.zai = zai
 	modelsdevCatalogStore.rawJSON = clonedData
-	modelsdevCatalogStore.revision++
+	if len(changed) > 0 {
+		modelsdevCatalogStore.revision++
+	}
 	return changed, nil
 }
 
@@ -78,4 +94,23 @@ func resetModelsDevLiveForTest() {
 	modelsdevCatalogStore.opencode = nil
 	modelsdevCatalogStore.zai = nil
 	modelsdevCatalogStore.rawJSON = nil
+	modelsdevCatalogStore.revision = 0
+}
+
+// markModelsDevExplicit restores the converter's Explicit flags on
+// models.dev-derived entries whose flags were lost in JSON serialization
+// (Explicit* is json:"-"). The opencode/zai embedded sections and builtins
+// are 100% converter output, so every entry gets ExplicitInputModalities and
+// thinking entries get ExplicitThinking — matching the live overlay exactly.
+func markModelsDevExplicit(models []*ModelInfo) []*ModelInfo {
+	for _, m := range models {
+		if m == nil {
+			continue
+		}
+		m.ExplicitInputModalities = true
+		if m.Thinking != nil {
+			m.ExplicitThinking = true
+		}
+	}
+	return models
 }
