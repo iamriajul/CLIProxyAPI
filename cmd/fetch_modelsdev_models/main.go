@@ -35,21 +35,26 @@ const defaultModelsDevURL = "https://models.dev/api.json"
 
 func main() {
 	var apiURL, modelsJSONPath, builtinsDir string
-	var check bool
+	var check, allowEmpty bool
 	flag.StringVar(&apiURL, "api-url", defaultModelsDevURL, "models.dev catalog URL")
 	flag.StringVar(&modelsJSONPath, "models-json", filepath.Join("internal", "registry", "models", "models.json"), "models.json to update")
 	flag.StringVar(&builtinsDir, "builtins-dir", filepath.Join("internal", "registry"), "registry dir holding provider_builtins_*.go")
-	flag.BoolVar(&check, "check", false, "exit 1 when output differs; write nothing")
+	flag.BoolVar(&check, "check", false, "exit 1 when output differs; write nothing. Fetch failures and stale snapshots both exit 1 with distinct error: prefixes (fetch vs stale snapshots)")
+	flag.BoolVar(&allowEmpty, "allow-empty", false, "permit writing empty opencode/zai sections (default refuses: an empty section means upstream glitch, and clobbering the offline fallback is unrecoverable by refresh)")
 	flag.Parse()
 
 	data, err := fetchCatalog(apiURL)
 	if err != nil {
 		fatalf("fetch: %v", err)
 	}
-	opencode, zai, err := registry.ConvertModelsDevCatalog(data)
+	sections, err := registry.ConvertModelsDevCatalog(data)
 	if err != nil {
 		fatalf("convert: %v", err)
 	}
+	if err := checkSectionsNonEmpty(sections, allowEmpty); err != nil {
+		fatalf("%v", err)
+	}
+	opencode, zai := sections.Opencode, sections.Zai
 	stamp := time.Now().UTC().Format(time.RFC3339)
 
 	modelsJSON, err := os.ReadFile(modelsJSONPath)
@@ -109,16 +114,55 @@ func main() {
 		return
 	}
 
-	if err := os.WriteFile(modelsJSONPath, updatedJSON, 0o644); err != nil {
-		fatalf("write %s: %v", modelsJSONPath, err)
-	}
-	if err := os.WriteFile(opencodePath, []byte(updatedOpencode), 0o644); err != nil {
-		fatalf("write %s: %v", opencodePath, err)
-	}
-	if err := os.WriteFile(zaiPath, []byte(updatedZai), 0o644); err != nil {
-		fatalf("write %s: %v", zaiPath, err)
-	}
+	writeFileAtomic(modelsJSONPath, updatedJSON)
+	writeFileAtomic(opencodePath, []byte(updatedOpencode))
+	writeFileAtomic(zaiPath, []byte(updatedZai))
 	fmt.Printf("refreshed %s (%d opencode, %d zai models)\n", modelsJSONPath, len(opencode), len(zai))
+}
+
+// checkSectionsNonEmpty refuses to publish empty provider sections: an empty
+// section means the upstream payload dropped a key or a lane family, and the
+// CLI (unlike the runtime overlay, which keeps last-good data) would
+// permanently clobber the checked-in offline fallback.
+func checkSectionsNonEmpty(sections registry.ModelsDevSections, allowEmpty bool) error {
+	if allowEmpty {
+		return nil
+	}
+	if !sections.HasOpencode || len(sections.Opencode) == 0 {
+		return fmt.Errorf("refusing to clobber: opencode-go section missing or empty (pass --allow-empty to override)")
+	}
+	if !sections.HasZai || len(sections.Zai) == 0 {
+		return fmt.Errorf("refusing to clobber: zai-coding-plan section missing or empty (pass --allow-empty to override)")
+	}
+	return nil
+}
+
+// writeFileAtomic writes via temp file plus rename so a crash or ENOSPC
+// between the three snapshot writes can never leave a split tree behind:
+// readers always see the old or the new file, never a truncation.
+func writeFileAtomic(path string, data []byte) {
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
+	if err != nil {
+		fatalf("write %s: %v", path, err)
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		fatalf("write %s: %v", path, err)
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		fatalf("write %s: %v", path, err)
+	}
+	if err := os.Chmod(tmpName, 0o644); err != nil {
+		_ = os.Remove(tmpName)
+		fatalf("write %s: %v", path, err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		_ = os.Remove(tmpName)
+		fatalf("write %s: %v", path, err)
+	}
 }
 
 func fatalf(format string, args ...any) {
@@ -151,7 +195,17 @@ func fetchCatalog(apiURL string) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("upstream returned status %d", resp.StatusCode)
 	}
-	return io.ReadAll(io.LimitReader(resp.Body, 9<<20))
+	// Same cap as the runtime updater (registry.MaxModelsDevSize); the +1
+	// detects overflow so a truncated payload fails here instead of
+	// writing snapshots the updater would reject.
+	data, err := io.ReadAll(io.LimitReader(resp.Body, registry.MaxModelsDevSize+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > registry.MaxModelsDevSize {
+		return nil, fmt.Errorf("catalog exceeds %d bytes, rejecting", registry.MaxModelsDevSize)
+	}
+	return data, nil
 }
 
 // rewriteModelsJSON replaces only the opencode and zai top-level keys,
@@ -244,21 +298,30 @@ func rewriteBuiltinFile(src, providerID string, models []*registry.ModelInfo, st
 	buf.WriteString(renderBuiltinModels(models))
 	buf.WriteString("\n\t")
 	buf.WriteString(src[end:])
-	out := replaceHeaderStamp(buf.String(), providerID, stamp)
+	out, err := replaceHeaderStamp(buf.String(), providerID, stamp)
+	if err != nil {
+		return "", err
+	}
 	return out, nil
 }
 
-func replaceHeaderStamp(src, providerID, stamp string) string {
+func replaceHeaderStamp(src, providerID, stamp string) (string, error) {
 	lines := strings.Split(src, "\n")
+	var generated, doNotEdit bool
 	for i, line := range lines {
 		if strings.HasPrefix(line, "// Code generated from ") {
 			lines[i] = "// Code generated from models.dev (" + providerID + " provider, fetched " + stamp + ")."
+			generated = true
 		}
 		if strings.HasPrefix(line, "// DO NOT EDIT BY HAND") {
 			lines[i] = "// DO NOT EDIT BY HAND — regenerate with: go run ./cmd/fetch_modelsdev_models"
+			doNotEdit = true
 		}
 	}
-	return strings.Join(lines, "\n")
+	if !generated || !doNotEdit {
+		return "", fmt.Errorf("generated header lines missing (want // Code generated from ... and // DO NOT EDIT BY HAND)")
+	}
+	return strings.Join(lines, "\n"), nil
 }
 
 // extractFetchStamp returns the RFC3339 stamp embedded in a generated header
@@ -344,6 +407,15 @@ func renderBuiltinModels(models []*registry.ModelInfo) string {
 				fmt.Fprintf(&buf, "%q", param)
 			}
 			buf.WriteString("},\n")
+		}
+		// Explicit flags are json:"-" and never survive models.json; the
+		// generated builtins carry them so builtin-sourced entries constrain
+		// harnesses exactly like live overlay entries.
+		if m.ExplicitThinking {
+			buf.WriteString("\t\tExplicitThinking: true,\n")
+		}
+		if m.ExplicitInputModalities {
+			buf.WriteString("\t\tExplicitInputModalities: true,\n")
 		}
 		buf.WriteString("\t})\n")
 	}
