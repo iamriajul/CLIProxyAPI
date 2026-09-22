@@ -1,0 +1,351 @@
+// Command fetch_modelsdev_models refreshes the embedded models.dev-derived
+// snapshots: the opencode/zai sections of internal/registry/models/models.json
+// and the generated bodies of provider_builtins_opencode.go /
+// provider_builtins_zai.go. Route maps and hand-written helpers are preserved.
+//
+// Usage:
+//
+//	go run ./cmd/fetch_modelsdev_models [flags]
+//
+// Flags:
+//
+//	--api-url <url>       models.dev catalog URL (default: https://models.dev/api.json)
+//	--models-json <path>  models.json to update (default: internal/registry/models/models.json)
+//	--builtins-dir <dir>  registry dir holding provider_builtins_*.go (default: internal/registry)
+//	--check               exit 1 with a summary when output differs; write nothing
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"go/format"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/registry"
+)
+
+const defaultModelsDevURL = "https://models.dev/api.json"
+
+func main() {
+	var apiURL, modelsJSONPath, builtinsDir string
+	var check bool
+	flag.StringVar(&apiURL, "api-url", defaultModelsDevURL, "models.dev catalog URL")
+	flag.StringVar(&modelsJSONPath, "models-json", filepath.Join("internal", "registry", "models", "models.json"), "models.json to update")
+	flag.StringVar(&builtinsDir, "builtins-dir", filepath.Join("internal", "registry"), "registry dir holding provider_builtins_*.go")
+	flag.BoolVar(&check, "check", false, "exit 1 when output differs; write nothing")
+	flag.Parse()
+
+	data, err := fetchCatalog(apiURL)
+	if err != nil {
+		fatalf("fetch: %v", err)
+	}
+	opencode, zai, err := registry.ConvertModelsDevCatalog(data)
+	if err != nil {
+		fatalf("convert: %v", err)
+	}
+	stamp := time.Now().UTC().Format(time.RFC3339)
+
+	modelsJSON, err := os.ReadFile(modelsJSONPath)
+	if err != nil {
+		fatalf("read %s: %v", modelsJSONPath, err)
+	}
+	updatedJSON, err := rewriteModelsJSON(modelsJSON, opencode, zai)
+	if err != nil {
+		fatalf("rewrite %s: %v", modelsJSONPath, err)
+	}
+
+	opencodePath := filepath.Join(builtinsDir, "provider_builtins_opencode.go")
+	zaiPath := filepath.Join(builtinsDir, "provider_builtins_zai.go")
+	opencodeSrc, err := os.ReadFile(opencodePath)
+	if err != nil {
+		fatalf("read %s: %v", opencodePath, err)
+	}
+	zaiSrc, err := os.ReadFile(zaiPath)
+	if err != nil {
+		fatalf("read %s: %v", zaiPath, err)
+	}
+	// Candidates reuse the checked-in fetch stamps so --check is stable:
+	// unchanged model data regenerates byte-identical files.
+	opencodeStamp := extractFetchStamp(string(opencodeSrc))
+	if opencodeStamp == "" {
+		opencodeStamp = stamp
+	}
+	zaiStamp := extractFetchStamp(string(zaiSrc))
+	if zaiStamp == "" {
+		zaiStamp = stamp
+	}
+	updatedOpencode, err := rewriteBuiltinFile(string(opencodeSrc), "opencode-go", opencode, opencodeStamp)
+	if err != nil {
+		fatalf("rewrite %s: %v", opencodePath, err)
+	}
+	updatedZai, err := rewriteBuiltinFile(string(zaiSrc), "zai-coding-plan", zai, zaiStamp)
+	if err != nil {
+		fatalf("rewrite %s: %v", zaiPath, err)
+	}
+	updatedOpencode = gofmtBuiltin(opencodePath, updatedOpencode)
+	updatedZai = gofmtBuiltin(zaiPath, updatedZai)
+	if check {
+		var diffs []string
+		if !bytes.Equal(modelsJSON, updatedJSON) {
+			diffs = append(diffs, modelsJSONPath)
+		}
+		if string(opencodeSrc) != updatedOpencode {
+			diffs = append(diffs, opencodePath)
+		}
+		if string(zaiSrc) != updatedZai {
+			diffs = append(diffs, zaiPath)
+		}
+		if len(diffs) > 0 {
+			fatalf("stale snapshots: %s (run without --check to refresh)", strings.Join(diffs, ", "))
+		}
+		fmt.Println("snapshots are current")
+		return
+	}
+
+	if err := os.WriteFile(modelsJSONPath, updatedJSON, 0o644); err != nil {
+		fatalf("write %s: %v", modelsJSONPath, err)
+	}
+	if err := os.WriteFile(opencodePath, []byte(updatedOpencode), 0o644); err != nil {
+		fatalf("write %s: %v", opencodePath, err)
+	}
+	if err := os.WriteFile(zaiPath, []byte(updatedZai), 0o644); err != nil {
+		fatalf("write %s: %v", zaiPath, err)
+	}
+	fmt.Printf("refreshed %s (%d opencode, %d zai models)\n", modelsJSONPath, len(opencode), len(zai))
+}
+
+func fatalf(format string, args ...any) {
+	fmt.Fprintf(os.Stderr, "error: "+format+"\n", args...)
+	os.Exit(1)
+}
+
+// gofmtBuiltin formats rewritten Go source so checked-in files (always
+// gofmt'd) compare stable under --check. A format failure is fatal: writing
+// unformatted output would break the repo's gofmt gate.
+func gofmtBuiltin(path, src string) string {
+	formatted, err := format.Source([]byte(src))
+	if err != nil {
+		fatalf("format %s: %v", path, err)
+	}
+	return string(formatted)
+}
+
+func fetchCatalog(apiURL string) ([]byte, error) {
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Get(apiURL)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if errClose := resp.Body.Close(); errClose != nil {
+			fmt.Fprintf(os.Stderr, "warning: close response body: %v\n", errClose)
+		}
+	}()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("upstream returned status %d", resp.StatusCode)
+	}
+	return io.ReadAll(io.LimitReader(resp.Body, 9<<20))
+}
+
+// rewriteModelsJSON replaces only the opencode and zai top-level keys,
+// preserving every other key's order and bytes exactly as in the input.
+func rewriteModelsJSON(raw []byte, opencode, zai []*registry.ModelInfo) ([]byte, error) {
+	keys, doc, err := decodeTopLevelOrdered(raw)
+	if err != nil {
+		return nil, fmt.Errorf("decode models.json: %w", err)
+	}
+	ocJSON, err := json.MarshalIndent(opencode, "  ", "  ")
+	if err != nil {
+		return nil, err
+	}
+	zaiJSON, err := json.MarshalIndent(zai, "  ", "  ")
+	if err != nil {
+		return nil, err
+	}
+	replaced := map[string]json.RawMessage{"opencode": ocJSON, "zai": zaiJSON}
+	for key := range replaced {
+		if _, exists := doc[key]; !exists {
+			keys = append(keys, key)
+		}
+		doc[key] = replaced[key]
+	}
+	var buf bytes.Buffer
+	buf.WriteString("{\n")
+	for i, key := range keys {
+		keyJSON, _ := json.Marshal(key)
+		buf.WriteString("  ")
+		buf.Write(keyJSON)
+		buf.WriteString(": ")
+		buf.Write(bytes.TrimSpace(doc[key]))
+		if i+1 < len(keys) {
+			buf.WriteString(",")
+		}
+		buf.WriteString("\n")
+	}
+	buf.WriteString("}\n")
+	return buf.Bytes(), nil
+}
+
+// decodeTopLevelOrdered decodes a JSON object while recording key order,
+// so the writer can keep untouched sections byte-for-byte stable.
+func decodeTopLevelOrdered(raw []byte) ([]string, map[string]json.RawMessage, error) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	token, err := dec.Token()
+	if err != nil {
+		return nil, nil, err
+	}
+	if delim, ok := token.(json.Delim); !ok || delim != '{' {
+		return nil, nil, fmt.Errorf("top-level JSON value must be an object")
+	}
+	var keys []string
+	doc := make(map[string]json.RawMessage)
+	for dec.More() {
+		keyToken, err := dec.Token()
+		if err != nil {
+			return nil, nil, err
+		}
+		key, ok := keyToken.(string)
+		if !ok {
+			return nil, nil, fmt.Errorf("non-string object key")
+		}
+		var value json.RawMessage
+		if err := dec.Decode(&value); err != nil {
+			return nil, nil, err
+		}
+		keys = append(keys, key)
+		doc[key] = value
+	}
+	return keys, doc, nil
+}
+
+const (
+	generatedBegin = "// modelsdev:generated:begin"
+	generatedEnd   = "// modelsdev:generated:end"
+)
+
+// rewriteBuiltinFile replaces the generated body between the marker comments
+// and refreshes the header stamp. Everything outside the markers is preserved.
+func rewriteBuiltinFile(src, providerID string, models []*registry.ModelInfo, stamp string) (string, error) {
+	begin := strings.Index(src, generatedBegin)
+	end := strings.Index(src, generatedEnd)
+	if begin < 0 || end < 0 || end < begin {
+		return "", fmt.Errorf("missing %s/%s markers", generatedBegin, generatedEnd)
+	}
+	var buf bytes.Buffer
+	buf.WriteString(src[:begin+len(generatedBegin)])
+	buf.WriteString("\n")
+	buf.WriteString(renderBuiltinModels(models))
+	buf.WriteString("\n\t")
+	buf.WriteString(src[end:])
+	out := replaceHeaderStamp(buf.String(), providerID, stamp)
+	return out, nil
+}
+
+func replaceHeaderStamp(src, providerID, stamp string) string {
+	lines := strings.Split(src, "\n")
+	for i, line := range lines {
+		if strings.HasPrefix(line, "// Code generated from ") {
+			lines[i] = "// Code generated from models.dev (" + providerID + " provider, fetched " + stamp + ")."
+		}
+		if strings.HasPrefix(line, "// DO NOT EDIT BY HAND") {
+			lines[i] = "// DO NOT EDIT BY HAND — regenerate with: go run ./cmd/fetch_modelsdev_models"
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// extractFetchStamp returns the RFC3339 stamp embedded in a generated header
+// line ("... fetched <stamp>)."), or "" when the file predates stamp headers.
+func extractFetchStamp(src string) string {
+	const prefix = "fetched "
+	idx := strings.Index(src, prefix)
+	if idx < 0 {
+		return ""
+	}
+	rest := src[idx+len(prefix):]
+	end := strings.Index(rest, ").")
+	if end <= 0 {
+		return ""
+	}
+	return strings.TrimSpace(rest[:end])
+}
+
+func renderBuiltinModels(models []*registry.ModelInfo) string {
+	var buf bytes.Buffer
+	fmt.Fprintf(&buf, "\tmodels := make([]*ModelInfo, 0, %d)\n", len(models))
+	for _, m := range models {
+		buf.WriteString("\tmodels = append(models, &ModelInfo{\n")
+		fmt.Fprintf(&buf, "\t\tID: %q,\n", m.ID)
+		buf.WriteString("\t\tObject: \"model\",\n")
+		if m.Created > 0 {
+			fmt.Fprintf(&buf, "\t\tCreated: %d,\n", m.Created)
+		}
+		fmt.Fprintf(&buf, "\t\tOwnedBy: %q,\n", m.OwnedBy)
+		fmt.Fprintf(&buf, "\t\tType: %q,\n", m.Type)
+		fmt.Fprintf(&buf, "\t\tDisplayName: %q,\n", m.DisplayName)
+		if m.Description != "" {
+			fmt.Fprintf(&buf, "\t\tDescription: %q,\n", m.Description)
+		}
+		if m.ContextLength > 0 {
+			fmt.Fprintf(&buf, "\t\tContextLength: %d,\n", m.ContextLength)
+		}
+		if m.MaxCompletionTokens > 0 {
+			fmt.Fprintf(&buf, "\t\tMaxCompletionTokens: %d,\n", m.MaxCompletionTokens)
+		}
+		if m.InputTokenLimit > 0 {
+			fmt.Fprintf(&buf, "\t\tInputTokenLimit: %d,\n", m.InputTokenLimit)
+		}
+		if m.OutputTokenLimit > 0 {
+			fmt.Fprintf(&buf, "\t\tOutputTokenLimit: %d,\n", m.OutputTokenLimit)
+		}
+		if m.Thinking != nil && len(m.Thinking.Levels) > 0 {
+			buf.WriteString("\t\tThinking: &ThinkingSupport{Levels: []string{")
+			for i, level := range m.Thinking.Levels {
+				if i > 0 {
+					buf.WriteString(", ")
+				}
+				fmt.Fprintf(&buf, "%q", level)
+			}
+			buf.WriteString("}},\n")
+		}
+		if len(m.SupportedInputModalities) > 0 {
+			buf.WriteString("\t\tSupportedInputModalities: []string{")
+			for i, mod := range m.SupportedInputModalities {
+				if i > 0 {
+					buf.WriteString(", ")
+				}
+				fmt.Fprintf(&buf, "%q", mod)
+			}
+			buf.WriteString("},\n")
+		}
+		if len(m.SupportedOutputModalities) > 0 {
+			buf.WriteString("\t\tSupportedOutputModalities: []string{")
+			for i, mod := range m.SupportedOutputModalities {
+				if i > 0 {
+					buf.WriteString(", ")
+				}
+				fmt.Fprintf(&buf, "%q", mod)
+			}
+			buf.WriteString("},\n")
+		}
+		if len(m.SupportedParameters) > 0 {
+			buf.WriteString("\t\tSupportedParameters: []string{")
+			for i, param := range m.SupportedParameters {
+				if i > 0 {
+					buf.WriteString(", ")
+				}
+				fmt.Fprintf(&buf, "%q", param)
+			}
+			buf.WriteString("},\n")
+		}
+		buf.WriteString("\t})\n")
+	}
+	return strings.TrimRight(buf.String(), "\n")
+}
