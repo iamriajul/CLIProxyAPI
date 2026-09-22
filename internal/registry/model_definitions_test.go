@@ -347,8 +347,27 @@ func TestGetDevinModelsFallback(t *testing.T) {
 }
 
 func TestGetOpencodeModelsCoverGatewayLanes(t *testing.T) {
-	if got := len(GetOpencodeModels()); got < 37 {
-		t.Fatalf("GetOpencodeModels() = %d, want >= 37 live Zen lanes", got)
+	resetModelsDevLiveForTest()
+	t.Cleanup(resetModelsDevLiveForTest)
+	// Fallback snapshot derives from models.dev opencode-go (was: oh-my-pi dump).
+	if got := len(GetOpencodeModels()); got < 39 {
+		t.Fatalf("GetOpencodeModels() = %d, want >= 39 models.dev opencode-go lanes", got)
+	}
+	ids := map[string]bool{}
+	for _, m := range GetOpencodeModels() {
+		if m != nil {
+			ids[m.ID] = true
+		}
+	}
+	for _, want := range []string{"glm-5.2", "grok-4.7", "mimo-v2.6-flash", "mimo-v2.6-pro"} {
+		if !ids[want] {
+			t.Fatalf("fallback snapshot missing live lane %q", want)
+		}
+	}
+	for _, stale := range []string{"deepseek-flash", "hy3-preview"} {
+		if ids[stale] {
+			t.Fatalf("fallback snapshot still carries stale lane %q", stale)
+		}
 	}
 	for channel, want := range map[string]string{
 		"opencode": "glm-5.2", "opencode-go": "glm-5.2",
@@ -374,8 +393,28 @@ func TestGetOpencodeModelsCoverGatewayLanes(t *testing.T) {
 }
 
 func TestGetZaiModelsCoverCodingPlan(t *testing.T) {
-	if got := len(GetZaiModels()); got < 16 {
-		t.Fatalf("GetZaiModels() = %d, want >= 16 GLM models", got)
+	resetModelsDevLiveForTest()
+	t.Cleanup(resetModelsDevLiveForTest)
+	// Fallback snapshot is the 7-lane coding plan from models.dev
+	// zai-coding-plan (was: 16-model oh-my-pi mix including pay-per-token families).
+	if got := len(GetZaiModels()); got != 7 {
+		t.Fatalf("GetZaiModels() = %d, want exactly 7 coding-plan lanes", got)
+	}
+	ids := map[string]bool{}
+	for _, m := range GetZaiModels() {
+		if m != nil {
+			ids[m.ID] = true
+		}
+	}
+	for _, want := range []string{"glm-4.7", "glm-5-turbo", "glm-5.2", "glm-5.2-highspeed", "glm-5.3", "glm-5.3-flash", "glm-5.3-highspeed"} {
+		if !ids[want] {
+			t.Fatalf("fallback snapshot missing coding-plan lane %q", want)
+		}
+	}
+	for _, notPlan := range []string{"glm-4.5", "glm-4.6", "glm-5", "glm-5.1"} {
+		if ids[notPlan] {
+			t.Fatalf("fallback snapshot carries non-plan lane %q", notPlan)
+		}
 	}
 	for channel, want := range map[string]string{
 		"zai": "glm-5.3",
@@ -410,7 +449,7 @@ func TestGetZaiModelsCoverCodingPlan(t *testing.T) {
 		modelsCatalogStore.data = previous
 		modelsCatalogStore.mu.Unlock()
 	})
-	if got := len(GetZaiModels()); got < 16 {
+	if got := len(GetZaiModels()); got != 7 {
 		t.Fatalf("GetZaiModels() with empty catalog = %d", got)
 	}
 }
