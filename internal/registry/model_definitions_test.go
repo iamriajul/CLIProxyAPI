@@ -397,6 +397,8 @@ func TestGetZaiModelsCoverCodingPlan(t *testing.T) {
 	t.Cleanup(resetModelsDevLiveForTest)
 	// Fallback snapshot is the 7-lane coding plan from models.dev
 	// zai-coding-plan (was: 16-model oh-my-pi mix including pay-per-token families).
+	// Exact count is deliberate: a new upstream lane must trip here so the
+	// operator re-runs the regen CLI and updates this contract, not silently pass.
 	if got := len(GetZaiModels()); got != 7 {
 		t.Fatalf("GetZaiModels() = %d, want exactly 7 coding-plan lanes", got)
 	}

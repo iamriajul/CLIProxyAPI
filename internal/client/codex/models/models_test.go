@@ -389,7 +389,9 @@ func TestApplyCodexClientModelMetadataPreservesMultiAgentVersionWhenDisabled(t *
 
 func TestCodexClientModelsResponseAppliesMaxContextLengthOverride(t *testing.T) {
 	const wantOverride = 1048576
-	const wantDefault = 272000
+	// Live models.dev truth for deepseek-v4-pro (was 272000 in an older
+	// snapshot; oh-my-pi Sept-13 and live api.json both report 1000000).
+	const wantDefault = 1000000
 
 	resp := BuildResponse([]map[string]any{
 		{"id": "deepseek-v4-flash", "max_context_length": wantOverride},
