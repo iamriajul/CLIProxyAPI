@@ -59,31 +59,56 @@ type modelsDevLimit struct {
 	Output  int `json:"output"`
 }
 
+// ModelsDevSections is the converted output for the tracked models.dev
+// providers. HasOpencode/HasZai record key presence: a missing key leaves
+// the slice nil, which the overlay store treats as "no data" (keep previous)
+// rather than "empty" (wipe). A present-but-empty section converts to an
+// empty non-nil slice; callers must refuse to store or publish it, because
+// an upstream glitch must never wipe last-good data.
+type ModelsDevSections struct {
+	Opencode    []*ModelInfo
+	Zai         []*ModelInfo
+	HasOpencode bool
+	HasZai      bool
+}
+
 // ConvertModelsDevCatalog parses api.json bytes and returns ModelInfo slices
 // for the opencode-go and zai-coding-plan providers. A missing provider key
-// yields an empty slice; a payload carrying neither key is an error.
-func ConvertModelsDevCatalog(data []byte) (opencode []*ModelInfo, zai []*ModelInfo, err error) {
+// sets its Has flag false; a payload carrying neither key is an error.
+func ConvertModelsDevCatalog(data []byte) (ModelsDevSections, error) {
+	var out ModelsDevSections
 	var catalog modelsDevCatalog
 	if err := json.Unmarshal(data, &catalog); err != nil {
-		return nil, nil, fmt.Errorf("decode models.dev catalog: %w", err)
+		return out, fmt.Errorf("decode models.dev catalog: %w", err)
 	}
 	ocProvider, ocOK := catalog["opencode-go"]
 	zaiProvider, zaiOK := catalog["zai-coding-plan"]
 	if !ocOK && !zaiOK {
-		return nil, nil, fmt.Errorf("models.dev payload carries neither opencode-go nor zai-coding-plan")
+		return out, fmt.Errorf("models.dev payload carries neither opencode-go nor zai-coding-plan")
 	}
 	if ocOK {
-		opencode = convertModelsDevProvider("opencode", "OpenCode Zen Go", ocProvider.Models)
+		out.HasOpencode = true
+		out.Opencode = convertModelsDevProvider("opencode", "OpenCode Zen Go", ocProvider.Models)
 	}
 	if zaiOK {
-		zai = convertModelsDevProvider("zai", "Z.AI", zaiProvider.Models)
+		out.HasZai = true
+		out.Zai = convertModelsDevProvider("zai", "Z.AI", zaiProvider.Models)
 	}
-	return opencode, zai, nil
+	return out, nil
 }
 
 func convertModelsDevProvider(ownedBy, via string, models map[string]modelsDevModel) []*ModelInfo {
+	// Sorted keys keep output deterministic and duplicate resolution
+	// first-wins by (key, id) order instead of random map order.
+	keys := make([]string, 0, len(models))
+	for key := range models {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	seen := make(map[string]struct{}, len(models))
 	out := make([]*ModelInfo, 0, len(models))
-	for key, raw := range models {
+	for _, key := range keys {
+		raw := models[key]
 		id := strings.TrimSpace(raw.ID)
 		if id == "" {
 			id = strings.TrimSpace(key)
@@ -91,6 +116,10 @@ func convertModelsDevProvider(ownedBy, via string, models map[string]modelsDevMo
 		if id == "" {
 			continue
 		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
 		displayName := strings.TrimSpace(raw.Name)
 		if displayName == "" {
 			displayName = id
@@ -130,13 +159,14 @@ func modelsDevReleaseUnix(releaseDate string) int64 {
 	if releaseDate == "" {
 		return 0
 	}
-	parsed, err := time.Parse("2006-01-02", releaseDate)
-	if err != nil {
-		return 0
+	if parsed, err := time.Parse(time.RFC3339, releaseDate); err == nil {
+		return parsed.Unix()
 	}
-	return parsed.Unix()
+	if parsed, err := time.Parse("2006-01-02", releaseDate); err == nil {
+		return parsed.Unix()
+	}
+	return 0
 }
-
 func normalizeModelsDevModalities(raw []string) []string {
 	var out []string
 	seen := make(map[string]struct{}, len(raw))
@@ -158,8 +188,11 @@ func normalizeModelsDevModalities(raw []string) []string {
 }
 
 // modelsDevThinking maps reasoning_options effort values to ThinkingSupport
-// levels. Toggle-only, budget-only, or option-less reasoning models fall back
-// to the default low/medium/high ladder; non-reasoning models get nil.
+// levels. Mapping contract (deliberate, mirrors the checked-in snapshots):
+// only "effort" options contribute levels; toggle-only, budget-only, or
+// option-less reasoning models fall back to the default low/medium/high
+// ladder; non-reasoning models get nil. A "none" value flows through as a
+// level — downstream NormalizeThinkingSupport sets ZeroAllowed for it.
 func modelsDevThinking(raw modelsDevModel) *ThinkingSupport {
 	if !raw.Reasoning {
 		return nil
