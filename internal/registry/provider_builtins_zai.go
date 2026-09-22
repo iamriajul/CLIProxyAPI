@@ -40,6 +40,8 @@ func zaiBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "glm-5-turbo",
@@ -57,6 +59,8 @@ func zaiBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "response_format", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "glm-5.2",
@@ -74,6 +78,8 @@ func zaiBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "response_format", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "glm-5.2-highspeed",
@@ -91,6 +97,8 @@ func zaiBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "response_format", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "glm-5.3",
@@ -108,6 +116,8 @@ func zaiBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "response_format", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "glm-5.3-flash",
@@ -125,6 +135,8 @@ func zaiBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text", "image", "video", "pdf"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "response_format", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "glm-5.3-highspeed",
@@ -142,6 +154,8 @@ func zaiBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "response_format", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	// modelsdev:generated:end
 	return models
