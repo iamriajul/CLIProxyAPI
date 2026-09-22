@@ -10,7 +10,10 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-const maxModelsDevSize = 8 << 20
+// MaxModelsDevSize caps the models.dev catalog payload (api.json is ~4.6MB
+// today). Shared with cmd/fetch_modelsdev_models so the regen CLI never
+// writes snapshots the runtime updater would reject.
+const MaxModelsDevSize = 8 << 20
 
 var modelsdevURLs = []string{
 	"https://models.dev/api.json",
@@ -87,7 +90,7 @@ func fetchModelsDevFromRemote(ctx context.Context) ([]byte, string) {
 			continue
 		}
 
-		data, errRead := io.ReadAll(io.LimitReader(resp.Body, maxModelsDevSize+1))
+		data, errRead := io.ReadAll(io.LimitReader(resp.Body, MaxModelsDevSize+1))
 		errClose := resp.Body.Close()
 		cancel()
 		if errRead != nil {
@@ -98,8 +101,8 @@ func fetchModelsDevFromRemote(ctx context.Context) ([]byte, string) {
 			log.Debugf("models.dev response close failed for %s: %v", sourceURL, errClose)
 			continue
 		}
-		if len(data) > maxModelsDevSize {
-			log.Warnf("models.dev fetch from %s exceeded %d bytes, rejecting", sourceURL, maxModelsDevSize)
+		if len(data) > MaxModelsDevSize {
+			log.Warnf("models.dev fetch from %s exceeded %d bytes, rejecting", sourceURL, MaxModelsDevSize)
 			continue
 		}
 
