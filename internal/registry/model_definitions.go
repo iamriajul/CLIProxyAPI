@@ -245,12 +245,22 @@ func GetXAIModels() []*ModelInfo {
 }
 
 // GetOpencodeModels returns OpenCode Zen Go gateway model definitions.
+// Live models.dev data wins when present; the embedded catalog plus
+// builtins stay as the offline fallback.
 func GetOpencodeModels() []*ModelInfo {
+	if live := GetModelsDevLive("opencode"); len(live) > 0 {
+		return live
+	}
 	return WithOpencodeBuiltins(cloneModelInfos(getModels().Opencode))
 }
 
 // GetZaiModels returns Z.AI GLM model definitions.
+// Live models.dev data wins when present; the embedded catalog plus
+// builtins stay as the offline fallback.
 func GetZaiModels() []*ModelInfo {
+	if live := GetModelsDevLive("zai"); len(live) > 0 {
+		return live
+	}
 	return WithZaiBuiltins(cloneModelInfos(getModels().ZAI))
 }
 
