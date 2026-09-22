@@ -64,3 +64,44 @@ func TestModelsDevLiveRejectsBadPayload(t *testing.T) {
 		t.Fatal("failed load must not populate live store")
 	}
 }
+
+func TestModelsDevLiveBeatsFallback(t *testing.T) {
+	resetModelsDevLiveForTest()
+	t.Cleanup(resetModelsDevLiveForTest)
+
+	if got := len(GetOpencodeModels()); got < 39 {
+		t.Fatalf("fallback opencode = %d, want >= 39", got)
+	}
+	if got := len(GetZaiModels()); got != 7 {
+		t.Fatalf("fallback zai = %d, want 7", got)
+	}
+
+	data, err := os.ReadFile("modelsdev_testdata_api.json")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	if _, err := loadModelsDevLiveFromBytes(data, "test"); err != nil {
+		t.Fatalf("load live: %v", err)
+	}
+	if got := GetOpencodeModels(); len(got) != 2 || got[0].ID != "glm-5.2" {
+		t.Fatalf("live opencode = %v, want 2 fixture models", idsOf(got))
+	}
+	if got := GetZaiModels(); len(got) != 2 {
+		t.Fatalf("live zai = %v, want 2 fixture models", idsOf(got))
+	}
+
+	resetModelsDevLiveForTest()
+	if got := len(GetOpencodeModels()); got < 39 {
+		t.Fatalf("restored fallback opencode = %d, want >= 39", got)
+	}
+}
+
+func idsOf(models []*ModelInfo) []string {
+	out := make([]string, 0, len(models))
+	for _, m := range models {
+		if m != nil {
+			out = append(out, m.ID)
+		}
+	}
+	return out
+}
