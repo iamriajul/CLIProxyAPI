@@ -661,7 +661,7 @@ func applyCodexClientModelMetadata(entry map[string]any, id string, model map[st
 	contextWindow := intModelValue(model, "context_length")
 	thinkingSupport := codexClientThinkingSupport(model)
 
-	if info != nil {
+	if info != nil && info.Type != "opencode" && info.Type != "zai" {
 		if info.DisplayName != "" {
 			displayName = info.DisplayName
 		}
