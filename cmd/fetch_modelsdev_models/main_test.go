@@ -1,7 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -60,13 +65,14 @@ func TestRewriteModelsJSONKeepsKeyOrderAndBytes(t *testing.T) {
 }
 
 func TestRewriteBuiltinFilePreservesOutsideMarkers(t *testing.T) {
-	src := "package registry\n\nvar route = map[string]bool{\"a\": true}\n\nfunc infos() []*ModelInfo {\n// modelsdev:generated:begin\n\told()\n// modelsdev:generated:end\n\treturn models\n}\n"
+	src := "package registry\n\n// Code generated from models.dev (opencode-go provider, fetched 2026-09-22T00:00:00Z).\n// DO NOT EDIT BY HAND — regenerate with: go run ./cmd/fetch_modelsdev_models\n\nvar route = map[string]bool{\"a\": true}\n\nfunc infos() []*ModelInfo {\n// modelsdev:generated:begin\n\told()\n// modelsdev:generated:end\n\treturn models\n}\n"
 	models := []*registry.ModelInfo{{
 		ID: "glm-5.2", Object: "model", Created: 1781308800, OwnedBy: "opencode", Type: "opencode",
 		DisplayName: "GLM-5.2", ContextLength: 1000000, MaxCompletionTokens: 131072,
 		Thinking:                 &registry.ThinkingSupport{Levels: []string{"high", "max"}},
 		SupportedInputModalities: []string{"text"}, SupportedOutputModalities: []string{"text"},
 		SupportedParameters: []string{"tool_choice"},
+		ExplicitThinking:    true, ExplicitInputModalities: true,
 	}}
 	updated, err := rewriteBuiltinFile(src, "opencode-go", models, "2026-09-22T00:00:00Z")
 	if err != nil {
@@ -84,8 +90,15 @@ func TestRewriteBuiltinFilePreservesOutsideMarkers(t *testing.T) {
 	if !strings.Contains(updated, `Levels: []string{"high", "max"}`) {
 		t.Fatal("thinking levels not rendered")
 	}
+	if !strings.Contains(updated, "ExplicitThinking: true") || !strings.Contains(updated, "ExplicitInputModalities: true") {
+		t.Fatal("explicit flags not rendered")
+	}
 	if _, err := rewriteBuiltinFile("no markers", "x", models, "s"); err == nil {
 		t.Fatal("expected error when markers missing")
+	}
+	noHeader := "package registry\n\nfunc infos() []*ModelInfo {\n// modelsdev:generated:begin\n\told()\n// modelsdev:generated:end\n\treturn models\n}\n"
+	if _, err := rewriteBuiltinFile(noHeader, "x", models, "s"); err == nil {
+		t.Fatal("expected error when generated header lines missing")
 	}
 }
 
@@ -112,5 +125,68 @@ func TestRewriteBuiltinFileStampStable(t *testing.T) {
 	}
 	if got := extractFetchStamp("no stamp here"); got != "" {
 		t.Fatalf("extractFetchStamp without header = %q, want empty", got)
+	}
+}
+
+func TestCheckSectionsNonEmpty(t *testing.T) {
+	full := registry.ModelsDevSections{
+		Opencode:    []*registry.ModelInfo{{ID: "a"}},
+		Zai:         []*registry.ModelInfo{{ID: "b"}},
+		HasOpencode: true,
+		HasZai:      true,
+	}
+	if err := checkSectionsNonEmpty(full, false); err != nil {
+		t.Fatalf("full sections: %v", err)
+	}
+	// Missing key refused.
+	missing := full
+	missing.HasZai = false
+	missing.Zai = nil
+	if err := checkSectionsNonEmpty(missing, false); err == nil {
+		t.Fatal("expected refusal on missing zai section")
+	}
+	// Present-but-empty refused.
+	empty := full
+	empty.Opencode = nil
+	if err := checkSectionsNonEmpty(empty, false); err == nil {
+		t.Fatal("expected refusal on empty opencode section")
+	}
+	// --allow-empty overrides both.
+	if err := checkSectionsNonEmpty(empty, true); err != nil {
+		t.Fatalf("allow-empty: %v", err)
+	}
+	if err := checkSectionsNonEmpty(missing, true); err != nil {
+		t.Fatalf("allow-empty: %v", err)
+	}
+}
+
+func TestWriteFileAtomic(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/snap.json"
+	writeFileAtomic(path, []byte(`{"a":1}`))
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if string(data) != `{"a":1}` {
+		t.Fatalf("content = %q", data)
+	}
+	leftovers, err := filepath.Glob(dir + "/*.tmp-*")
+	if err != nil {
+		t.Fatalf("glob: %v", err)
+	}
+	if len(leftovers) != 0 {
+		t.Fatalf("tmp leftovers: %v", leftovers)
+	}
+}
+
+func TestFetchCatalogRejectsOversize(t *testing.T) {
+	big := bytes.Repeat([]byte("x"), registry.MaxModelsDevSize+100)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(big)
+	}))
+	t.Cleanup(server.Close)
+	if _, err := fetchCatalog(server.URL); err == nil {
+		t.Fatal("expected error for oversize catalog")
 	}
 }
