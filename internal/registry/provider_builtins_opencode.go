@@ -65,6 +65,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "response_format", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "deepseek-v4-flash-vision-exp",
@@ -82,6 +84,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text", "image"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "response_format", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "deepseek-v4-pro",
@@ -99,6 +103,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "response_format", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "deepseek-v4.1-flash",
@@ -116,6 +122,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text", "image"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "response_format", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "glm-5",
@@ -133,6 +141,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "glm-5.1",
@@ -150,6 +160,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "glm-5.2",
@@ -167,6 +179,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "response_format", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "glm-5.3",
@@ -184,6 +198,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "response_format", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "glm-5.3-flash",
@@ -201,6 +217,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text", "image", "video", "pdf"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "response_format", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "gpt-5.6-luna",
@@ -218,6 +236,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text", "image", "pdf"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "response_format"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "grok-4.5",
@@ -235,6 +255,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text", "image"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "response_format", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "grok-4.6",
@@ -252,6 +274,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text", "image"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "response_format", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "grok-4.7",
@@ -269,6 +293,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text", "image", "pdf"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "response_format", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "hy3",
@@ -286,6 +312,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "hy4-preview",
@@ -303,6 +331,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "kimi-k2.5",
@@ -320,6 +350,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text", "image", "video"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "kimi-k2.6",
@@ -337,6 +369,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text", "image", "video"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "kimi-k2.7-code",
@@ -354,6 +388,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text", "image", "video"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "response_format"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "kimi-k3",
@@ -371,6 +407,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text", "image", "video"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "response_format"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "longcat-2.0",
@@ -388,6 +426,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "mimo-v2-omni",
@@ -405,6 +445,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text", "image", "audio", "pdf"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "mimo-v2-pro",
@@ -422,6 +464,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "mimo-v2.5",
@@ -439,6 +483,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text", "image", "audio", "video"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "mimo-v2.5-pro",
@@ -456,6 +502,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "mimo-v2.6-flash",
@@ -473,6 +521,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text", "image", "audio", "video", "pdf"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "mimo-v2.6-pro",
@@ -490,6 +540,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text", "image", "audio", "video", "pdf"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "minimax-m2.5",
@@ -507,6 +559,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "minimax-m2.7",
@@ -524,6 +578,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "minimax-m3",
@@ -541,6 +597,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text", "image", "video"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "muse-spark-1.2-contributor",
@@ -558,6 +616,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text", "image", "video", "pdf", "audio"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "response_format", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "muse-spark-1.3-contributor",
@@ -575,6 +635,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text", "image", "video", "pdf", "audio"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "response_format", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "omen-alpha",
@@ -592,6 +654,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text", "image"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "response_format", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "ox-alpha-free",
@@ -609,6 +673,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text", "image", "video"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "response_format", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "qwen3.5-plus",
@@ -626,6 +692,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text", "image", "video"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "qwen3.6-plus",
@@ -643,6 +711,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text", "image", "video"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "qwen3.7-max",
@@ -660,6 +730,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "qwen3.7-plus",
@@ -677,6 +749,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text", "image", "video"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "qwen3.8-flash",
@@ -694,6 +768,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text", "image", "video"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "response_format", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	models = append(models, &ModelInfo{
 		ID:                        "qwen3.8-max",
@@ -711,6 +787,8 @@ func opencodeBuiltinModelInfos() []*ModelInfo {
 		SupportedInputModalities:  []string{"text", "image", "video"},
 		SupportedOutputModalities: []string{"text"},
 		SupportedParameters:       []string{"tool_choice", "response_format", "temperature"},
+		ExplicitThinking:          true,
+		ExplicitInputModalities:   true,
 	})
 	// modelsdev:generated:end
 	return models
