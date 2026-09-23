@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -24,12 +25,14 @@ type dashboardModel struct {
 	lastConfig    map[string]any
 	lastAuthFiles []map[string]any
 	lastAPIKeys   []string
+	lastCatalog   []map[string]any
 }
 
 type dashboardDataMsg struct {
 	config    map[string]any
 	authFiles []map[string]any
 	apiKeys   []string
+	catalog   []map[string]any
 	err       error
 }
 
@@ -47,6 +50,9 @@ func (m dashboardModel) fetchData() tea.Msg {
 	cfg, cfgErr := m.client.GetConfig()
 	authFiles, authErr := m.client.GetAuthFiles()
 	apiKeys, keysErr := m.client.GetAPIKeys()
+	// Catalog freshness is best-effort: an old server without the endpoint
+	// must not blank the whole dashboard.
+	catalog, _ := m.client.GetModelsDevStatus()
 
 	var err error
 	for _, e := range []error{cfgErr, authErr, keysErr} {
@@ -55,14 +61,14 @@ func (m dashboardModel) fetchData() tea.Msg {
 			break
 		}
 	}
-	return dashboardDataMsg{config: cfg, authFiles: authFiles, apiKeys: apiKeys, err: err}
+	return dashboardDataMsg{config: cfg, authFiles: authFiles, apiKeys: apiKeys, catalog: catalog, err: err}
 }
 
 func (m dashboardModel) Update(msg tea.Msg) (dashboardModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case localeChangedMsg:
 		// Re-render immediately with cached data using new locale
-		m.content = m.renderDashboard(m.lastConfig, m.lastAuthFiles, m.lastAPIKeys)
+		m.content = m.renderDashboard(m.lastConfig, m.lastAuthFiles, m.lastAPIKeys, m.lastCatalog)
 		m.viewport.SetContent(m.content)
 		// Also fetch fresh data in background
 		return m, m.fetchData
@@ -77,8 +83,9 @@ func (m dashboardModel) Update(msg tea.Msg) (dashboardModel, tea.Cmd) {
 			m.lastConfig = msg.config
 			m.lastAuthFiles = msg.authFiles
 			m.lastAPIKeys = msg.apiKeys
+			m.lastCatalog = msg.catalog
 
-			m.content = m.renderDashboard(msg.config, msg.authFiles, msg.apiKeys)
+			m.content = m.renderDashboard(msg.config, msg.authFiles, msg.apiKeys, msg.catalog)
 		}
 		m.viewport.SetContent(m.content)
 		return m, nil
@@ -117,7 +124,7 @@ func (m dashboardModel) View() string {
 	return m.viewport.View()
 }
 
-func (m dashboardModel) renderDashboard(cfg map[string]any, authFiles []map[string]any, apiKeys []string) string {
+func (m dashboardModel) renderDashboard(cfg map[string]any, authFiles []map[string]any, apiKeys []string, catalog []map[string]any) string {
 	var sb strings.Builder
 
 	sb.WriteString(titleStyle.Render(T("dashboard_title")))
@@ -171,6 +178,7 @@ func (m dashboardModel) renderDashboard(cfg map[string]any, authFiles []map[stri
 
 	sb.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, card1, " ", card2))
 	sb.WriteString("\n\n")
+	sb.WriteString(m.renderCatalogSection(catalog))
 
 	// ━━━ Current Config ━━━
 	sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(colorHighlight).Render(T("current_config")))
@@ -228,6 +236,55 @@ func (m dashboardModel) renderDashboard(cfg map[string]any, authFiles []map[stri
 	sb.WriteString("\n")
 
 	return sb.String()
+}
+
+// renderCatalogSection renders models.dev freshness rows. A nil catalog
+// (old server without the endpoint) renders nothing.
+func (m dashboardModel) renderCatalogSection(catalog []map[string]any) string {
+	if catalog == nil {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(colorHighlight).Render(T("model_catalog")))
+	sb.WriteString("\n")
+	sb.WriteString(strings.Repeat("─", minInt(m.width, 60)))
+	sb.WriteString("\n")
+	for _, p := range catalog {
+		id := getString(p, "id")
+		dot := lipgloss.NewStyle().Foreground(colorSuccess).Render("●")
+		state := T("catalog_live")
+		if getString(p, "source") != "live" {
+			dot = lipgloss.NewStyle().Foreground(colorError).Render("○")
+			state = T("catalog_fallback")
+		}
+		detail := T("catalog_never_fetched")
+		if errMsg := getString(p, "last_error"); errMsg != "" {
+			detail = fmt.Sprintf("%s: %s", T("catalog_fetch_failed"), truncate(errMsg, 40))
+		} else if fetched := getString(p, "fetched_at"); fetched != "" {
+			if t, err := time.Parse(time.RFC3339, fetched); err == nil {
+				detail = fmt.Sprintf(T("catalog_updated_ago"), catalogAge(time.Since(t)))
+			}
+		}
+		sb.WriteString(fmt.Sprintf("  %s %-14s %s %3d  %s\n",
+			dot, id, valueStyle.Render(state), int(getFloat(p, "models")), valueStyle.Render(detail)))
+	}
+	sb.WriteString("\n")
+	return sb.String()
+}
+
+// catalogAge formats a duration as the compact "12m"/"3h"/"2d" used in the
+// catalog card.
+func catalogAge(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
+	if d < 24*time.Hour {
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	}
+	return fmt.Sprintf("%dd", int(d.Hours()/24))
 }
 
 func formatKV(key, value string) string {
