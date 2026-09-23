@@ -5,19 +5,21 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 )
 
 // modelsdevLiveStore holds the last successfully converted models.dev
-// sections. It is an overlay: GetOpencodeModels/GetZaiModels prefer it and
-// fall back to the embedded catalog plus builtins when it is empty.
 type modelsdevLiveStore struct {
-	mu       sync.RWMutex
-	opencode []*ModelInfo
-	zai      []*ModelInfo
-	rawJSON  []byte
-	revision uint64
+	mu              sync.RWMutex
+	opencode        []*ModelInfo
+	zai             []*ModelInfo
+	opencodeFetched time.Time
+	zaiFetched      time.Time
+	lastError       string
+	rawJSON         []byte
+	revision        uint64
 }
 
 var modelsdevCatalogStore = &modelsdevLiveStore{}
@@ -82,6 +84,15 @@ func loadModelsDevLiveFromBytes(data []byte, source string) ([]string, error) {
 	}
 	modelsdevCatalogStore.rawJSON = clonedData
 	if len(changed) > 0 {
+		now := time.Now().UTC()
+		for _, provider := range changed {
+			switch provider {
+			case "opencode":
+				modelsdevCatalogStore.opencodeFetched = now
+			case "zai":
+				modelsdevCatalogStore.zaiFetched = now
+			}
+		}
 		modelsdevCatalogStore.revision++
 	}
 	return changed, nil
@@ -93,8 +104,68 @@ func resetModelsDevLiveForTest() {
 	defer modelsdevCatalogStore.mu.Unlock()
 	modelsdevCatalogStore.opencode = nil
 	modelsdevCatalogStore.zai = nil
+	modelsdevCatalogStore.opencodeFetched = time.Time{}
+	modelsdevCatalogStore.zaiFetched = time.Time{}
+	modelsdevCatalogStore.lastError = ""
 	modelsdevCatalogStore.rawJSON = nil
 	modelsdevCatalogStore.revision = 0
+}
+
+// setModelsDevLastError records the latest refresh failure (empty clears).
+func setModelsDevLastError(msg string) {
+	modelsdevCatalogStore.mu.Lock()
+	defer modelsdevCatalogStore.mu.Unlock()
+	modelsdevCatalogStore.lastError = msg
+}
+
+// ModelsDevProviderStatus describes one tracked models.dev section for
+// management surfaces (TUI card, CPAMC badge). FetchedAt/LastError are nil
+// when never fetched / healthy, so JSON renders null instead of omitting.
+type ModelsDevProviderStatus struct {
+	ID        string     `json:"id"`
+	Source    string     `json:"source"`
+	Models    int        `json:"models"`
+	FetchedAt *time.Time `json:"fetched_at"`
+	LastError *string    `json:"last_error"`
+}
+
+// ModelsDevStatus is the management payload for the catalog freshness UI.
+type ModelsDevStatus struct {
+	Providers []ModelsDevProviderStatus `json:"providers"`
+}
+
+// GetModelsDevStatus snapshots per-provider freshness: live when the overlay
+// holds the section, fallback otherwise (counts follow the same getters the
+// harness reads, so the UI can never disagree with serving state).
+func GetModelsDevStatus() ModelsDevStatus {
+	modelsdevCatalogStore.mu.RLock()
+	liveOpencode := cloneModelInfos(modelsdevCatalogStore.opencode)
+	liveZai := cloneModelInfos(modelsdevCatalogStore.zai)
+	opencodeFetched := modelsdevCatalogStore.opencodeFetched
+	zaiFetched := modelsdevCatalogStore.zaiFetched
+	lastError := modelsdevCatalogStore.lastError
+	modelsdevCatalogStore.mu.RUnlock()
+
+	describe := func(id string, live []*ModelInfo, fallback []*ModelInfo, fetched time.Time) ModelsDevProviderStatus {
+		status := ModelsDevProviderStatus{ID: id, Source: "fallback", Models: len(fallback)}
+		if len(live) > 0 {
+			status.Source = "live"
+			status.Models = len(live)
+			fetchedCopy := fetched.UTC()
+			if !fetched.IsZero() {
+				status.FetchedAt = &fetchedCopy
+			}
+		}
+		if lastError != "" {
+			lastErrorCopy := lastError
+			status.LastError = &lastErrorCopy
+		}
+		return status
+	}
+	return ModelsDevStatus{Providers: []ModelsDevProviderStatus{
+		describe("opencode-go", liveOpencode, WithOpencodeBuiltins(cloneModelInfos(getModels().Opencode)), opencodeFetched),
+		describe("zai-coding-plan", liveZai, WithZaiBuiltins(cloneModelInfos(getModels().ZAI)), zaiFetched),
+	}}
 }
 
 // markModelsDevExplicit restores the converter's Explicit flags on
