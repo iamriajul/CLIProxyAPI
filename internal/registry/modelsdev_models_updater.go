@@ -2,6 +2,7 @@ package registry
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"sync"
@@ -47,23 +48,38 @@ func runModelsDevUpdater(ctx context.Context) {
 }
 
 func tryRefreshModelsDev(ctx context.Context, label string) {
+	_, _ = refreshModelsDev(ctx, label)
+}
+
+// TriggerModelsDevRefresh runs one models.dev fetch outside the ticker
+// (management API, manual use). It returns the changed provider names.
+func TriggerModelsDevRefresh(ctx context.Context) ([]string, error) {
+	return refreshModelsDev(ctx, "manual models.dev refresh")
+}
+
+func refreshModelsDev(ctx context.Context, label string) ([]string, error) {
 	data, sourceURL := fetchModelsDevFromRemote(ctx)
 	if data == nil {
-		log.Warnf("%s: fetch failed from all URLs, keeping current data (fallback catalog)", label)
-		return
+		msg := "fetch failed from all URLs, keeping current data (fallback catalog)"
+		setModelsDevLastError(msg)
+		log.Warnf("%s: %s", label, msg)
+		return nil, fmt.Errorf("%s", msg)
 	}
 
 	changed, err := loadModelsDevLiveFromBytes(data, sourceURL)
 	if err != nil {
+		setModelsDevLastError(err.Error())
 		log.Warnf("%s: fetched catalog rejected, keeping current data: %v", label, err)
-		return
+		return nil, err
 	}
+	setModelsDevLastError("")
 	if len(changed) == 0 {
 		log.Infof("%s completed from %s, no changes detected", label, sourceURL)
-		return
+		return nil, nil
 	}
 	log.Infof("%s completed from %s, changes detected for providers: %v", label, sourceURL, changed)
 	notifyModelRefresh(changed)
+	return changed, nil
 }
 
 func fetchModelsDevFromRemote(ctx context.Context) ([]byte, string) {

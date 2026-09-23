@@ -129,3 +129,15 @@ go test ./internal/registry/ -run 'TestConvertModelsDevCatalog|TestModelsDevLive
 go test ./cmd/fetch_modelsdev_models/
 go test ./cmd/server/ -run 'TestModelCatalogUpdaterPlan'
 ```
+
+Freshness is operator-visible: `GET /v0/management/modelsdev/status`
+reports per-provider live/fallback source, counts, fetch time, and the
+latest error; `POST /v0/management/modelsdev/refresh` triggers one fetch
+outside the ticker. The TUI dashboard renders both rows in a Model Catalog
+card (best-effort: old servers without the endpoint render nothing).
+
+```bash
+go test ./internal/api/handlers/management/ -run TestGetModelsDevStatus_Shape
+go test ./internal/tui/ -run 'TestCatalogAge|TestRenderCatalogSectionStates'
+go test ./internal/registry/ -run TestGetModelsDevStatus
+```
