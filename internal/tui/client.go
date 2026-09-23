@@ -340,6 +340,12 @@ func (c *Client) getWrappedKeyList(path, key string) ([]map[string]any, error) {
 	return extractList(wrapper, key)
 }
 
+// GetModelsDevStatus lists models.dev catalog freshness per provider.
+// API returns {"providers": [...]}.
+func (c *Client) GetModelsDevStatus() ([]map[string]any, error) {
+	return c.getWrappedKeyList("/v0/management/modelsdev/status", "providers")
+}
+
 // extractList pulls an array of maps from a wrapper object by key.
 func extractList(wrapper map[string]any, key string) ([]map[string]any, error) {
 	arr, ok := wrapper[key]
