@@ -284,3 +284,61 @@ func TestModelsDevLiveIgnoresKeyOrder(t *testing.T) {
 		t.Fatalf("reordered keys changed = %v, want none", changed)
 	}
 }
+
+func TestGetModelsDevStatus(t *testing.T) {
+	resetModelsDevLiveForTest()
+	t.Cleanup(resetModelsDevLiveForTest)
+
+	// Cold boot: both providers on fallback, no fetch metadata.
+	status := GetModelsDevStatus()
+	if len(status.Providers) != 2 {
+		t.Fatalf("providers = %d, want 2", len(status.Providers))
+	}
+	if status.Providers[0].ID != "opencode-go" || status.Providers[1].ID != "zai-coding-plan" {
+		t.Fatalf("provider ids = %q/%q", status.Providers[0].ID, status.Providers[1].ID)
+	}
+	for _, p := range status.Providers {
+		if p.Source != "fallback" {
+			t.Fatalf("%s source = %q, want fallback", p.ID, p.Source)
+		}
+		if p.FetchedAt != nil || p.LastError != nil {
+			t.Fatalf("%s metadata not nil on cold boot", p.ID)
+		}
+	}
+	if status.Providers[0].Models < 39 || status.Providers[1].Models != 7 {
+		t.Fatalf("fallback counts = %d/%d", status.Providers[0].Models, status.Providers[1].Models)
+	}
+
+	// Live load flips source and stamps fetch time.
+	data, err := os.ReadFile("modelsdev_testdata_api.json")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	if _, err := loadModelsDevLiveFromBytes(data, "test"); err != nil {
+		t.Fatalf("load live: %v", err)
+	}
+	status = GetModelsDevStatus()
+	for _, p := range status.Providers {
+		if p.Source != "live" || len(status.Providers) != 2 {
+			t.Fatalf("%s source = %q, want live", p.ID, p.Source)
+		}
+		if p.FetchedAt == nil {
+			t.Fatalf("%s missing fetch timestamp", p.ID)
+		}
+		if p.Models != 2 {
+			t.Fatalf("%s models = %d, want 2", p.ID, p.Models)
+		}
+	}
+
+	// A recorded failure surfaces on both rows without changing source.
+	setModelsDevLastError("boom")
+	status = GetModelsDevStatus()
+	for _, p := range status.Providers {
+		if p.LastError == nil || *p.LastError != "boom" {
+			t.Fatalf("%s last_error missing", p.ID)
+		}
+		if p.Source != "live" {
+			t.Fatalf("%s source = %q, want live (error must not flip source)", p.ID, p.Source)
+		}
+	}
+}

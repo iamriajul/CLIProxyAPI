@@ -84,6 +84,9 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.POST("/quota/fetch", s.mgmt.FetchCredentialQuota)
 		mgmt.POST("/quota/reset", s.mgmt.ResetCredentialQuota)
 
+		mgmt.GET("/modelsdev/status", s.mgmt.GetModelsDevStatus)
+		mgmt.POST("/modelsdev/refresh", s.mgmt.RefreshModelsDev)
+
 		mgmt.GET("/api-keys", s.mgmt.GetAPIKeys)
 		mgmt.PUT("/api-keys", s.mgmt.PutAPIKeys)
 		mgmt.PATCH("/api-keys", s.mgmt.PatchAPIKeys)
