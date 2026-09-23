@@ -1001,6 +1001,16 @@ func flattenProviderKeyList(provider string, value any) []map[string]any {
 	return out
 }
 
+// GetModelsDevStatus lists models.dev catalog freshness per provider.
+// API returns {"providers": [...]}.
+func (c *Client) GetModelsDevStatus() ([]map[string]any, error) {
+	wrapper, err := c.getJSON("/v0/management/modelsdev/status")
+	if err != nil {
+		return nil, err
+	}
+	return extractList(wrapper, "providers")
+}
+
 // extractList pulls an array of maps from a wrapper object by key.
 func extractList(wrapper map[string]any, key string) ([]map[string]any, error) {
 	arr, ok := wrapper[key]
