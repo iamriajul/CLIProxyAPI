@@ -68,6 +68,7 @@ func (s *Server) setupRoutes() {
 			c.Set(handlers.ModelDetailIDContextKey, strings.TrimPrefix(c.Param("model"), "/"))
 			s.unifiedModelsHandler(openaiHandlers, claudeCodeHandlers)(c)
 		})
+		v1.GET("/quota", s.handleInferenceQuota)
 		v1.GET("/model/info", s.handleLiteLLMModelInfo)
 		v1.POST("/chat/completions", openaiHandlers.ChatCompletions)
 		v1.POST("/completions", openaiHandlers.Completions)
