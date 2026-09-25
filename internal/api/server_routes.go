@@ -71,6 +71,7 @@ func (s *Server) setupRoutes() {
 			c.Set(handlers.ModelDetailIDContextKey, strings.TrimPrefix(c.Param("model"), "/"))
 			s.unifiedModelsHandler(openaiHandlers, claudeCodeHandlers)(c)
 		})
+		v1.GET("/model/info", s.handleLiteLLMModelInfo)
 		v1.POST("/chat/completions", openaiHandlers.ChatCompletions)
 		v1.POST("/completions", openaiHandlers.Completions)
 		v1.POST("/images/generations", openaiHandlers.ImagesGenerations)
@@ -96,6 +97,14 @@ func (s *Server) setupRoutes() {
 	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodHead, http.MethodTrace, http.MethodConnect} {
 		s.engine.Handle(method, "/v1/tunnel", s.handleWebsocketTunnel)
 	}
+
+	// LiteLLM rich-client discovery routes. Rich clients strip a trailing /v1
+	// from the base URL before probing management endpoints, so the root and
+	// /v2 twins must exist alongside the /v1 route above.
+	litellmAuth := AuthMiddleware(s.accessManager)
+	s.engine.GET("/model/info", litellmAuth, s.handleLiteLLMModelInfo)
+	s.engine.GET("/model_group/info", litellmAuth, s.handleLiteLLMModelGroupInfo)
+	s.engine.GET("/v2/model/info", litellmAuth, s.handleLiteLLMModelInfo)
 
 	realtimeAuth := realtimeAuthMiddleware(s.accessManager, s.codexLiveHandler)
 	standardAuth := realtimeStandardAuthMiddleware(s.accessManager)
