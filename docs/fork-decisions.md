@@ -141,3 +141,23 @@ go test ./internal/api/handlers/management/ -run TestGetModelsDevStatus_Shape
 go test ./internal/tui/ -run 'TestCatalogAge|TestRenderCatalogSectionStates'
 go test ./internal/registry/ -run TestGetModelsDevStatus
 ```
+
+## litellm-discovery
+
+**LiteLLM rich-client discovery endpoints (Oh My Pi gateway use)**
+
+`GET /model_group/info`, `/v2/model/info`, `/model/info` and `/v1/model/info`
+serve the live registry as LiteLLM-shaped rich entries (`model_group`,
+`litellm_params`, `model_info` with `max_input_tokens`,
+`max_output_tokens`, `supports_vision/reasoning/function_calling`,
+`supported_openai_params`, task `mode`) so OMP `discovery.type: litellm`
+gateways learn CPA context windows and capabilities instead of falling back
+to bare `/v1/models` ids. Only native `openai` lanes report provider
+`openai` (Responses route); every translated lane reports its own provider
+and stays on chat completions. Same Bearer auth as `/v1/*`.
+
+```bash
+grep -q "model_group/info" internal/api/server_routes.go
+grep -q "handleLiteLLMModelInfo" internal/api/server_litellm.go
+go test ./internal/api/ -run 'TestLiteLLMDiscovery'
+```

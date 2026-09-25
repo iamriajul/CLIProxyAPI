@@ -63,6 +63,7 @@ func (s *Server) setupRoutes() {
 	v1.Use(AuthMiddleware(s.accessManager))
 	{
 		v1.GET("/models", s.unifiedModelsHandler(openaiHandlers, claudeCodeHandlers))
+		v1.GET("/model/info", s.handleLiteLLMModelInfo)
 		v1.POST("/chat/completions", openaiHandlers.ChatCompletions)
 		v1.POST("/completions", openaiHandlers.Completions)
 		v1.POST("/images/generations", openaiHandlers.ImagesGenerations)
@@ -81,6 +82,14 @@ func (s *Server) setupRoutes() {
 		v1.POST("/live", s.codexLiveHandler.Handle)
 		v1.GET("/live/:call_id", s.codexLiveHandler.HandleSideband)
 	}
+
+	// LiteLLM rich-client discovery routes. Rich clients strip a trailing /v1
+	// from the base URL before probing management endpoints, so the root and
+	// /v2 twins must exist alongside the /v1 route above.
+	litellmAuth := AuthMiddleware(s.accessManager)
+	s.engine.GET("/model/info", litellmAuth, s.handleLiteLLMModelInfo)
+	s.engine.GET("/model_group/info", litellmAuth, s.handleLiteLLMModelGroupInfo)
+	s.engine.GET("/v2/model/info", litellmAuth, s.handleLiteLLMModelInfo)
 
 	realtimeAuth := realtimeAuthMiddleware(s.accessManager, s.codexLiveHandler)
 	standardAuth := realtimeStandardAuthMiddleware(s.accessManager)
