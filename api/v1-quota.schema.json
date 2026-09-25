@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cliproxyapi.local/schemas/v1-quota.json",
+  "title": "ModelQuotaAccounts",
+  "description": "GET /v1/quota?model=<id> — per-account quota snapshots for the accounts serving a model. Auth: inference API key (Bearer). Canonical parameter is 'model'; 'model_id' is accepted as an alias. Thinking suffixes (e.g. 'model(high)') are stripped before lookup. Data: live provider quota APIs first (60s TTL cache, stale fallback on errors), degrading per account to passive local snapshots when live is unavailable. ?refresh=live forces a live fetch; ?refresh=cached serves passive snapshots only. The body is a JSON array of accounts sorted by provider then name; operator-disabled accounts are excluded. Status codes: 200 (this schema, min 1 item), 400 missing model, 401 bad key, 404 no serving account, 503 auth manager unavailable. Errors are {\"error\": string} (see $defs/error), matching the v1 auth envelope. Compatibility: additive-only under /v1 — new optional fields may appear, existing fields never change type or meaning; clients MUST ignore unknown properties and tolerate absent optional fields. Grouping (à la CPAMC provider tabs) is done client-side on 'provider'. NOT stable: plan strings, status vocabulary behind in_cooldown, and masking affix lengths; 'description' is reserved for future use.",
+  "type": "array",
+  "minItems": 1,
+  "items": {
+    "$ref": "#/$defs/account"
+  },
+  "$defs": {
+    "account": {
+      "type": "object",
+      "required": [
+        "provider",
+        "type",
+        "in_cooldown",
+        "windows"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "provider": {
+          "type": "string",
+          "description": "Raw provider key (e.g. codex, claude, meta, gemini, vertex). Group by this for CPAMC-style provider tabs; gemini-family keys stay distinct, exactly as CPAMC badges them."
+        },
+        "name": {
+          "type": "string",
+          "description": "Masked display identity, CPAMC-style: masked auth filename first ('codex-km***mi@gmail.com-pro.json'), else masked label, else masked account email ('km***mi@gmail.com') or key suffix ('***1234'). Never a full email, key, or path. Absent when no identity is known."
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "oauth",
+            "api"
+          ],
+          "description": "'oauth' for OAuth-style credentials, 'api' for API-key credentials."
+        },
+        "plan": {
+          "type": "string",
+          "description": "Subscription plan display label when known (live provider data first, local signals as fallback). Opaque string, absent when unknown."
+        },
+        "description": {
+          "type": "string",
+          "description": "Reserved for future use. Currently never present."
+        },
+        "in_cooldown": {
+          "type": "boolean",
+          "description": "True while the account (credential or requested-model state) is effectively blocked by a cooldown."
+        },
+        "windows_observed_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "RFC 3339 time 'windows' was produced: live fetch time when live data backs the account, else the newest passive observation. Absent when nothing was ever observed."
+        },
+        "windows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/window"
+          },
+          "description": "Normalized usage windows: live provider data first, passive snapshots on fallback (credential- and model-level merged, model wins per name). Always an array, possibly empty. Deterministically ordered (5h, 7d, monthly, then alphabetical)."
+        }
+      }
+    },
+    "window": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Stable window slug. Well-known: '5h' (codex five-hour, claude 5h), '7d' (codex weekly, claude 7d), 'monthly' (codex team secondary), 'daily'/'weekly' (devin). Grouped limits prefix their group: antigravity model groups ('gemini-models/5h'), claude model limits ('opus/7d', 'sonnet/7d', 'cowork/7d', 'oauth-apps/7d', 'fable/7d'), zai meters ('credits/5h'), xai products ('product/<slug>'), namespaced codex limits ('bengalfox/7d'). Codex windows are classified by duration (18000s/604800s/28-31d), falling back to primary/secondary position."
+        },
+        "used_percent": {
+          "type": "number",
+          "description": "Consumed share of the window, 0-100. Absent when upstream reported no usage figure."
+        },
+        "reset_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "RFC 3339 window reset time. Absent when unknown."
+        },
+        "status": {
+          "type": "string",
+          "description": "Opaque per-window status when reported (e.g. claude 'allowed'). Absent otherwise."
+        }
+      }
+    },
+    "error": {
+      "type": "object",
+      "required": [
+        "error"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "type": "string",
+          "description": "Human-readable failure reason. Match on HTTP status, not text."
+        }
+      }
+    }
+  }
+}
