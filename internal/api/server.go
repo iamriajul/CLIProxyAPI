@@ -25,6 +25,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/logging"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/managementasset"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/pluginhost"
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/quota"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/redisqueue"
 	sdkaccess "github.com/router-for-me/CLIProxyAPI/v7/sdk/access"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/api/handlers"
@@ -86,6 +87,9 @@ type Server struct {
 
 	// pluginHost owns dynamic plugin Management API route dispatch.
 	pluginHost *pluginhost.Host
+
+	// quotaService resolves live per-credential quota snapshots.
+	quotaService *quota.Service
 
 	// managementRoutesRegistered tracks whether the management routes have been attached to the engine.
 	managementRoutesRegistered atomic.Bool
@@ -208,6 +212,16 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
 	auth.SetQuotaCooldownDisabled(cfg.DisableCooling)
 	auth.SetTransientErrorCooldownSeconds(cfg.TransientErrorCooldownSeconds)
 	applySignatureCacheConfig(nil, cfg)
+	// Live quota fetchers for the inference quota endpoint.
+	s.quotaService = quota.NewService(s.globalProxyURL)
+	s.quotaService.Register(quota.NewAntigravityFetcher())
+	s.quotaService.Register(quota.NewClaudeFetcher())
+	s.quotaService.Register(quota.NewCodexFetcher())
+	s.quotaService.Register(quota.NewDevinFetcher())
+	s.quotaService.Register(quota.NewKimiFetcher())
+	s.quotaService.Register(quota.NewOpenCodeFetcher())
+	s.quotaService.Register(quota.NewXaiFetcher())
+	s.quotaService.Register(quota.NewZaiFetcher())
 	// Initialize management handler
 	s.mgmt = managementHandlers.NewHandler(cfg, configFilePath, authManager)
 	s.mgmt.SetPluginHost(optionState.pluginHost)
@@ -269,6 +283,16 @@ func (s *Server) getConfig() *config.Config {
 	s.cfgMu.RLock()
 	defer s.cfgMu.RUnlock()
 	return s.cfg
+}
+
+// globalProxyURL returns the current global proxy URL for live quota probes.
+// It reads through the config lock so hot-reloads apply to new fetches.
+func (s *Server) globalProxyURL() string {
+	cfg := s.getConfig()
+	if cfg == nil {
+		return ""
+	}
+	return strings.TrimSpace(cfg.ProxyURL)
 }
 
 // Handler returns the HTTP handler used by the server.
