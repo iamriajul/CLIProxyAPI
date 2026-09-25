@@ -32,10 +32,17 @@ type Snapshot struct {
 	ObservedAt time.Time
 }
 
-// for all upstream calls and MUST NOT log tokens or credentials.
+// FetchRequest is a Fetcher's input: the credential, a proxy-aware
+// timeout-configured HTTP client, and whether the caller forced a live
+// refresh. Fetchers MUST use Client for all upstream calls, MUST NOT log
+// tokens or credentials, and SHOULD reserve spend-incurring probes (paid
+// health checks) for forced refreshes.
 type FetchRequest struct {
 	Auth   *coreauth.Auth
 	Client *http.Client
+	// Forced is true when the caller explicitly requested live data
+	// (?refresh=live) rather than a TTL-triggered background refresh.
+	Forced bool
 }
 
 // Fetcher retrieves live quota for one canonical provider. Implementations

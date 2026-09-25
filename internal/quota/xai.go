@@ -70,19 +70,24 @@ func (*XaiFetcher) Fetch(ctx context.Context, req FetchRequest) (*Snapshot, erro
 	weekly, weeklyErr := xaiRequestBilling(ctx, req.Client, xaiBillingWeeklyURL, headers)
 	monthly, monthlyErr := xaiRequestBilling(ctx, req.Client, xaiBillingMonthlyURL, headers)
 	if weeklyErr != nil && monthlyErr != nil {
-		return xaiPaidHealthFallback(ctx, req.Client, token, weeklyErr)
+		return xaiPaidHealthFallback(ctx, req, token, weeklyErr)
 	}
 	summary := xaiMergeSummaries(weekly, monthly)
 	if summary == nil {
-		return xaiPaidHealthFallback(ctx, req.Client, token, errors.New("xai quota fetch: empty quota data"))
+		return xaiPaidHealthFallback(ctx, req, token, errors.New("xai quota fetch: empty quota data"))
 	}
 	return xaiSnapshotFromSummary(summary), nil
 }
 
 // xaiPaidHealthFallback probes chat completions like the adapter's paid path.
 // Success means a paid credential with no measurable quota: report the plan
-// with no windows. Failure preserves the original billing error.
-func xaiPaidHealthFallback(ctx context.Context, client *http.Client, token string, billingErr error) (*Snapshot, error) {
+// with no windows. Failure preserves the original billing error. The probe
+// spends a real completion, so it runs only on forced refreshes
+// (?refresh=live), never on TTL-triggered background polls.
+func xaiPaidHealthFallback(ctx context.Context, req FetchRequest, token string, billingErr error) (*Snapshot, error) {
+	if !req.Forced {
+		return nil, billingErr
+	}
 	body, _ := json.Marshal(map[string]any{
 		"model":      xaiPaidHealthModel,
 		"messages":   []any{map[string]string{"role": "user", "content": "ping"}},
@@ -94,7 +99,7 @@ func xaiPaidHealthFallback(ctx context.Context, client *http.Client, token strin
 		"accept":        "application/json",
 		"Content-Type":  "application/json",
 	}
-	if err := DoJSON(ctx, client, http.MethodPost, xaiChatURL, headers, body, nil); err != nil {
+	if err := DoJSON(ctx, req.Client, http.MethodPost, xaiChatURL, headers, body, nil); err != nil {
 		return nil, billingErr
 	}
 	return &Snapshot{Plan: "Paid"}, nil

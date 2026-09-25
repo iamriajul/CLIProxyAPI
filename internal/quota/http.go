@@ -15,7 +15,12 @@ const maxQuotaBodyBytes = 4 << 20
 // DoJSON performs one upstream quota call and decodes a JSON response. It
 // enforces the body limit and returns errors containing only method, URL, and
 // status — never headers or bodies, which may carry credentials or PII.
+// A nil client falls back to http.DefaultClient so fetchers stay safe to
+// call outside the Service (which always injects a configured client).
 func DoJSON(ctx context.Context, client *http.Client, method, url string, headers map[string]string, body []byte, out any) error {
+	if client == nil {
+		client = http.DefaultClient
+	}
 	var reader io.Reader
 	if body != nil {
 		reader = bytes.NewReader(body)

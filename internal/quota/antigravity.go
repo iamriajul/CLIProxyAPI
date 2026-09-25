@@ -50,10 +50,7 @@ func (*AntigravityFetcher) Fetch(ctx context.Context, req FetchRequest) (*Snapsh
 	if token == "" {
 		return nil, errors.New("antigravity quota fetch: missing access_token")
 	}
-	client := req.Client
-	if client == nil {
-		client = http.DefaultClient
-	}
+	client := req.Client // nil-safe: DoJSON falls back to http.DefaultClient.
 	headers := map[string]string{
 		"Authorization": "Bearer " + token,
 		"Content-Type":  "application/json",

@@ -56,9 +56,10 @@ type inferenceQuotaAccount struct {
 	Windows           []inferenceQuotaWindow `json:"windows"`
 }
 
-// handleInferenceQuota serves cached quota snapshots for the accounts serving
+// handleInferenceQuota serves live-first quota snapshots for the accounts serving
 // a model. It is authenticated with the inference API key (v1 group
-// middleware), performs no upstream network calls, and masks account identity.
+// middleware), fans out to provider quota APIs with per-account passive
+// fallback, and masks account identity.
 // Operator-disabled accounts are excluded; anything else is returned with an
 // in_cooldown flag when effectively blocked.
 func (s *Server) handleInferenceQuota(c *gin.Context) {
@@ -499,17 +500,19 @@ func inferenceQuotaPlan(auth *coreauth.Auth) string {
 		return ""
 	}
 	isCodex := strings.EqualFold(strings.TrimSpace(auth.Provider), "codex")
+	planByKey := make(map[string]string, len(auth.Quota.Signals))
 	for key, value := range auth.Quota.Signals {
-		trimmed := strings.TrimSpace(value)
-		if trimmed == "" {
-			continue
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			planByKey[strings.ToLower(strings.TrimSpace(key))] = trimmed
 		}
-		switch {
-		case strings.EqualFold(strings.TrimSpace(key), "x-codex-plan-type"):
-			return quota.CodexPlanDisplay(trimmed)
-		case strings.EqualFold(strings.TrimSpace(key), "plan"):
-			return trimmed
-		}
+	}
+	// Prefer the explicit Codex plan header over the generic key so concurrent
+	// signals resolve the same way on every poll.
+	if plan, ok := planByKey["x-codex-plan-type"]; ok {
+		return quota.CodexPlanDisplay(plan)
+	}
+	if plan, ok := planByKey["plan"]; ok {
+		return plan
 	}
 	if !isCodex || auth.Metadata == nil {
 		return ""

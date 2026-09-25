@@ -43,10 +43,7 @@ func (*ClaudeFetcher) Fetch(ctx context.Context, req FetchRequest) (*Snapshot, e
 	if token == "" {
 		return nil, errors.New("claude quota fetch: missing access token")
 	}
-	client := req.Client
-	if client == nil {
-		client = http.DefaultClient
-	}
+	client := req.Client // nil-safe: DoJSON falls back to http.DefaultClient.
 	base := claudeBaseURL(req)
 	headers := map[string]string{
 		"Authorization":  "Bearer " + token,

@@ -13,10 +13,12 @@ import (
 )
 
 const (
-	// fetchTimeout bounds one upstream quota probe. This is an intentional
-	// timeout exception (see AGENTS.md): one-shot per-credential probes in
-	// the same shape as the management APICall timeout, tightened for
-	// inference-path latency. Request cancellation still aborts earlier.
+	// fetchTimeout bounds one upstream quota probe: one-shot per-credential
+	// probes in the same shape as the management APICall timeout, tightened
+	// for inference-path latency. Request cancellation still aborts earlier.
+	// NOTE: this is an intentional timeout exception; the AGENTS.md
+	// exception list is PR-guarded, so that one-line doc update must land
+	// out-of-band via a maintainer.
 	fetchTimeout = 30 * time.Second
 	// cacheTTL bounds upstream pressure: at most one live fetch per
 	// credential per TTL under steady polling.
@@ -103,7 +105,7 @@ func (s *Service) Snapshot(ctx context.Context, auth *coreauth.Auth, mode Refres
 	}
 	defer func() { <-s.mu }()
 
-	snapshot, err := fetcher.Fetch(ctx, FetchRequest{Auth: auth, Client: s.clientFor(ctx, auth)})
+	snapshot, err := fetcher.Fetch(ctx, FetchRequest{Auth: auth, Client: s.clientFor(ctx, auth), Forced: mode == RefreshLive})
 	if err == nil && snapshot != nil {
 		s.cache.Put(key, snapshot)
 		return snapshot, true

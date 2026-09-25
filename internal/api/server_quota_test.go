@@ -318,3 +318,28 @@ func TestHandleInferenceQuota(t *testing.T) {
 		t.Fatalf("key observed_at present without observations: %+v", keyed)
 	}
 }
+
+func TestInferenceQuotaPlanPrefersCodexHeader(t *testing.T) {
+	credential := &auth.Auth{
+		Provider: "codex",
+		Quota: auth.QuotaState{Signals: map[string]string{
+			"plan":               "Ambiguous",
+			"X-Codex-Plan-Type":  "pro",
+			"unrelated":          "x",
+			"another-plan-alike": "y",
+		}},
+	}
+	// Run repeatedly: map iteration order must not change the winner.
+	for range 50 {
+		if got := inferenceQuotaPlan(credential); got != "Pro 20x" {
+			t.Fatalf("plan = %q, want Pro 20x", got)
+		}
+	}
+	plain := &auth.Auth{
+		Provider: "devin",
+		Quota:    auth.QuotaState{Signals: map[string]string{"plan": "Pro"}},
+	}
+	if got := inferenceQuotaPlan(plain); got != "Pro" {
+		t.Fatalf("plan = %q, want Pro", got)
+	}
+}

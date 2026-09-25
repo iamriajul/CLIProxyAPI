@@ -126,7 +126,10 @@ func TestXaiFetcherPaidHealthFallback(t *testing.T) {
 	}()
 
 	auth := &coreauth.Auth{Attributes: map[string]string{"access_token": "paid-token"}}
-	snapshot, err := NewXaiFetcher().Fetch(context.Background(), FetchRequest{Auth: auth, Client: server.Client()})
+	if _, err := NewXaiFetcher().Fetch(context.Background(), FetchRequest{Auth: auth, Client: server.Client()}); err == nil {
+		t.Fatal("expected billing error without forced refresh (no spend on background polls)")
+	}
+	snapshot, err := NewXaiFetcher().Fetch(context.Background(), FetchRequest{Auth: auth, Client: server.Client(), Forced: true})
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
