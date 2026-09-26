@@ -3,6 +3,7 @@ package quota
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -108,4 +109,128 @@ func TestServiceSnapshotUnsupportedAndCancel(t *testing.T) {
 	if _, ok := service.Snapshot(ctx, testAuth("b", "codex"), RefreshLive); ok {
 		t.Fatal("expected miss on cancelled context")
 	}
+}
+
+func TestServiceSnapshotCoalescesConcurrentMisses(t *testing.T) {
+	service := NewService(nil)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	fetcher := &blockingFetcher{provider: "codex", started: started, release: release, once: &once}
+	service.Register(fetcher)
+	auth := testAuth("coalesce", "codex")
+
+	const callers = 8
+	var wg sync.WaitGroup
+	okCount := atomic.Int64{}
+	wg.Add(callers)
+	for range callers {
+		go func() {
+			defer wg.Done()
+			if _, ok := service.Snapshot(context.Background(), auth, RefreshAuto); ok {
+				okCount.Add(1)
+			}
+		}()
+	}
+	<-started
+	close(release)
+	wg.Wait()
+	if fetcher.calls.Load() != 1 {
+		t.Fatalf("calls = %d, want 1 shared fetch", fetcher.calls.Load())
+	}
+	if okCount.Load() != callers {
+		t.Fatalf("ok = %d, want %d", okCount.Load(), callers)
+	}
+}
+
+type blockingFetcher struct {
+	provider string
+	started  chan struct{}
+	release  chan struct{}
+	once     *sync.Once
+	calls    atomic.Int64
+}
+
+func (f *blockingFetcher) Provider() string { return f.provider }
+
+func (f *blockingFetcher) Fetch(context.Context, FetchRequest) (*Snapshot, error) {
+	f.calls.Add(1)
+	f.once.Do(func() { close(f.started) })
+	<-f.release
+	return &Snapshot{Plan: "pro"}, nil
+}
+
+func TestServiceSnapshotLimitsProviderBurst(t *testing.T) {
+	const accounts = 10
+	service := NewService(nil)
+	codex := &gatedFetcher{provider: "codex", held: make(chan struct{}, accounts), done: make(chan struct{})}
+	claude := &gatedFetcher{provider: "claude", held: make(chan struct{}, 1), done: make(chan struct{})}
+	service.Register(codex)
+	service.Register(claude)
+	var wg sync.WaitGroup
+	wg.Add(accounts + 1)
+	for i := range accounts {
+		auth := testAuth("codex-"+string(rune('a'+i)), "codex")
+		go func() {
+			defer wg.Done()
+			_, _ = service.Snapshot(context.Background(), auth, RefreshLive)
+		}()
+	}
+	go func() {
+		defer wg.Done()
+		_, _ = service.Snapshot(context.Background(), testAuth("claude-1", "claude"), RefreshLive)
+	}()
+
+	for range maxConcurrentFetches {
+		<-codex.held
+	}
+	<-claude.held
+	if peak := codex.peak.Load(); peak > maxConcurrentFetches {
+		t.Fatalf("codex peak = %d, want at most %d", peak, maxConcurrentFetches)
+	}
+	if claude.calls.Load() != 1 {
+		t.Fatalf("claude calls = %d, want 1 while codex is capped", claude.calls.Load())
+	}
+	codex.release()
+	claude.release()
+	wg.Wait()
+	if codex.calls.Load() != accounts {
+		t.Fatalf("codex calls = %d, want %d", codex.calls.Load(), accounts)
+	}
+}
+
+type gatedFetcher struct {
+	provider string
+	current  atomic.Int64
+	peak     atomic.Int64
+	calls    atomic.Int64
+	once     sync.Once
+	done     chan struct{}
+	held     chan struct{}
+}
+
+func (f *gatedFetcher) Provider() string { return f.provider }
+
+func (f *gatedFetcher) release() {
+	f.once.Do(func() {
+		if f.done == nil {
+			f.done = make(chan struct{})
+		}
+		close(f.done)
+	})
+}
+
+func (f *gatedFetcher) Fetch(context.Context, FetchRequest) (*Snapshot, error) {
+	f.calls.Add(1)
+	now := f.current.Add(1)
+	for {
+		peak := f.peak.Load()
+		if now <= peak || f.peak.CompareAndSwap(peak, now) {
+			break
+		}
+	}
+	f.held <- struct{}{}
+	<-f.done
+	f.current.Add(-1)
+	return &Snapshot{Plan: "pro"}, nil
 }
