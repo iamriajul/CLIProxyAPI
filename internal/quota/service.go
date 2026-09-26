@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
@@ -25,19 +26,31 @@ const (
 	cacheTTL = 60 * time.Second
 	// staleMax bounds stale fallback after fetch errors.
 	staleMax = 10 * time.Minute
-	// maxConcurrentFetches bounds global concurrent upstream probes.
-	maxConcurrentFetches = 8
+	// maxConcurrentFetches bounds concurrent probes to one provider. A gateway
+	// listing ten accounts of the same provider must not open ten upstream
+	// calls at once. Different providers run independently.
+	maxConcurrentFetches = 2
 )
 
 // Service resolves live quota snapshots per credential with TTL caching,
-// stale fallback, and a global concurrency bound. The zero Fetcher set
+// stale fallback, and a per-provider concurrency lane. The zero Fetcher set
 // serves nothing; Register adds providers.
 type Service struct {
 	globalProxy func() string
 
-	mu       chan struct{}
+	flight   sync.Mutex
+	lanes    map[string]chan struct{}
 	cache    *Cache
 	fetchers map[string]Fetcher
+	inflight map[string]*fetchCall
+}
+
+// fetchCall is one upstream probe shared by every caller that misses the
+// cache for the same credential at the same time.
+type fetchCall struct {
+	done     chan struct{}
+	snapshot *Snapshot
+	ok       bool
 }
 
 // NewService builds a Service. globalProxy supplies the current global
@@ -46,9 +59,10 @@ type Service struct {
 func NewService(globalProxy func() string) *Service {
 	return &Service{
 		globalProxy: globalProxy,
-		mu:          make(chan struct{}, maxConcurrentFetches),
 		cache:       NewCache(cacheTTL, staleMax),
+		lanes:       make(map[string]chan struct{}),
 		fetchers:    make(map[string]Fetcher),
+		inflight:    make(map[string]*fetchCall),
 	}
 }
 
@@ -84,9 +98,9 @@ func (s *Service) Snapshot(ctx context.Context, auth *coreauth.Auth, mode Refres
 	if !ok || fetcher == nil {
 		return nil, false
 	}
-	key := strings.TrimSpace(auth.EnsureIndex())
+	key := quotaCacheKey(auth)
 	if key == "" {
-		key = strings.TrimSpace(auth.ID)
+		return nil, false
 	}
 
 	if mode != RefreshLive {
@@ -98,25 +112,103 @@ func (s *Service) Snapshot(ctx context.Context, auth *coreauth.Auth, mode Refres
 		return nil, false
 	}
 
+	if call, shared := s.begin(key); shared {
+		return s.wait(ctx, call, key)
+	} else {
+		defer s.finish(key, call)
+		lane := s.lane(auth.Provider)
+		select {
+		case <-ctx.Done():
+			if snapshot, fresh, stale := s.cache.Get(key); fresh || stale {
+				call.snapshot, call.ok = snapshot, true
+				return snapshot, true
+			}
+			return nil, false
+		case lane <- struct{}{}:
+		}
+		defer func() { <-lane }()
+
+		// The probe is shared. One caller's cancel must not abort it for the
+		// others. fetchTimeout still bounds it.
+		fetchCtx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+		defer cancel()
+		snapshot, err := fetcher.Fetch(fetchCtx, FetchRequest{Auth: auth, Client: s.clientFor(fetchCtx, auth), Forced: mode == RefreshLive})
+		if err == nil && snapshot != nil {
+			s.cache.Put(key, snapshot)
+			call.snapshot, call.ok = snapshot, true
+			return snapshot, true
+		}
+		if err != nil {
+			log.WithFields(log.Fields{"provider": auth.Provider}).WithError(err).Warn("live quota fetch failed")
+		}
+		if snapshot, fresh, stale := s.cache.Get(key); fresh || stale {
+			call.snapshot, call.ok = snapshot, true
+			return snapshot, true
+		}
+		return nil, false
+	}
+}
+
+// quotaCacheKey identifies a credential without writing Auth.Index.
+// EnsureIndex mutates the auth and races when one credential is queried
+// concurrently. A preset index is reused; otherwise the id is enough,
+// because live snapshots are process-local.
+func quotaCacheKey(auth *coreauth.Auth) string {
+	if auth == nil {
+		return ""
+	}
+	if key := strings.TrimSpace(auth.Index); key != "" {
+		return key
+	}
+	return strings.TrimSpace(auth.ID)
+}
+
+// lane returns the concurrency gate for one provider. The same channel is
+// reused so acquire and release match.
+func (s *Service) lane(provider string) chan struct{} {
+	key := CanonicalProvider(provider)
+	if key == "" {
+		key = strings.ToLower(strings.TrimSpace(provider))
+	}
+	s.flight.Lock()
+	defer s.flight.Unlock()
+	lane := s.lanes[key]
+	if lane == nil {
+		lane = make(chan struct{}, maxConcurrentFetches)
+		s.lanes[key] = lane
+	}
+	return lane
+}
+
+// begin starts a fetch or joins the one already running for key.
+func (s *Service) begin(key string) (*fetchCall, bool) {
+	s.flight.Lock()
+	defer s.flight.Unlock()
+	if call := s.inflight[key]; call != nil {
+		return call, true
+	}
+	call := &fetchCall{done: make(chan struct{})}
+	s.inflight[key] = call
+	return call, false
+}
+
+func (s *Service) finish(key string, call *fetchCall) {
+	s.flight.Lock()
+	delete(s.inflight, key)
+	s.flight.Unlock()
+	close(call.done)
+}
+
+func (s *Service) wait(ctx context.Context, call *fetchCall, key string) (*Snapshot, bool) {
 	select {
 	case <-ctx.Done():
+		if snapshot, fresh, stale := s.cache.Get(key); fresh || stale {
+			return snapshot, true
+		}
 		return nil, false
-	case s.mu <- struct{}{}:
+	case <-call.done:
+		return call.snapshot, call.ok
 	}
-	defer func() { <-s.mu }()
-
-	snapshot, err := fetcher.Fetch(ctx, FetchRequest{Auth: auth, Client: s.clientFor(ctx, auth), Forced: mode == RefreshLive})
-	if err == nil && snapshot != nil {
-		s.cache.Put(key, snapshot)
-		return snapshot, true
-	}
-	if err != nil {
-		log.WithFields(log.Fields{"provider": auth.Provider}).WithError(err).Warn("live quota fetch failed")
-	}
-	if snapshot, fresh, stale := s.cache.Get(key); fresh || stale {
-		return snapshot, true
-	}
-	return nil, false
 }
 
 // clientFor builds a proxy-aware client per fetch so hot-reloaded proxy
