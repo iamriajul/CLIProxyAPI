@@ -78,7 +78,7 @@ func TestHandleInferenceQuota_Contract(t *testing.T) {
 			t.Fatalf("account %q = %#v, want string", key, account[key])
 		}
 	}
-	if account["type"] != "oauth" || account["name"] != "co***ct@example.com" || account["provider_name"] != "Codex" {
+	if account["type"] != "oauth" || account["name"] != "c***@example.com" || account["provider_name"] != "Codex" {
 		t.Fatalf("account = %+v", account)
 	}
 	if _, ok := account["description"]; ok {
@@ -286,6 +286,8 @@ func TestInferenceQuotaSchemaParity(t *testing.T) {
 	}
 	check("account", inferenceQuotaAccount{}, schema.Defs["account"].Required, schema.Defs["account"].Properties)
 	check("window", inferenceQuotaWindow{}, schema.Defs["window"].Required, schema.Defs["window"].Properties)
+	check("resets", inferenceQuotaResets{}, schema.Defs["resets"].Required, schema.Defs["resets"].Properties)
+	check("resetCredit", inferenceQuotaResetCredit{}, schema.Defs["resetCredit"].Required, schema.Defs["resetCredit"].Properties)
 }
 
 func jsonTagSets(structType reflect.Type) (required, fields []string) {
