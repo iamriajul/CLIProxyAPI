@@ -33,12 +33,11 @@ const (
 )
 
 // Service resolves live quota snapshots per credential with TTL caching,
-// stale fallback, and a global concurrency bound. The zero Fetcher set
+// stale fallback, and a per-provider concurrency lane. The zero Fetcher set
 // serves nothing; Register adds providers.
 type Service struct {
 	globalProxy func() string
 
-	mu       chan struct{}
 	flight   sync.Mutex
 	lanes    map[string]chan struct{}
 	cache    *Cache
@@ -117,17 +116,23 @@ func (s *Service) Snapshot(ctx context.Context, auth *coreauth.Auth, mode Refres
 		return s.wait(ctx, call, key)
 	} else {
 		defer s.finish(key, call)
+		lane := s.lane(auth.Provider)
 		select {
 		case <-ctx.Done():
 			if snapshot, fresh, stale := s.cache.Get(key); fresh || stale {
 				call.snapshot, call.ok = snapshot, true
+				return snapshot, true
 			}
 			return nil, false
-		case s.lane(auth.Provider) <- struct{}{}:
+		case lane <- struct{}{}:
 		}
-		defer func() { <-s.lane(auth.Provider) }()
+		defer func() { <-lane }()
 
-		snapshot, err := fetcher.Fetch(ctx, FetchRequest{Auth: auth, Client: s.clientFor(ctx, auth), Forced: mode == RefreshLive})
+		// The probe is shared. One caller's cancel must not abort it for the
+		// others. fetchTimeout still bounds it.
+		fetchCtx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+		defer cancel()
+		snapshot, err := fetcher.Fetch(fetchCtx, FetchRequest{Auth: auth, Client: s.clientFor(fetchCtx, auth), Forced: mode == RefreshLive})
 		if err == nil && snapshot != nil {
 			s.cache.Put(key, snapshot)
 			call.snapshot, call.ok = snapshot, true
