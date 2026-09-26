@@ -220,6 +220,7 @@ func mapQuotaResets(resets *quota.Resets) []inferenceQuotaResetCredit {
 	for _, credit := range resets.Credits {
 		out = append(out, inferenceQuotaResetCredit{ExpiresAt: credit.ExpiresAt})
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ExpiresAt.Before(out[j].ExpiresAt) })
 	return out
 }
 
