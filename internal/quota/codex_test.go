@@ -163,6 +163,39 @@ func TestCodexFetcherLimitReached(t *testing.T) {
 	}
 }
 
+func TestCodexFetcherResetCredits(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case codexUsagePath:
+			_, _ = w.Write([]byte(codexTestCurrentUsage))
+		case codexResetCreditsPath:
+			_, _ = w.Write([]byte(`{"available_count":2,"credits":[` +
+				`{"reset_type":"codex_rate_limits","status":"available","expires_at":"2026-10-15T00:00:00Z"},` +
+				`{"reset_type":"codex_rate_limits","status":"available","expires_at":"2026-10-01T00:00:00Z"},` +
+				`{"reset_type":"other","status":"available","expires_at":"2026-10-02T00:00:00Z"},` +
+				`{"reset_type":"codex_rate_limits","status":"consumed","expires_at":"2026-10-03T00:00:00Z"}` +
+				`]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	snapshot, err := NewCodexFetcher().Fetch(context.Background(), FetchRequest{Auth: codexTestAuth(server), Client: server.Client()})
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if snapshot == nil || snapshot.Resets == nil {
+		t.Fatalf("resets missing: %+v", snapshot)
+	}
+	if snapshot.Resets.Available != 2 || len(snapshot.Resets.Credits) != 2 {
+		t.Fatalf("resets = %+v", snapshot.Resets)
+	}
+	if !snapshot.Resets.Credits[0].ExpiresAt.Before(snapshot.Resets.Credits[1].ExpiresAt) {
+		t.Fatalf("credits not soonest-first: %+v", snapshot.Resets.Credits)
+	}
+}
+
 func TestCodexFetcherErrors(t *testing.T) {
 	server := codexTestServer(t, `{"rate_limit":null}`, http.StatusOK, nil, nil)
 	defer server.Close()
