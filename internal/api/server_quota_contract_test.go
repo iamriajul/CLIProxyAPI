@@ -286,6 +286,8 @@ func TestInferenceQuotaSchemaParity(t *testing.T) {
 	}
 	check("account", inferenceQuotaAccount{}, schema.Defs["account"].Required, schema.Defs["account"].Properties)
 	check("window", inferenceQuotaWindow{}, schema.Defs["window"].Required, schema.Defs["window"].Properties)
+	check("resets", inferenceQuotaResets{}, schema.Defs["resets"].Required, schema.Defs["resets"].Properties)
+	check("resetCredit", inferenceQuotaResetCredit{}, schema.Defs["resetCredit"].Required, schema.Defs["resetCredit"].Properties)
 }
 
 func jsonTagSets(structType reflect.Type) (required, fields []string) {

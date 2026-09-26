@@ -61,6 +61,7 @@ type inferenceQuotaAccount struct {
 	InCooldown        bool                   `json:"in_cooldown"`
 	WindowsObservedAt *time.Time             `json:"windows_observed_at,omitempty"`
 	Windows           []inferenceQuotaWindow `json:"windows"`
+	Resets            *inferenceQuotaResets  `json:"resets,omitempty"`
 }
 
 // handleInferenceQuota serves live-first quota snapshots for the accounts serving
@@ -163,6 +164,7 @@ func buildInferenceQuotaAccount(auth *coreauth.Auth, model string, now time.Time
 	plan := inferenceQuotaPlan(auth)
 	observedAt := inferenceQuotaObservedAt(auth.Quota, modelState)
 	windows := inferenceQuotaAccountWindows(auth.Provider, auth.Quota, modelState)
+	var resets *inferenceQuotaResets
 	if live != nil {
 		if len(live.Windows) > 0 {
 			windows = mapQuotaWindows(live.Windows)
@@ -174,6 +176,7 @@ func buildInferenceQuotaAccount(auth *coreauth.Auth, model string, now time.Time
 		if strings.TrimSpace(live.Plan) != "" {
 			plan = strings.TrimSpace(live.Plan)
 		}
+		resets = mapQuotaResets(live.Resets)
 	}
 	return inferenceQuotaAccount{
 		Provider:          strings.TrimSpace(auth.Provider),
@@ -184,6 +187,7 @@ func buildInferenceQuotaAccount(auth *coreauth.Auth, model string, now time.Time
 		InCooldown:        inCooldown,
 		WindowsObservedAt: observedAt,
 		Windows:           windows,
+		Resets:            resets,
 	}
 }
 
@@ -198,6 +202,29 @@ func mapQuotaWindows(windows []quota.Window) []inferenceQuotaWindow {
 		})
 	}
 	return out
+}
+
+// inferenceQuotaResets is a provider's spendable manual-reset balance.
+// Absent when the provider does not report one. Available may be zero.
+type inferenceQuotaResets struct {
+	Available int                         `json:"available"`
+	Credits   []inferenceQuotaResetCredit `json:"credits"`
+}
+
+// inferenceQuotaResetCredit is one spendable reset and when it expires.
+type inferenceQuotaResetCredit struct {
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+func mapQuotaResets(resets *quota.Resets) *inferenceQuotaResets {
+	if resets == nil {
+		return nil
+	}
+	credits := make([]inferenceQuotaResetCredit, 0, len(resets.Credits))
+	for _, credit := range resets.Credits {
+		credits = append(credits, inferenceQuotaResetCredit{ExpiresAt: credit.ExpiresAt})
+	}
+	return &inferenceQuotaResets{Available: resets.Available, Credits: credits}
 }
 
 // inferenceQuotaCooldown reports whether the account is effectively blocked

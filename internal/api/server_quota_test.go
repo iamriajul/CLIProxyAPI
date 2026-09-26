@@ -219,6 +219,7 @@ func TestHandleInferenceQuota(t *testing.T) {
 	allowedKeys := map[string]bool{
 		"provider": true, "provider_name": true, "name": true, "type": true, "plan": true,
 		"description": true, "in_cooldown": true, "windows_observed_at": true, "windows": true,
+		"resets": true,
 	}
 	allowedWindowKeys := map[string]bool{
 		"name": true, "used_percent": true, "reset_at": true, "status": true,

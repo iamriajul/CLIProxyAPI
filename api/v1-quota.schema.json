@@ -62,6 +62,39 @@
             "$ref": "#/$defs/window"
           },
           "description": "Normalized usage windows: live provider data first, passive snapshots on fallback (credential- and model-level merged, model wins per name). Always an array, possibly empty. Deterministically ordered (5h, 7d, monthly, then alphabetical)."
+        },
+        "resets": {
+          "$ref": "#/$defs/resets",
+          "description": "Spendable manual-reset balance. Present only when the provider reports one (Codex today). Absent means unknown, not zero."
+        }
+      }
+    },
+    "resets": {
+      "type": "object",
+      "required": ["available", "credits"],
+      "additionalProperties": true,
+      "properties": {
+        "available": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How many manual resets the account can still spend. Zero is a real answer."
+        },
+        "credits": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/resetCredit" },
+          "description": "Individual resets with a known expiry, soonest first. Empty when only the count is known."
+        }
+      }
+    },
+    "resetCredit": {
+      "type": "object",
+      "required": ["expires_at"],
+      "additionalProperties": true,
+      "properties": {
+        "expires_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "RFC 3339 instant this reset stops being spendable."
         }
       }
     },
