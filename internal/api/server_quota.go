@@ -54,14 +54,14 @@ type inferenceQuotaAccount struct {
 	ProviderName string `json:"provider_name,omitempty"`
 	// Name carries only the masked account email. When no email is stored,
 	// it falls back to the masked auth filename stem (.json excluded).
-	Name              string                 `json:"name,omitempty"`
-	Type              string                 `json:"type"`
-	Plan              string                 `json:"plan,omitempty"`
-	Description       string                 `json:"description,omitempty"`
-	InCooldown        bool                   `json:"in_cooldown"`
-	WindowsObservedAt *time.Time             `json:"windows_observed_at,omitempty"`
-	Windows           []inferenceQuotaWindow `json:"windows"`
-	Resets            *inferenceQuotaResets  `json:"resets,omitempty"`
+	Name              string                      `json:"name,omitempty"`
+	Type              string                      `json:"type"`
+	Plan              string                      `json:"plan,omitempty"`
+	Description       string                      `json:"description,omitempty"`
+	InCooldown        bool                        `json:"in_cooldown"`
+	WindowsObservedAt *time.Time                  `json:"windows_observed_at,omitempty"`
+	Windows           []inferenceQuotaWindow      `json:"windows"`
+	ResetCredits      []inferenceQuotaResetCredit `json:"reset_credits,omitempty"`
 }
 
 // handleInferenceQuota serves live-first quota snapshots for the accounts serving
@@ -164,7 +164,7 @@ func buildInferenceQuotaAccount(auth *coreauth.Auth, model string, now time.Time
 	plan := inferenceQuotaPlan(auth)
 	observedAt := inferenceQuotaObservedAt(auth.Quota, modelState)
 	windows := inferenceQuotaAccountWindows(auth.Provider, auth.Quota, modelState)
-	var resets *inferenceQuotaResets
+	var resets []inferenceQuotaResetCredit
 	if live != nil {
 		if len(live.Windows) > 0 {
 			windows = mapQuotaWindows(live.Windows)
@@ -187,7 +187,7 @@ func buildInferenceQuotaAccount(auth *coreauth.Auth, model string, now time.Time
 		InCooldown:        inCooldown,
 		WindowsObservedAt: observedAt,
 		Windows:           windows,
-		Resets:            resets,
+		ResetCredits:      resets,
 	}
 }
 
@@ -204,27 +204,24 @@ func mapQuotaWindows(windows []quota.Window) []inferenceQuotaWindow {
 	return out
 }
 
-// inferenceQuotaResets is a provider's spendable manual-reset balance.
-// Absent when the provider does not report one. Available may be zero.
-type inferenceQuotaResets struct {
-	Available int                         `json:"available"`
-	Credits   []inferenceQuotaResetCredit `json:"credits"`
-}
-
-// inferenceQuotaResetCredit is one spendable reset and when it expires.
+// inferenceQuotaResetCredit is one spendable manual reset.
 type inferenceQuotaResetCredit struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
-func mapQuotaResets(resets *quota.Resets) *inferenceQuotaResets {
-	if resets == nil {
+// mapQuotaResets returns each spendable reset, soonest first. Length is the
+// count. Nil when there is no expiry to show, including a count-only balance:
+// this contract has no count field, so a number without a date is not emitted.
+func mapQuotaResets(resets *quota.Resets) []inferenceQuotaResetCredit {
+	if resets == nil || len(resets.Credits) == 0 {
 		return nil
 	}
-	credits := make([]inferenceQuotaResetCredit, 0, len(resets.Credits))
+	out := make([]inferenceQuotaResetCredit, 0, len(resets.Credits))
 	for _, credit := range resets.Credits {
-		credits = append(credits, inferenceQuotaResetCredit{ExpiresAt: credit.ExpiresAt})
+		out = append(out, inferenceQuotaResetCredit{ExpiresAt: credit.ExpiresAt})
 	}
-	return &inferenceQuotaResets{Available: resets.Available, Credits: credits}
+	sort.Slice(out, func(i, j int) bool { return out[i].ExpiresAt.Before(out[j].ExpiresAt) })
+	return out
 }
 
 // inferenceQuotaCooldown reports whether the account is effectively blocked
