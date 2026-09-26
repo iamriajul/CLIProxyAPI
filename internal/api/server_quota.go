@@ -483,9 +483,9 @@ func inferenceQuotaLabelEmail(auth *coreauth.Auth) string {
 }
 
 // maskInferenceEmail partially reveals an email so the owner can recognize the
-// account without exposing it as a whole: "jane.doe@example.com" becomes
-// "ja***oe@example.com". Short local parts that would be fully revealed by a
-// suffix keep a prefix-only mask instead.
+// account without exposing the local part: "jane.doe@example.com" becomes
+// "j***@example.com". Only the first character is shown; the domain stays so
+// same-provider accounts remain distinguishable.
 func maskInferenceEmail(email string) string {
 	email = strings.TrimSpace(email)
 	local, domain, found := strings.Cut(email, "@")
@@ -497,17 +497,13 @@ func maskInferenceEmail(email string) string {
 	return maskInferenceLocal(local) + "@" + domain
 }
 
-// maskInferenceLocal masks an email local part, revealing at most two leading
-// and two trailing runes.
+// maskInferenceLocal masks an email local part down to its first character.
 func maskInferenceLocal(local string) string {
 	runes := []rune(local)
 	if len(runes) == 0 {
 		return ""
 	}
-	if len(runes) <= 4 {
-		return string(runes[:min(2, len(runes))]) + "***"
-	}
-	return string(runes[:2]) + "***" + string(runes[len(runes)-2:])
+	return string(runes[:1]) + "***"
 }
 
 var inferenceEmailInTextPattern = regexp.MustCompile(`[\w.+-]+@[\w-]+(?:\.[\w-]+)*`)

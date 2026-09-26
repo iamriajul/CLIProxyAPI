@@ -29,7 +29,7 @@
         },
         "name": {
           "type": "string",
-          "description": "Masked account email only (e.g. 'ow***er@example.com'). Metadata/attributes email wins; a label that is itself an email covers hand-made files with no email field. Final fallback is the masked auth filename stem with any .json suffix excluded. Never a full email, key, or path. Absent when neither email nor filename is known."
+          "description": "Masked account email only (e.g. 'o***@example.com'). Metadata/attributes email wins; a label that is itself an email covers hand-made files with no email field. Final fallback is the masked auth filename stem with any .json suffix excluded. Never a full email, key, or path. Absent when neither email nor filename is known."
         },
         "type": {
           "type": "string",
