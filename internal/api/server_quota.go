@@ -61,6 +61,7 @@ type inferenceQuotaAccount struct {
 	InCooldown        bool                   `json:"in_cooldown"`
 	WindowsObservedAt *time.Time             `json:"windows_observed_at,omitempty"`
 	Windows           []inferenceQuotaWindow `json:"windows"`
+	Resets            *inferenceQuotaResets  `json:"resets,omitempty"`
 }
 
 // handleInferenceQuota serves live-first quota snapshots for the accounts serving
@@ -163,6 +164,7 @@ func buildInferenceQuotaAccount(auth *coreauth.Auth, model string, now time.Time
 	plan := inferenceQuotaPlan(auth)
 	observedAt := inferenceQuotaObservedAt(auth.Quota, modelState)
 	windows := inferenceQuotaAccountWindows(auth.Provider, auth.Quota, modelState)
+	var resets *inferenceQuotaResets
 	if live != nil {
 		if len(live.Windows) > 0 {
 			windows = mapQuotaWindows(live.Windows)
@@ -174,6 +176,7 @@ func buildInferenceQuotaAccount(auth *coreauth.Auth, model string, now time.Time
 		if strings.TrimSpace(live.Plan) != "" {
 			plan = strings.TrimSpace(live.Plan)
 		}
+		resets = mapQuotaResets(live.Resets)
 	}
 	return inferenceQuotaAccount{
 		Provider:          strings.TrimSpace(auth.Provider),
@@ -184,6 +187,7 @@ func buildInferenceQuotaAccount(auth *coreauth.Auth, model string, now time.Time
 		InCooldown:        inCooldown,
 		WindowsObservedAt: observedAt,
 		Windows:           windows,
+		Resets:            resets,
 	}
 }
 
@@ -198,6 +202,29 @@ func mapQuotaWindows(windows []quota.Window) []inferenceQuotaWindow {
 		})
 	}
 	return out
+}
+
+// inferenceQuotaResets is a provider's spendable manual-reset balance.
+// Absent when the provider does not report one. Available may be zero.
+type inferenceQuotaResets struct {
+	Available int                         `json:"available"`
+	Credits   []inferenceQuotaResetCredit `json:"credits"`
+}
+
+// inferenceQuotaResetCredit is one spendable reset and when it expires.
+type inferenceQuotaResetCredit struct {
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+func mapQuotaResets(resets *quota.Resets) *inferenceQuotaResets {
+	if resets == nil {
+		return nil
+	}
+	credits := make([]inferenceQuotaResetCredit, 0, len(resets.Credits))
+	for _, credit := range resets.Credits {
+		credits = append(credits, inferenceQuotaResetCredit{ExpiresAt: credit.ExpiresAt})
+	}
+	return &inferenceQuotaResets{Available: resets.Available, Credits: credits}
 }
 
 // inferenceQuotaCooldown reports whether the account is effectively blocked
@@ -483,9 +510,9 @@ func inferenceQuotaLabelEmail(auth *coreauth.Auth) string {
 }
 
 // maskInferenceEmail partially reveals an email so the owner can recognize the
-// account without exposing it as a whole: "jane.doe@example.com" becomes
-// "ja***oe@example.com". Short local parts that would be fully revealed by a
-// suffix keep a prefix-only mask instead.
+// account without exposing the local part: "jane.doe@example.com" becomes
+// "j***@example.com". Only the first character is shown; the domain stays so
+// same-provider accounts remain distinguishable.
 func maskInferenceEmail(email string) string {
 	email = strings.TrimSpace(email)
 	local, domain, found := strings.Cut(email, "@")
@@ -497,17 +524,13 @@ func maskInferenceEmail(email string) string {
 	return maskInferenceLocal(local) + "@" + domain
 }
 
-// maskInferenceLocal masks an email local part, revealing at most two leading
-// and two trailing runes.
+// maskInferenceLocal masks an email local part down to its first character.
 func maskInferenceLocal(local string) string {
 	runes := []rune(local)
 	if len(runes) == 0 {
 		return ""
 	}
-	if len(runes) <= 4 {
-		return string(runes[:min(2, len(runes))]) + "***"
-	}
-	return string(runes[:2]) + "***" + string(runes[len(runes)-2:])
+	return string(runes[:1]) + "***"
 }
 
 var inferenceEmailInTextPattern = regexp.MustCompile(`[\w.+-]+@[\w-]+(?:\.[\w-]+)*`)
