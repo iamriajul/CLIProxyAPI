@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/gin-gonic/gin"
 	codexauth "github.com/router-for-me/CLIProxyAPI/v7/internal/auth/codex"
@@ -18,17 +19,17 @@ import (
 	coreauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
 )
 
-// inferenceQuotaAccount is one serving account in GET /v1/quota?model=<id>.
+// inferenceQuotaAccount is one serving account in GET /v1/quota[?model=<id>].
 // The response body is a JSON array of these, sorted by provider then name.
 //
 // Compatibility policy (this endpoint is consumed by external integrations):
-//   - The route, the "model" query parameter, and every non-omitempty field
+//   - The route, the optional "model" query parameter, and every non-omitempty field
 //     are stable under /v1. Changes are additive only: new optional fields
 //     may appear, but existing fields never change type or meaning.
 //   - "windows" is always an array, never null (possibly empty).
 //   - "omitempty" fields may be absent; clients MUST tolerate absence.
-//   - Errors are {"error": string} with HTTP semantics (400 missing model,
-//     401 bad key, 404 no serving account, 503 auth manager unavailable),
+//   - Errors are {"error": string} with HTTP semantics (401 bad key,
+//     404 no serving account, 503 auth manager unavailable),
 //     matching the v1 authentication middleware envelope on this endpoint.
 //   - Data is live-first per account (provider quota APIs, 60s TTL cache,
 //     stale fallback on errors), degrading to passive local snapshots when
@@ -46,7 +47,13 @@ import (
 //     The machine-readable contract lives in api/v1-quota.schema.json
 //     and is enforced by TestInferenceQuotaSchemaParity.
 type inferenceQuotaAccount struct {
-	Provider          string                 `json:"provider"`
+	Provider string `json:"provider"`
+	// ProviderName is the displayable formatted provider name (e.g. "Codex",
+	// "xAI", "Z.AI"). The raw provider key stays in Provider for
+	// client-side grouping.
+	ProviderName string `json:"provider_name,omitempty"`
+	// Name carries only the masked account email. When no email is stored,
+	// it falls back to the masked auth filename stem (.json excluded).
 	Name              string                 `json:"name,omitempty"`
 	Type              string                 `json:"type"`
 	Plan              string                 `json:"plan,omitempty"`
@@ -57,9 +64,9 @@ type inferenceQuotaAccount struct {
 }
 
 // handleInferenceQuota serves live-first quota snapshots for the accounts serving
-// a model. It is authenticated with the inference API key (v1 group
-// middleware), fans out to provider quota APIs with per-account passive
-// fallback, and masks account identity.
+// a model, or for all accounts when no model query parameter is given. It is
+// authenticated with the inference API key (v1 group middleware), fans out to
+// provider quota APIs with per-account passive fallback, and masks account identity.
 // Operator-disabled accounts are excluded; anything else is returned with an
 // in_cooldown flag when effectively blocked.
 func (s *Server) handleInferenceQuota(c *gin.Context) {
@@ -67,28 +74,29 @@ func (s *Server) handleInferenceQuota(c *gin.Context) {
 	if requested == "" {
 		requested = strings.TrimSpace(c.Query("model_id"))
 	}
-	if requested == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "model query parameter is required"})
-		return
-	}
 	if s == nil || s.handlers == nil || s.handlers.AuthManager == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "auth manager unavailable"})
 		return
 	}
 
+	allAccounts := requested == ""
 	model := requested
-	if parsed := thinking.ParseSuffix(requested); strings.TrimSpace(parsed.ModelName) != "" {
-		model = strings.TrimSpace(parsed.ModelName)
+	if !allAccounts {
+		if parsed := thinking.ParseSuffix(requested); strings.TrimSpace(parsed.ModelName) != "" {
+			model = strings.TrimSpace(parsed.ModelName)
+		}
 	}
 
-	providers := util.GetProviderName(model)
-	if len(providers) == 0 && model != requested {
-		providers = util.GetProviderName(requested)
-	}
-	providerSet := make(map[string]struct{}, len(providers))
-	for _, provider := range providers {
-		if key := strings.ToLower(strings.TrimSpace(provider)); key != "" {
-			providerSet[key] = struct{}{}
+	providerSet := make(map[string]struct{})
+	if !allAccounts {
+		providers := util.GetProviderName(model)
+		if len(providers) == 0 && model != requested {
+			providers = util.GetProviderName(requested)
+		}
+		for _, provider := range providers {
+			if key := strings.ToLower(strings.TrimSpace(provider)); key != "" {
+				providerSet[key] = struct{}{}
+			}
 		}
 	}
 
@@ -100,17 +108,23 @@ func (s *Server) handleInferenceQuota(c *gin.Context) {
 		if auth == nil || auth.Disabled || auth.Status == coreauth.StatusDisabled {
 			continue
 		}
-		if len(providerSet) > 0 {
-			if _, ok := providerSet[strings.ToLower(strings.TrimSpace(auth.Provider))]; !ok {
+		if !allAccounts {
+			if len(providerSet) > 0 {
+				if _, ok := providerSet[strings.ToLower(strings.TrimSpace(auth.Provider))]; !ok {
+					continue
+				}
+			}
+			if registryRef != nil && !registryRef.ClientSupportsModel(auth.ID, model) {
 				continue
 			}
-		}
-		if registryRef != nil && !registryRef.ClientSupportsModel(auth.ID, model) {
-			continue
 		}
 		matched = append(matched, auth)
 	}
 	if len(matched) == 0 {
+		if allAccounts {
+			c.JSON(http.StatusNotFound, gin.H{"error": "no credentials available"})
+			return
+		}
 		c.JSON(http.StatusNotFound, gin.H{"error": "no credentials serve model " + model})
 		return
 	}
@@ -163,6 +177,7 @@ func buildInferenceQuotaAccount(auth *coreauth.Auth, model string, now time.Time
 	}
 	return inferenceQuotaAccount{
 		Provider:          strings.TrimSpace(auth.Provider),
+		ProviderName:      inferenceQuotaProviderDisplayName(auth.Provider),
 		Name:              inferenceQuotaAccountName(auth),
 		Type:              inferenceQuotaAccountType(auth),
 		Plan:              plan,
@@ -226,21 +241,77 @@ func quotaFlagsBlocked(unavailable, exceeded bool, retryAfter, recoverAt time.Ti
 	return true, time.Time{}
 }
 
-// inferenceQuotaAccountName returns the masked display identity, CPAMC-style:
-// the masked auth filename first (the key quota UIs show), then the masked
-// label, then the masked account email or key suffix.
+// inferenceQuotaAccountName returns the masked display identity: the masked
+// account email only. Metadata/attributes email wins; a label that is itself
+// an email covers hand-made files carrying no email field. As a final
+// fallback it returns the masked auth filename stem with any .json suffix
+// excluded (embedded emails masked, provider prefix preserved). Accounts
+// with neither an email nor a filename report an empty name, which the
+// omitempty tag drops from the response.
 func inferenceQuotaAccountName(auth *coreauth.Auth) string {
 	if auth == nil {
 		return ""
 	}
-	if name := maskInferenceFileName(inferenceQuotaFileName(auth)); name != "" {
-		return name
+	if email := inferenceQuotaEmail(auth); email != "" {
+		return maskInferenceEmail(email)
 	}
-	if label := maskInferenceEmailsInText(strings.TrimSpace(auth.Label)); label != "" {
-		return label
+	if email := inferenceQuotaLabelEmail(auth); email != "" {
+		return maskInferenceEmail(email)
 	}
-	_, account := inferenceQuotaMaskedAccount(auth)
-	return account
+	return maskInferenceFileName(inferenceQuotaFileStem(auth))
+}
+
+// inferenceQuotaFileStem returns the auth file base name without any
+// directory and without a trailing .json suffix, for display fallback when
+// no account email is stored. The suffix match is case-insensitive.
+func inferenceQuotaFileStem(auth *coreauth.Auth) string {
+	name := strings.TrimSpace(inferenceQuotaFileName(auth))
+	const suffix = ".json"
+	if len(name) > len(suffix) && strings.EqualFold(name[len(name)-len(suffix):], suffix) {
+		return name[:len(name)-len(suffix)]
+	}
+	return name
+}
+
+// inferenceQuotaProviderDisplayName formats a raw provider key for display
+// (e.g. "codex" becomes "Codex"). Unknown keys are capitalized verbatim so
+// the field is always human-readable.
+func inferenceQuotaProviderDisplayName(provider string) string {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "":
+		return ""
+	case "antigravity":
+		return "Antigravity"
+	case "claude", "anthropic":
+		return "Claude"
+	case "codex":
+		return "Codex"
+	case "gemini", "gemini-interactions", "interactions":
+		return "Gemini"
+	case "vertex":
+		return "Vertex AI"
+	case "aistudio":
+		return "AI Studio"
+	case "kimi", "kimi-ai", "kimi.ai", "kimi.com", "ai":
+		return "Kimi"
+	case "xai", "x-ai", "grok":
+		return "xAI"
+	case "devin":
+		return "Devin"
+	case "meta", "muse":
+		return "Meta"
+	case "opencode", "opencode-go", "opencode_go":
+		return "OpenCode"
+	case "zai", "glm", "zhipu":
+		return "Z.AI"
+	default:
+		key := strings.TrimSpace(provider)
+		runes := []rune(key)
+		if len(runes) == 0 {
+			return ""
+		}
+		return string(unicode.ToUpper(runes[0])) + string(runes[1:])
+	}
 }
 
 func inferenceQuotaAccountType(auth *coreauth.Auth) string {
@@ -377,33 +448,6 @@ func inferenceQuotaModelState(auth *coreauth.Auth, model string) *coreauth.Model
 	return nil
 }
 
-// inferenceQuotaMaskedAccount returns the account kind and a masked account
-// identifier. Metadata email is not guaranteed (hand-made files, key-only
-// credentials), so the lookup falls back through attributes to an email-like
-// label. OAuth emails keep local-part affixes plus the full domain; API keys
-// keep only a short suffix.
-func inferenceQuotaMaskedAccount(auth *coreauth.Auth) (string, string) {
-	if auth == nil {
-		return "", ""
-	}
-	kind, account := auth.AccountInfo()
-	kind = strings.TrimSpace(kind)
-	account = strings.TrimSpace(account)
-	if account == "" {
-		account = inferenceQuotaEmail(auth)
-	}
-	if account == "" {
-		account = inferenceQuotaLabelEmail(auth)
-	}
-	if account == "" {
-		return kind, ""
-	}
-	if strings.Contains(account, "@") {
-		return kind, maskInferenceEmail(account)
-	}
-	return kind, maskInferenceSecret(account)
-}
-
 func inferenceQuotaEmail(auth *coreauth.Auth) string {
 	if auth == nil {
 		return ""
@@ -466,7 +510,7 @@ func maskInferenceLocal(local string) string {
 	return string(runes[:2]) + "***" + string(runes[len(runes)-2:])
 }
 
-var inferenceEmailInTextPattern = regexp.MustCompile(`[\w.+-]+@[\w-]+(?:\.[\w-]+)+`)
+var inferenceEmailInTextPattern = regexp.MustCompile(`[\w.+-]+@[\w-]+(?:\.[\w-]+)*`)
 
 // maskInferenceEmailsInText masks every email address embedded in free-form
 // text such as credential labels, which may carry raw account emails.

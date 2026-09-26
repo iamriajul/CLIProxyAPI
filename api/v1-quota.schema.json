@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://cliproxyapi.local/schemas/v1-quota.json",
   "title": "ModelQuotaAccounts",
-  "description": "GET /v1/quota?model=<id> — per-account quota snapshots for the accounts serving a model. Auth: inference API key (Bearer). Canonical parameter is 'model'; 'model_id' is accepted as an alias. Thinking suffixes (e.g. 'model(high)') are stripped before lookup. Data: live provider quota APIs first (60s TTL cache, stale fallback on errors), degrading per account to passive local snapshots when live is unavailable. ?refresh=live forces a live fetch; ?refresh=cached serves passive snapshots only. The body is a JSON array of accounts sorted by provider then name; operator-disabled accounts are excluded. Status codes: 200 (this schema, min 1 item), 400 missing model, 401 bad key, 404 no serving account, 503 auth manager unavailable. Errors are {\"error\": string} (see $defs/error), matching the v1 auth envelope. Compatibility: additive-only under /v1 — new optional fields may appear, existing fields never change type or meaning; clients MUST ignore unknown properties and tolerate absent optional fields. Grouping (à la CPAMC provider tabs) is done client-side on 'provider'. NOT stable: plan strings, status vocabulary behind in_cooldown, and masking affix lengths; 'description' is reserved for future use.",
+  "description": "GET /v1/quota[?model=<id>] — per-account quota snapshots for the accounts serving a model, or for all accounts when the parameter is omitted. Auth: inference API key (Bearer). The 'model' parameter is optional; 'model_id' is accepted as an alias. Thinking suffixes (e.g. 'model(high)') are stripped before lookup. Data: live provider quota APIs first (60s TTL cache, stale fallback on errors), degrading per account to passive local snapshots when live is unavailable. ?refresh=live forces a live fetch; ?refresh=cached serves passive snapshots only. The body is a JSON array of accounts sorted by provider then name; operator-disabled accounts are excluded. Status codes: 200 (this schema, min 1 item), 401 bad key, 404 no serving account (no credentials available when the parameter is omitted), 503 auth manager unavailable. Errors are {\"error\": string} (see $defs/error), matching the v1 auth envelope. Compatibility: additive-only under /v1 — new optional fields may appear, existing fields never change type or meaning; clients MUST ignore unknown properties and tolerate absent optional fields. Grouping (à la CPAMC provider tabs) is done client-side on 'provider'. NOT stable: plan strings, status vocabulary behind in_cooldown, and masking affix lengths; 'description' is reserved for future use.",
   "type": "array",
   "minItems": 1,
   "items": {
@@ -23,9 +23,13 @@
           "type": "string",
           "description": "Raw provider key (e.g. codex, claude, meta, gemini, vertex). Group by this for CPAMC-style provider tabs; gemini-family keys stay distinct, exactly as CPAMC badges them."
         },
+        "provider_name": {
+          "type": "string",
+          "description": "Displayable formatted provider name (e.g. Codex, Claude, Gemini, xAI, Z.AI, OpenCode, Kimi). Derived from provider; absent when the provider key is empty."
+        },
         "name": {
           "type": "string",
-          "description": "Masked display identity, CPAMC-style: masked auth filename first ('codex-km***mi@gmail.com-pro.json'), else masked label, else masked account email ('km***mi@gmail.com') or key suffix ('***1234'). Never a full email, key, or path. Absent when no identity is known."
+          "description": "Masked account email only (e.g. 'ow***er@example.com'). Metadata/attributes email wins; a label that is itself an email covers hand-made files with no email field. Final fallback is the masked auth filename stem with any .json suffix excluded. Never a full email, key, or path. Absent when neither email nor filename is known."
         },
         "type": {
           "type": "string",
