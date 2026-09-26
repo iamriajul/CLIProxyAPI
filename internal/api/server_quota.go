@@ -210,7 +210,8 @@ type inferenceQuotaResetCredit struct {
 }
 
 // mapQuotaResets returns each spendable reset, soonest first. Length is the
-// count. Nil when the provider reported none.
+// count. Nil when there is no expiry to show, including a count-only balance:
+// this contract has no count field, so a number without a date is not emitted.
 func mapQuotaResets(resets *quota.Resets) []inferenceQuotaResetCredit {
 	if resets == nil || len(resets.Credits) == 0 {
 		return nil

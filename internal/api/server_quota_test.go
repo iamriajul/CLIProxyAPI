@@ -366,3 +366,26 @@ func TestInferenceQuotaProviderDisplayName(t *testing.T) {
 		}
 	}
 }
+
+func TestMapQuotaResets(t *testing.T) {
+	later := time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC)
+	sooner := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	got := mapQuotaResets(&quota.Resets{
+		Available: 2,
+		Credits: []quota.ResetCredit{
+			{ExpiresAt: later},
+			{ExpiresAt: sooner},
+		},
+	})
+	if len(got) != 2 || !got[0].ExpiresAt.Equal(sooner) || !got[1].ExpiresAt.Equal(later) {
+		t.Fatalf("resets = %+v, want soonest first", got)
+	}
+	// A count without expiries cannot be represented as {expires_at} objects.
+	// Absence means unknown expiry, not zero credits.
+	if got := mapQuotaResets(&quota.Resets{Available: 2}); got != nil {
+		t.Fatalf("count-only = %+v, want nil", got)
+	}
+	if got := mapQuotaResets(nil); got != nil {
+		t.Fatalf("nil = %+v, want nil", got)
+	}
+}
