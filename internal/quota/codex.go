@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -16,10 +17,11 @@ import (
 // Codex quota endpoint and headers, mirroring the CPAMC management UI adapter
 // (CODEX_USAGE_URL, CODEX_REQUEST_HEADERS).
 const (
-	codexDefaultBaseURL = "https://chatgpt.com"
-	codexUsagePath      = "/backend-api/wham/usage"
-	codexUserAgent      = "codex-tui/0.149.1 (Mac OS 26.5.2; arm64) iTerm.app/3.6.11 (codex-tui; 0.149.1)"
-	codexAccountHeader  = "Chatgpt-Account-Id"
+	codexDefaultBaseURL   = "https://chatgpt.com"
+	codexUsagePath        = "/backend-api/wham/usage"
+	codexResetCreditsPath = "/backend-api/wham/rate-limit-reset-credits"
+	codexUserAgent        = "codex-tui/0.149.1 (Mac OS 26.5.2; arm64) iTerm.app/3.6.11 (codex-tui; 0.149.1)"
+	codexAccountHeader    = "Chatgpt-Account-Id"
 )
 
 const (
@@ -43,11 +45,11 @@ func (*CodexFetcher) Provider() string { return "codex" }
 // and additional grouped windows) plus the plan, or an error. A nil snapshot
 // with a nil error means the usage payload carried no parseable windows.
 //
-// Reset credits and subscription-active-until are intentionally not fetched:
-// the former lives on a separate credits endpoint and the latter on the
-// subscriptions endpoint, and neither maps onto Snapshot windows — Snapshot
-// carries only Windows plus Plan, and the usage payload's windows are the
-// complete quota signal.
+// Manual reset credits are fetched best-effort from the credits endpoint
+// (count plus each expiry). A credits failure never fails the windows; the
+// usage payload's count is kept when the details call does not answer.
+// Subscription-active-until stays off this endpoint: it is a renewal date,
+// not a reset the owner can spend.
 func (*CodexFetcher) Fetch(ctx context.Context, req FetchRequest) (*Snapshot, error) {
 	token := BearerToken(req.Auth)
 	if token == "" {
@@ -72,7 +74,11 @@ func (*CodexFetcher) Fetch(ctx context.Context, req FetchRequest) (*Snapshot, er
 	if len(windows) == 0 {
 		return nil, nil
 	}
-	return &Snapshot{Windows: windows, Plan: payload.planType(req)}, nil
+	return &Snapshot{
+		Windows: windows,
+		Plan:    payload.planType(req),
+		Resets:  codexResets(ctx, client, codexBaseURL(req), headers, payload.resetCount()),
+	}, nil
 }
 
 func codexBaseURL(req FetchRequest) string {
@@ -92,17 +98,17 @@ func codexBaseURL(req FetchRequest) string {
 	return codexDefaultBaseURL
 }
 
-// codexUsagePayload mirrors the CodexUsagePayload shape, accepting both
-// snake_case and camelCase spellings with snake_case preferred.
 type codexUsagePayload struct {
-	PlanType        any               `json:"plan_type"`
-	PlanTypeCamel   any               `json:"planType"`
-	RateLimit       *codexRateLimit   `json:"rate_limit"`
-	RateLimitCamel  *codexRateLimit   `json:"rateLimit"`
-	CodeReview      *codexRateLimit   `json:"code_review_rate_limit"`
-	CodeReviewCamel *codexRateLimit   `json:"codeReviewRateLimit"`
-	Additional      []codexAdditional `json:"additional_rate_limits"`
-	AdditionalCamel []codexAdditional `json:"additionalRateLimits"`
+	PlanType          any                `json:"plan_type"`
+	PlanTypeCamel     any                `json:"planType"`
+	RateLimit         *codexRateLimit    `json:"rate_limit"`
+	RateLimitCamel    *codexRateLimit    `json:"rateLimit"`
+	CodeReview        *codexRateLimit    `json:"code_review_rate_limit"`
+	CodeReviewCamel   *codexRateLimit    `json:"codeReviewRateLimit"`
+	Additional        []codexAdditional  `json:"additional_rate_limits"`
+	AdditionalCamel   []codexAdditional  `json:"additionalRateLimits"`
+	ResetCredits      *codexResetSummary `json:"rate_limit_reset_credits"`
+	ResetCreditsCamel *codexResetSummary `json:"rateLimitResetCredits"`
 }
 
 type codexRateLimit struct {
@@ -190,7 +196,6 @@ func (p *codexUsagePayload) planType(req FetchRequest) string {
 	if plan := codexPlanString(p.PlanTypeCamel); plan != "" {
 		return plan
 	}
-	// Fallback mirrors resolveCodexPlanType's auth-side candidates.
 	if req.Auth != nil {
 		if req.Auth.Attributes != nil {
 			if plan := codexPlanString(req.Auth.Attributes["plan_type"]); plan != "" {
@@ -210,6 +215,107 @@ func (p *codexUsagePayload) planType(req FetchRequest) string {
 		}
 	}
 	return ""
+}
+
+func (p *codexUsagePayload) resetCount() *int {
+	if p == nil {
+		return nil
+	}
+	summary := p.ResetCredits
+	if summary == nil {
+		summary = p.ResetCreditsCamel
+	}
+	if summary == nil {
+		return nil
+	}
+	if summary.Available != nil {
+		return summary.Available
+	}
+	return summary.AvailableCamel
+}
+
+type codexResetSummary struct {
+	Available      *int `json:"available_count"`
+	AvailableCamel *int `json:"availableCount"`
+}
+
+type codexResetDetails struct {
+	Available      *int              `json:"available_count"`
+	AvailableCamel *int              `json:"availableCount"`
+	Credits        []codexResetEntry `json:"credits"`
+}
+
+type codexResetEntry struct {
+	ResetType      string `json:"reset_type"`
+	ResetTypeCamel string `json:"resetType"`
+	Status         string `json:"status"`
+	ExpiresAt      string `json:"expires_at"`
+	ExpiresAtCamel string `json:"expiresAt"`
+}
+
+// codexResets prefers the credits endpoint (count plus expiries) and falls
+// back to the usage payload's count. A details failure is not an error.
+func codexResets(ctx context.Context, client *http.Client, baseURL string, headers map[string]string, usageCount *int) *Resets {
+	detailsHeaders := make(map[string]string, len(headers)+3)
+	for key, value := range headers {
+		detailsHeaders[key] = value
+	}
+	detailsHeaders["Accept"] = "application/json"
+	detailsHeaders["OpenAI-Beta"] = "codex-1"
+	detailsHeaders["Originator"] = "Codex Desktop"
+
+	var details codexResetDetails
+	if err := DoJSON(ctx, client, http.MethodGet, baseURL+codexResetCreditsPath, detailsHeaders, nil, &details); err == nil {
+		if resets := details.resets(); resets != nil {
+			return resets
+		}
+	}
+	if usageCount == nil {
+		return nil
+	}
+	return &Resets{Available: *usageCount, Credits: []ResetCredit{}}
+}
+
+func (d *codexResetDetails) resets() *Resets {
+	if d == nil {
+		return nil
+	}
+	credits := make([]ResetCredit, 0, len(d.Credits))
+	for _, entry := range d.Credits {
+		kind := entry.ResetType
+		if kind == "" {
+			kind = entry.ResetTypeCamel
+		}
+		if kind != "" && kind != "codex_rate_limits" {
+			continue
+		}
+		if !strings.EqualFold(entry.Status, "available") {
+			continue
+		}
+		raw := entry.ExpiresAt
+		if raw == "" {
+			raw = entry.ExpiresAtCamel
+		}
+		at, err := time.Parse(time.RFC3339, strings.TrimSpace(raw))
+		if err != nil {
+			continue
+		}
+		credits = append(credits, ResetCredit{ExpiresAt: at.UTC()})
+	}
+	sort.Slice(credits, func(i, j int) bool { return credits[i].ExpiresAt.Before(credits[j].ExpiresAt) })
+
+	available := d.Available
+	if available == nil {
+		available = d.AvailableCamel
+	}
+	if available == nil && len(credits) == 0 {
+		return nil
+	}
+	count := len(credits)
+	if available != nil {
+		count = *available
+	}
+	return &Resets{Available: count, Credits: credits}
 }
 
 // CodexPlanDisplay maps raw plan types to render-ready labels, mirroring the
