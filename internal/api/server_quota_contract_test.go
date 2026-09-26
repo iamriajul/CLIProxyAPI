@@ -73,12 +73,12 @@ func TestHandleInferenceQuota_Contract(t *testing.T) {
 		t.Fatalf("accounts = %d, want 1", len(payload))
 	}
 	account := payload[0]
-	for _, key := range []string{"provider", "name", "type"} {
+	for _, key := range []string{"provider", "provider_name", "name", "type"} {
 		if _, ok := account[key].(string); !ok {
 			t.Fatalf("account %q = %#v, want string", key, account[key])
 		}
 	}
-	if account["type"] != "oauth" || account["name"] != "co***ct@example.com" {
+	if account["type"] != "oauth" || account["name"] != "co***ct@example.com" || account["provider_name"] != "Codex" {
 		t.Fatalf("account = %+v", account)
 	}
 	if _, ok := account["description"]; ok {
@@ -184,7 +184,6 @@ func TestHandleInferenceQuota_ErrorEnvelope(t *testing.T) {
 		status int
 	}{
 		{name: "unauthorized", target: "/v1/quota?model=quota-contract-model", key: "", status: http.StatusUnauthorized},
-		{name: "bad request", target: "/v1/quota", key: "test-key", status: http.StatusBadRequest},
 		{name: "not found", target: "/v1/quota?model=quota-never-registered", key: "test-key", status: http.StatusNotFound},
 	}
 	for _, tc := range cases {
@@ -210,6 +209,37 @@ func TestHandleInferenceQuota_ErrorEnvelope(t *testing.T) {
 				t.Fatalf("error = %#v, want non-empty string", payload["error"])
 			}
 		})
+	}
+}
+
+// TestHandleInferenceQuota_NoModelReturnsAllAccounts locks the fallback when
+// the model query parameter is omitted: quota for every non-disabled account
+// is returned instead of a 400.
+func TestHandleInferenceQuota_NoModelReturnsAllAccounts(t *testing.T) {
+	server := newTestServer(t)
+	manager := server.handlers.AuthManager
+	credential := &auth.Auth{
+		ID:       "quota-nomodel-1",
+		Provider: "codex",
+		Status:   auth.StatusActive,
+		Metadata: map[string]any{"email": "nomodel@example.com"},
+	}
+	if _, err := manager.Register(context.Background(), credential); err != nil {
+		t.Fatalf("failed to register auth: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/v1/quota", nil)
+	req.Header.Set("Authorization", "Bearer test-key")
+	rec := httptest.NewRecorder()
+	server.engine.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body.String())
+	}
+	var payload []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("response is not a JSON array: %v", err)
+	}
+	if len(payload) != 1 {
+		t.Fatalf("accounts = %d, want 1", len(payload))
 	}
 }
 
