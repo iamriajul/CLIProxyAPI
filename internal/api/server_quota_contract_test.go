@@ -78,7 +78,7 @@ func TestHandleInferenceQuota_Contract(t *testing.T) {
 			t.Fatalf("account %q = %#v, want string", key, account[key])
 		}
 	}
-	if account["type"] != "oauth" || account["name"] != "c***@example.com" || account["provider_name"] != "Codex" {
+	if account["type"] != "oauth" || account["name"] != "c***t@example.com" || account["provider_name"] != "Codex" {
 		t.Fatalf("account = %+v", account)
 	}
 	if _, ok := account["description"]; ok {
