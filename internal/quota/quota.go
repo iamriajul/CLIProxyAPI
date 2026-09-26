@@ -25,11 +25,26 @@ type Window struct {
 }
 
 // Snapshot is one credential's live quota data. ObservedAt is stamped by the
-// Service at fetch time.
+// Service at fetch time. Resets is set only when the provider reports a
+// manual-reset balance; nil means the provider has no such concept.
 type Snapshot struct {
 	Windows    []Window
 	Plan       string
+	Resets     *Resets
 	ObservedAt time.Time
+}
+
+// Resets is a provider's manual-reset balance: how many are usable and when
+// each one expires. Available is the count the owner can still spend.
+// Credits lists the ones with a known expiry, soonest first.
+type Resets struct {
+	Available int
+	Credits   []ResetCredit
+}
+
+// ResetCredit is one spendable manual reset.
+type ResetCredit struct {
+	ExpiresAt time.Time
 }
 
 // FetchRequest is a Fetcher's input: the credential, a proxy-aware
