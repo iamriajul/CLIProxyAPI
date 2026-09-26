@@ -16,14 +16,14 @@ import (
 
 func TestMaskInferenceEmail(t *testing.T) {
 	cases := map[string]string{
-		"jane.doe@example.com":    "j***@example.com",
-		"nazmul.iba.du@gmail.com": "n***@gmail.com",
-		"owner@example.com":       "o***@example.com",
-		"abcd@example.com":        "a***@example.com",
-		"abc@example.com":         "a***@example.com",
+		"jane.doe@example.com":    "j***e@example.com",
+		"nazmul.iba.du@gmail.com": "n***u@gmail.com",
+		"owner@example.com":       "o***r@example.com",
+		"abcd@example.com":        "a***d@example.com",
+		"abc@example.com":         "a***c@example.com",
 		"a@example.com":           "a***@example.com",
 		"ab@example.com":          "a***@example.com",
-		"  spaced@example.com ":   "s***@example.com",
+		"  spaced@example.com ":   "s***d@example.com",
 		"no-at-sign":              "***sign",
 		"@example.com":            "***.com",
 		"user@":                   "***ser@",
@@ -54,8 +54,8 @@ func TestMaskInferenceEmailsInText(t *testing.T) {
 	cases := map[string]string{
 		"primary":                     "primary",
 		"":                            "",
-		"owner@example.com":           "o***@example.com",
-		"codex-owner@example.com-pro": "c***@example.com-pro",
+		"owner@example.com":           "o***r@example.com",
+		"codex-owner@example.com-pro": "c***r@example.com-pro",
 		"no email here":               "no email here",
 	}
 	for input, want := range cases {
@@ -67,16 +67,16 @@ func TestMaskInferenceEmailsInText(t *testing.T) {
 
 func TestMaskInferenceFileName(t *testing.T) {
 	cases := map[string]string{
-		"claude-nazmul.iba.du@gmail.com.json":                 "claude-n***@gmail.com.json",
-		"antigravity-iamriajulislamirfan@gmail.com.json":      "antigravity-i***@gmail.com.json",
-		"antigravity-it.riajul@gmail.com.json":                "antigravity-i***@gmail.com.json",
-		"antigravity-jannatulmakam3136@gmail.com.json":        "antigravity-j***@gmail.com.json",
-		"antigravity-riajulfamily@gmail.com.json":             "antigravity-r***@gmail.com.json",
-		"codex-kmriajulislami@gmail.com-pro.json":             "codex-k***@gmail.com-pro.json",
-		"xai-kmriajulislami@gmail.com.json":                   "xai-k***@gmail.com.json",
-		"meta-kmriajulislami_gmail.com-bad451d4a40585f9.json": "meta-k***_gmail.com-bad451d4a40585f9.json",
+		"claude-nazmul.iba.du@gmail.com.json":                 "claude-n***u@gmail.com.json",
+		"antigravity-iamriajulislamirfan@gmail.com.json":      "antigravity-i***n@gmail.com.json",
+		"antigravity-it.riajul@gmail.com.json":                "antigravity-i***l@gmail.com.json",
+		"antigravity-jannatulmakam3136@gmail.com.json":        "antigravity-j***6@gmail.com.json",
+		"antigravity-riajulfamily@gmail.com.json":             "antigravity-r***y@gmail.com.json",
+		"codex-kmriajulislami@gmail.com-pro.json":             "codex-k***i@gmail.com-pro.json",
+		"xai-kmriajulislami@gmail.com.json":                   "xai-k***i@gmail.com.json",
+		"meta-kmriajulislami_gmail.com-bad451d4a40585f9.json": "meta-k***i_gmail.com-bad451d4a40585f9.json",
 		"opencode-1789311125517.json":                         "opencode-1789311125517.json",
-		"zai-kmriajulislami@gmail.com.json":                   "zai-k***@gmail.com.json",
+		"zai-kmriajulislami@gmail.com.json":                   "zai-k***i@gmail.com.json",
 		"meta-oauth.json":                                     "meta-oauth.json",
 		"meta-0123456789abcdef.json":                          "meta-0123456789abcdef.json",
 		"":                                                    "",
@@ -259,7 +259,7 @@ func TestHandleInferenceQuota(t *testing.T) {
 		byName[name] = account
 	}
 
-	primary := byName["o***@example.com"]
+	primary := byName["o***r@example.com"]
 	if primary["type"] != "oauth" || primary["plan"] != "Pro 20x" || primary["provider_name"] != "Codex" {
 		t.Fatalf("primary = %+v", primary)
 	}
@@ -281,7 +281,7 @@ func TestHandleInferenceQuota(t *testing.T) {
 		t.Fatalf("per-window timestamp must be gone: %v", primaryWindow)
 	}
 
-	exhausted := byName["s***@example.com"]
+	exhausted := byName["s***d@example.com"]
 	if exhausted["in_cooldown"] != true {
 		t.Fatalf("exhausted = %+v", exhausted)
 	}
@@ -329,22 +329,22 @@ func TestInferenceQuotaAccountName(t *testing.T) {
 		Label:    "ignored-label",
 		Metadata: map[string]any{"email": "owner@example.com"},
 	}
-	if got := inferenceQuotaAccountName(withEmail); got != "o***@example.com" {
+	if got := inferenceQuotaAccountName(withEmail); got != "o***r@example.com" {
 		t.Fatalf("email name = %q", got)
 	}
 
 	labelEmail := &auth.Auth{Label: "owner@example.com", FileName: "codex-owner@example.com-pro.json"}
-	if got := inferenceQuotaAccountName(labelEmail); got != "o***@example.com" {
+	if got := inferenceQuotaAccountName(labelEmail); got != "o***r@example.com" {
 		t.Fatalf("label email name = %q", got)
 	}
 
 	noEmail := &auth.Auth{FileName: "meta-kmriajulislami_gmail.com-bad451d4a40585f9.json", Provider: "meta"}
-	if got := inferenceQuotaAccountName(noEmail); got != "meta-k***_gmail.com-bad451d4a40585f9" {
+	if got := inferenceQuotaAccountName(noEmail); got != "meta-k***i_gmail.com-bad451d4a40585f9" {
 		t.Fatalf("filename fallback = %q", got)
 	}
 
 	dotless := &auth.Auth{FileName: "codex-user@localhost.Json"}
-	if got := inferenceQuotaAccountName(dotless); got != "codex-u***@localhost" {
+	if got := inferenceQuotaAccountName(dotless); got != "codex-u***r@localhost" {
 		t.Fatalf("dotless filename = %q", got)
 	}
 	neither := &auth.Auth{Provider: "codex"}
