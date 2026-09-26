@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/quota"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/registry"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
 )
@@ -219,7 +220,7 @@ func TestHandleInferenceQuota(t *testing.T) {
 	allowedKeys := map[string]bool{
 		"provider": true, "provider_name": true, "name": true, "type": true, "plan": true,
 		"description": true, "in_cooldown": true, "windows_observed_at": true, "windows": true,
-		"resets": true,
+		"reset_credits": true,
 	}
 	allowedWindowKeys := map[string]bool{
 		"name": true, "used_percent": true, "reset_at": true, "status": true,
@@ -364,5 +365,28 @@ func TestInferenceQuotaProviderDisplayName(t *testing.T) {
 		if got := inferenceQuotaProviderDisplayName(input); got != want {
 			t.Errorf("inferenceQuotaProviderDisplayName(%q) = %q, want %q", input, got, want)
 		}
+	}
+}
+
+func TestMapQuotaResets(t *testing.T) {
+	later := time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC)
+	sooner := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	got := mapQuotaResets(&quota.Resets{
+		Available: 2,
+		Credits: []quota.ResetCredit{
+			{ExpiresAt: later},
+			{ExpiresAt: sooner},
+		},
+	})
+	if len(got) != 2 || !got[0].ExpiresAt.Equal(sooner) || !got[1].ExpiresAt.Equal(later) {
+		t.Fatalf("resets = %+v, want soonest first", got)
+	}
+	// A count without expiries cannot be represented as {expires_at} objects.
+	// Absence means unknown expiry, not zero credits.
+	if got := mapQuotaResets(&quota.Resets{Available: 2}); got != nil {
+		t.Fatalf("count-only = %+v, want nil", got)
+	}
+	if got := mapQuotaResets(nil); got != nil {
+		t.Fatalf("nil = %+v, want nil", got)
 	}
 }
