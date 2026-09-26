@@ -49,39 +49,6 @@ func TestMaskInferenceSecret(t *testing.T) {
 	}
 }
 
-func TestInferenceQuotaMaskedAccount(t *testing.T) {
-	oauth := &auth.Auth{
-		Provider: "codex",
-		Metadata: map[string]any{"email": "owner@example.com"},
-	}
-	kind, account := inferenceQuotaMaskedAccount(oauth)
-	if kind != "oauth" || account != "ow***er@example.com" {
-		t.Fatalf("oauth account = (%q, %q)", kind, account)
-	}
-
-	apiKey := &auth.Auth{
-		Provider:   "codex",
-		Attributes: map[string]string{auth.AttributeAuthKind: auth.AuthKindAPIKey, auth.AttributeAPIKey: "sk-secret-1234"},
-	}
-	kind, account = inferenceQuotaMaskedAccount(apiKey)
-	if kind != "api_key" || account != "***1234" {
-		t.Fatalf("api_key account = (%q, %q)", kind, account)
-	}
-	if kind, account := inferenceQuotaMaskedAccount(nil); kind != "" || account != "" {
-		t.Fatalf("nil auth = (%q, %q), want empty", kind, account)
-	}
-
-	labelOnly := &auth.Auth{Provider: "codex", Label: "owner@example.com"}
-	if _, account := inferenceQuotaMaskedAccount(labelOnly); account != "ow***er@example.com" {
-		t.Fatalf("label fallback account = %q", account)
-	}
-
-	nonEmailLabel := &auth.Auth{Provider: "codex", Label: "primary"}
-	if _, account := inferenceQuotaMaskedAccount(nonEmailLabel); account != "" {
-		t.Fatalf("non-email label account = %q, want empty", account)
-	}
-}
-
 func TestMaskInferenceEmailsInText(t *testing.T) {
 	cases := map[string]string{
 		"primary":                     "primary",
@@ -164,6 +131,7 @@ func TestHandleInferenceQuota(t *testing.T) {
 	}
 	keyAuth := &auth.Auth{
 		ID:         "quota-key-1",
+		FileName:   "codex-primary-key.json",
 		Provider:   "codex",
 		Status:     auth.StatusActive,
 		Attributes: map[string]string{auth.AttributeAuthKind: auth.AuthKindAPIKey, auth.AttributeAPIKey: "sk-secret-1234"},
@@ -214,8 +182,17 @@ func TestHandleInferenceQuota(t *testing.T) {
 	if rec := doRequest("/v1/quota?model=quota-test-model", ""); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("missing key status = %d, want 401", rec.Code)
 	}
-	if rec := doRequest("/v1/quota", "test-key"); rec.Code != http.StatusBadRequest {
-		t.Fatalf("missing model status = %d, want 400", rec.Code)
+	// Omitting the model parameter returns quota for all accounts.
+	if rec := doRequest("/v1/quota", "test-key"); rec.Code != http.StatusOK {
+		t.Fatalf("missing model status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	} else {
+		var all []map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &all); err != nil {
+			t.Fatalf("all-accounts response is not a JSON array: %v (%s)", err, rec.Body.String())
+		}
+		if len(all) != 4 {
+			t.Fatalf("all accounts = %d, want 4 (disabled excluded): %s", len(all), rec.Body.String())
+		}
 	}
 	if rec := doRequest("/v1/quota?model=quota-unknown-model", "test-key"); rec.Code != http.StatusNotFound {
 		t.Fatalf("unknown model status = %d, want 404", rec.Code)
@@ -240,7 +217,7 @@ func TestHandleInferenceQuota(t *testing.T) {
 		t.Fatalf("accounts = %d, want 3 (other-model and disabled excluded): %s", len(payload), body)
 	}
 	allowedKeys := map[string]bool{
-		"provider": true, "name": true, "type": true, "plan": true,
+		"provider": true, "provider_name": true, "name": true, "type": true, "plan": true,
 		"description": true, "in_cooldown": true, "windows_observed_at": true, "windows": true,
 	}
 	allowedWindowKeys := map[string]bool{
@@ -280,8 +257,8 @@ func TestHandleInferenceQuota(t *testing.T) {
 		byName[name] = account
 	}
 
-	primary := byName["codex-ow***er@example.com-pro.json"]
-	if primary["type"] != "oauth" || primary["plan"] != "Pro 20x" {
+	primary := byName["ow***er@example.com"]
+	if primary["type"] != "oauth" || primary["plan"] != "Pro 20x" || primary["provider_name"] != "Codex" {
 		t.Fatalf("primary = %+v", primary)
 	}
 	if primary["in_cooldown"] != false {
@@ -307,8 +284,8 @@ func TestHandleInferenceQuota(t *testing.T) {
 		t.Fatalf("exhausted = %+v", exhausted)
 	}
 
-	keyed := byName["***1234"]
-	if keyed["type"] != "api" || keyed["in_cooldown"] != false {
+	keyed := byName["codex-primary-key"]
+	if keyed["type"] != "api" || keyed["in_cooldown"] != false || keyed["provider_name"] != "Codex" {
 		t.Fatalf("key credential = %+v", keyed)
 	}
 	if windows := keyed["windows"].([]any); len(windows) != 0 {
@@ -341,5 +318,50 @@ func TestInferenceQuotaPlanPrefersCodexHeader(t *testing.T) {
 	}
 	if got := inferenceQuotaPlan(plain); got != "Pro" {
 		t.Fatalf("plan = %q, want Pro", got)
+	}
+}
+
+func TestInferenceQuotaAccountName(t *testing.T) {
+	withEmail := &auth.Auth{
+		FileName: "codex-owner@example.com-pro.json",
+		Label:    "ignored-label",
+		Metadata: map[string]any{"email": "owner@example.com"},
+	}
+	if got := inferenceQuotaAccountName(withEmail); got != "ow***er@example.com" {
+		t.Fatalf("email name = %q", got)
+	}
+
+	labelEmail := &auth.Auth{Label: "owner@example.com", FileName: "codex-owner@example.com-pro.json"}
+	if got := inferenceQuotaAccountName(labelEmail); got != "ow***er@example.com" {
+		t.Fatalf("label email name = %q", got)
+	}
+
+	noEmail := &auth.Auth{FileName: "meta-kmriajulislami_gmail.com-bad451d4a40585f9.json", Provider: "meta"}
+	if got := inferenceQuotaAccountName(noEmail); got != "meta-km***mi_gmail.com-bad451d4a40585f9" {
+		t.Fatalf("filename fallback = %q", got)
+	}
+
+	dotless := &auth.Auth{FileName: "codex-user@localhost.Json"}
+	if got := inferenceQuotaAccountName(dotless); got != "codex-us***@localhost" {
+		t.Fatalf("dotless filename = %q", got)
+	}
+	neither := &auth.Auth{Provider: "codex"}
+	if got := inferenceQuotaAccountName(neither); got != "" {
+		t.Fatalf("empty name = %q", got)
+	}
+}
+
+func TestInferenceQuotaProviderDisplayName(t *testing.T) {
+	cases := map[string]string{
+		"codex": "Codex", "claude": "Claude", "antigravity": "Antigravity",
+		"xai": "xAI", "grok": "xAI", "zai": "Z.AI", "glm": "Z.AI",
+		"opencode-go": "OpenCode", "kimi.ai": "Kimi", "meta": "Meta", "muse": "Meta",
+		"gemini": "Gemini", "vertex": "Vertex AI", "aistudio": "AI Studio",
+		"devin": "Devin", "custom": "Custom", "": "",
+	}
+	for input, want := range cases {
+		if got := inferenceQuotaProviderDisplayName(input); got != want {
+			t.Errorf("inferenceQuotaProviderDisplayName(%q) = %q, want %q", input, got, want)
+		}
 	}
 }
