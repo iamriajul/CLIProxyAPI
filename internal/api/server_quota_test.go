@@ -49,39 +49,6 @@ func TestMaskInferenceSecret(t *testing.T) {
 	}
 }
 
-func TestInferenceQuotaMaskedAccount(t *testing.T) {
-	oauth := &auth.Auth{
-		Provider: "codex",
-		Metadata: map[string]any{"email": "owner@example.com"},
-	}
-	kind, account := inferenceQuotaMaskedAccount(oauth)
-	if kind != "oauth" || account != "ow***er@example.com" {
-		t.Fatalf("oauth account = (%q, %q)", kind, account)
-	}
-
-	apiKey := &auth.Auth{
-		Provider:   "codex",
-		Attributes: map[string]string{auth.AttributeAuthKind: auth.AuthKindAPIKey, auth.AttributeAPIKey: "sk-secret-1234"},
-	}
-	kind, account = inferenceQuotaMaskedAccount(apiKey)
-	if kind != "api_key" || account != "***1234" {
-		t.Fatalf("api_key account = (%q, %q)", kind, account)
-	}
-	if kind, account := inferenceQuotaMaskedAccount(nil); kind != "" || account != "" {
-		t.Fatalf("nil auth = (%q, %q), want empty", kind, account)
-	}
-
-	labelOnly := &auth.Auth{Provider: "codex", Label: "owner@example.com"}
-	if _, account := inferenceQuotaMaskedAccount(labelOnly); account != "ow***er@example.com" {
-		t.Fatalf("label fallback account = %q", account)
-	}
-
-	nonEmailLabel := &auth.Auth{Provider: "codex", Label: "primary"}
-	if _, account := inferenceQuotaMaskedAccount(nonEmailLabel); account != "" {
-		t.Fatalf("non-email label account = %q, want empty", account)
-	}
-}
-
 func TestMaskInferenceEmailsInText(t *testing.T) {
 	cases := map[string]string{
 		"primary":                     "primary",
@@ -374,6 +341,10 @@ func TestInferenceQuotaAccountName(t *testing.T) {
 		t.Fatalf("filename fallback = %q", got)
 	}
 
+	dotless := &auth.Auth{FileName: "codex-user@localhost.Json"}
+	if got := inferenceQuotaAccountName(dotless); got != "codex-us***@localhost" {
+		t.Fatalf("dotless filename = %q", got)
+	}
 	neither := &auth.Auth{Provider: "codex"}
 	if got := inferenceQuotaAccountName(neither); got != "" {
 		t.Fatalf("empty name = %q", got)

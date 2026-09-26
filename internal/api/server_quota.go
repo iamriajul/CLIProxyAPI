@@ -263,16 +263,14 @@ func inferenceQuotaAccountName(auth *coreauth.Auth) string {
 
 // inferenceQuotaFileStem returns the auth file base name without any
 // directory and without a trailing .json suffix, for display fallback when
-// no account email is stored.
+// no account email is stored. The suffix match is case-insensitive.
 func inferenceQuotaFileStem(auth *coreauth.Auth) string {
-	name := inferenceQuotaFileName(auth)
-	if stem, found := strings.CutSuffix(strings.TrimSpace(name), ".json"); found {
-		return stem
+	name := strings.TrimSpace(inferenceQuotaFileName(auth))
+	const suffix = ".json"
+	if len(name) > len(suffix) && strings.EqualFold(name[len(name)-len(suffix):], suffix) {
+		return name[:len(name)-len(suffix)]
 	}
-	if stem, found := strings.CutSuffix(strings.TrimSpace(name), ".JSON"); found {
-		return stem
-	}
-	return strings.TrimSpace(name)
+	return name
 }
 
 // inferenceQuotaProviderDisplayName formats a raw provider key for display
@@ -450,33 +448,6 @@ func inferenceQuotaModelState(auth *coreauth.Auth, model string) *coreauth.Model
 	return nil
 }
 
-// inferenceQuotaMaskedAccount returns the account kind and a masked account
-// identifier. Metadata email is not guaranteed (hand-made files, key-only
-// credentials), so the lookup falls back through attributes to an email-like
-// label. OAuth emails keep local-part affixes plus the full domain; API keys
-// keep only a short suffix.
-func inferenceQuotaMaskedAccount(auth *coreauth.Auth) (string, string) {
-	if auth == nil {
-		return "", ""
-	}
-	kind, account := auth.AccountInfo()
-	kind = strings.TrimSpace(kind)
-	account = strings.TrimSpace(account)
-	if account == "" {
-		account = inferenceQuotaEmail(auth)
-	}
-	if account == "" {
-		account = inferenceQuotaLabelEmail(auth)
-	}
-	if account == "" {
-		return kind, ""
-	}
-	if strings.Contains(account, "@") {
-		return kind, maskInferenceEmail(account)
-	}
-	return kind, maskInferenceSecret(account)
-}
-
 func inferenceQuotaEmail(auth *coreauth.Auth) string {
 	if auth == nil {
 		return ""
@@ -539,7 +510,7 @@ func maskInferenceLocal(local string) string {
 	return string(runes[:2]) + "***" + string(runes[len(runes)-2:])
 }
 
-var inferenceEmailInTextPattern = regexp.MustCompile(`[\w.+-]+@[\w-]+(?:\.[\w-]+)+`)
+var inferenceEmailInTextPattern = regexp.MustCompile(`[\w.+-]+@[\w-]+(?:\.[\w-]+)*`)
 
 // maskInferenceEmailsInText masks every email address embedded in free-form
 // text such as credential labels, which may carry raw account emails.
