@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/websearch"
 	"gopkg.in/yaml.v3"
 )
 
@@ -109,6 +110,10 @@ type SDKConfig struct {
 	// NonStreamKeepAliveInterval controls how often blank lines are emitted for non-streaming responses.
 	// <= 0 disables keep-alives. Value is in seconds.
 	NonStreamKeepAliveInterval int `yaml:"nonstream-keepalive-interval,omitempty" json:"nonstream-keepalive-interval,omitempty"`
+
+	// WebSearch configures proxy-side web search for models whose upstream
+	// has no native search support. Disabled by default.
+	WebSearch websearch.Config `yaml:"web-search" json:"web-search"`
 }
 
 // TLSHandshakeTimeout returns the configured upstream TLS handshake bound
