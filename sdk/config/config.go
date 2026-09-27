@@ -4,7 +4,10 @@
 // embed CLIProxyAPI without importing internal packages.
 package config
 
-import internalconfig "github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+import (
+	internalconfig "github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/websearch"
+)
 
 type SDKConfig = internalconfig.SDKConfig
 
@@ -31,6 +34,7 @@ type PayloadReplaceRule = internalconfig.PayloadReplaceRule
 type PayloadReplaceTarget = internalconfig.PayloadReplaceTarget
 type PayloadReplacement = internalconfig.PayloadReplacement
 type PayloadModelRule = internalconfig.PayloadModelRule
+type WebSearchConfig = websearch.Config
 
 type ProxyConnectionPoolConfig = internalconfig.ProxyConnectionPoolConfig
 type GeminiKey = internalconfig.GeminiKey
