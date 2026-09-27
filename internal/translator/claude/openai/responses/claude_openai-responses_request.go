@@ -645,6 +645,7 @@ func convertOpenAIResponsesRequestToClaude(modelName string, inputRawJSON []byte
 	// The deferred anchor goes between declared and discovered tools, so each
 	// discovery only appends to tools[].
 	anchorIndex := -1
+	webSearchName := ""
 	for _, descriptor := range responsesToolDescriptors(root, toolSearch) {
 		winner, ok := winners[descriptor.name]
 		if !ok || winner.order != descriptor.order {
@@ -667,6 +668,9 @@ func convertOpenAIResponsesRequestToClaude(modelName string, inputRawJSON []byte
 		if toolName != "" {
 			includedToolNames[descriptor.name] = struct{}{}
 			includedToolNames[toolName] = struct{}{}
+			if descriptor.toolType == "web_search" && webSearchName == "" {
+				webSearchName = toolName
+			}
 		}
 		toolItems = append(toolItems, tJSON)
 	}
@@ -699,7 +703,15 @@ func convertOpenAIResponsesRequestToClaude(modelName string, inputRawJSON []byte
 			}
 		case gjson.JSON:
 			choiceType := toolChoice.Get("type").String()
-			if choiceType == "function" || choiceType == "custom" {
+			if common.IsResponsesWebSearchToolType(choiceType) {
+				if webSearchName != "" {
+					if _, ok := includedToolNames[webSearchName]; ok {
+						toolChoiceJSON := []byte(`{"name":"","type":"tool"}`)
+						toolChoiceJSON, _ = sjson.SetBytes(toolChoiceJSON, "name", util.SanitizeClaudeFunctionName(webSearchName))
+						out, _ = sjson.SetRawBytes(out, "tool_choice", toolChoiceJSON)
+					}
+				}
+			} else if choiceType == "function" || choiceType == "custom" {
 				fn := toolChoice.Get("function.name").String()
 				if fn == "" {
 					fn = toolChoice.Get("custom.name").String()
@@ -1541,6 +1553,9 @@ func appendResponsesToolDescriptors(descriptors []responsesToolDescriptor, tools
 	}
 	tools.ForEach(func(_, tool gjson.Result) bool {
 		toolType := strings.TrimSpace(tool.Get("type").String())
+		if common.IsResponsesWebSearchToolType(toolType) {
+			toolType = "web_search"
+		}
 		switch toolType {
 		case "", "function":
 			appendDescriptor(tool, responsesToolName(tool), "", "", "function", true)
