@@ -118,3 +118,51 @@ func TestBorrowedCredentialsTolerateMissingManager(t *testing.T) {
 		t.Fatal("no change should be reported without a manager")
 	}
 }
+
+// The request handlers pass route provider names, not search IDs. Matching
+// on "anthropic" made the map unreachable in production: a Claude login
+// would never be borrowed, which is the whole point of the feature.
+func TestBorrowedCredentialsMatchRouteNames(t *testing.T) {
+	dir := t.TempDir()
+	credential := filepath.Join(dir, "claude-user.json")
+	if errWrite := os.WriteFile(credential, []byte(`{"type":"claude","access_token":"sk-route"}`), 0o600); errWrite != nil {
+		t.Fatalf("write credential: %v", errWrite)
+	}
+	manager := borrowedManager(&coreauth.Auth{
+		ID:       "claude-1",
+		Provider: "claude",
+		FileName: credential,
+		Metadata: map[string]any{"email": "u@example.com"},
+	})
+	for _, route := range []string{"claude", "claude-code", "anthropic"} {
+		cfg := websearch.Config{}
+		if !applyBorrowedSearchCredentials(&cfg, manager, []string{route}) {
+			t.Fatalf("route %q borrowed nothing", route)
+		}
+		if cfg.AnthropicAPIKey != "sk-route" {
+			t.Fatalf("route %q: anthropic key = %q, want the Claude session token", route, cfg.AnthropicAPIKey)
+		}
+	}
+	// An unrelated route must not borrow a Claude session.
+	cfg := websearch.Config{}
+	if applyBorrowedSearchCredentials(&cfg, manager, []string{"openai-compatible-kimi"}) {
+		t.Fatal("an unrelated route must not borrow a Claude credential")
+	}
+}
+
+// Antigravity sessions ground through Gemini, so they fill the Gemini key.
+func TestBorrowedCredentialsRouteAntigravityToGemini(t *testing.T) {
+	dir := t.TempDir()
+	credential := filepath.Join(dir, "ag.json")
+	if errWrite := os.WriteFile(credential, []byte(`{"type":"antigravity","access_token":"ag-token"}`), 0o600); errWrite != nil {
+		t.Fatalf("write credential: %v", errWrite)
+	}
+	manager := borrowedManager(&coreauth.Auth{ID: "ag-1", Provider: "antigravity", FileName: credential})
+	cfg := websearch.Config{}
+	if !applyBorrowedSearchCredentials(&cfg, manager, []string{"antigravity"}) {
+		t.Fatal("expected the antigravity session to be borrowed")
+	}
+	if cfg.GeminiAPIKey != "ag-token" {
+		t.Fatalf("gemini key = %q, want the antigravity session token", cfg.GeminiAPIKey)
+	}
+}

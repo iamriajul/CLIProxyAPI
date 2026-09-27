@@ -18,6 +18,10 @@ import (
 // MaxSearchBodySize caps a single provider response body.
 const MaxSearchBodySize = 4 << 20
 
+// maxRetainedErrorBodySize caps the error body kept from a retryable
+// response, so exhausting retries can still report the upstream message.
+const maxRetainedErrorBodySize = 8 << 10
+
 // browserHeaders mirrors the shared Chromium navigation headers OMP uses
 // for scrape providers.
 func browserHeaders() map[string]string {
@@ -184,6 +188,9 @@ func retryableStatus(status int) bool {
 func fetchWithRetry(ctx context.Context, cfg Config, label, endpoint string, payload []byte, headers map[string]string) (*http.Response, error) {
 	var lastErr error
 	var lastResp *http.Response
+	// Body of the last retryable response, kept so the exhausted path can
+	// report the upstream message instead of an empty body.
+	var lastBody bytes.Buffer
 	for attempt := 0; attempt <= geminiMaxRetries; attempt++ {
 		if attempt > 0 {
 			if errWait := waitForRetry(ctx, attempt, lastRetryAfter(lastResp)); errWait != nil {
@@ -207,10 +214,13 @@ func fetchWithRetry(ctx context.Context, cfg Config, label, endpoint string, pay
 		if !retryableStatus(resp.StatusCode) {
 			return resp, nil
 		}
-		// Drain and close before retrying so the connection can be reused.
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		// Drain and close before retrying so the connection can be reused,
+		// keeping a copy of the body: this response is what the caller gets
+		// once the retries are exhausted.
+		lastBody.Reset()
+		_, _ = io.Copy(&lastBody, io.LimitReader(resp.Body, maxRetainedErrorBodySize))
 		_ = resp.Body.Close()
-		lastResp = resp
+		lastResp = lastRetainedResponse(resp, lastBody.Bytes())
 		lastErr = &ProviderError{Provider: label, Message: "retryable upstream status", Status: resp.StatusCode}
 	}
 	if lastResp != nil {
@@ -221,6 +231,17 @@ func fetchWithRetry(ctx context.Context, cfg Config, label, endpoint string, pay
 		lastErr = errors.New("request failed")
 	}
 	return nil, &ProviderError{Provider: label, Message: lastErr.Error()}
+}
+
+// lastRetainedResponse rebuilds a response around a body that has already
+// been drained and closed, so the caller can still read it. The original
+// is left untouched for any owner that inspects it separately.
+func lastRetainedResponse(resp *http.Response, body []byte) *http.Response {
+	retained := new(http.Response)
+	*retained = *resp
+	retained.Body = io.NopCloser(bytes.NewReader(body))
+	retained.ContentLength = int64(len(body))
+	return retained
 }
 
 // lastRetryAfter extracts a server-supplied delay in seconds.

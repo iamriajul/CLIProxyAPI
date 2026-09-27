@@ -13,26 +13,42 @@ import (
 // provider name stored in the auth record.
 type borrowedCredential struct {
 	auths []*coreauth.Auth
+	apply []func(cfg *websearch.Config, token string) bool
 }
 
-// searchCredentialProviders maps a websearch provider to the auth-store
-// provider whose OAuth session it can borrow. Borrowing is a last resort:
-// an explicitly configured search key always wins, and these only fill in
-// for deployments that already logged in to the model provider and would
-// otherwise get no grounded search at all.
-var searchCredentialProviders = map[string]string{
-	websearch.ProviderAnthropic: "claude",
-	websearch.ProviderGemini:    "gemini",
-	websearch.ProviderCodex:     "codex",
-	websearch.ProviderXAI:       "xai",
-	websearch.ProviderZAI:       "zai",
-	websearch.ProviderKimi:      "kimi",
+// routeSearchProviders maps a *route* provider name — what the request
+// handlers actually pass, e.g. "claude" or "openai-compatible-kimi" — to
+// the auth-store provider whose session can be borrowed, and the search
+// key to fill in. Keying this by search ID ("anthropic") instead would
+// never match a real route name and borrowing would silently do nothing.
+//
+// Borrowing is a last resort: an explicitly configured search key always
+// wins, and this only fills in for deployments that already logged in to
+// the model provider and would otherwise get no grounded search at all.
+var routeSearchProviders = []struct {
+	// route matches the prefix of the request's provider list entry.
+	route string
+	// auth is the provider name as recorded in the auth store.
+	auth string
+	// apply fills the borrowed token into the search configuration.
+	apply func(cfg *websearch.Config, token string) bool
+}{
+	{route: "claude", auth: "claude", apply: func(cfg *websearch.Config, token string) bool { return fillIfEmpty(&cfg.AnthropicAPIKey, token) }},
+	{route: "anthropic", auth: "claude", apply: func(cfg *websearch.Config, token string) bool { return fillIfEmpty(&cfg.AnthropicAPIKey, token) }},
+	{route: "gemini", auth: "gemini", apply: func(cfg *websearch.Config, token string) bool { return fillIfEmpty(&cfg.GeminiAPIKey, token) }},
+	{route: "antigravity", auth: "antigravity", apply: func(cfg *websearch.Config, token string) bool { return fillIfEmpty(&cfg.GeminiAPIKey, token) }},
+	{route: "codex", auth: "codex", apply: func(cfg *websearch.Config, token string) bool { return fillIfEmpty(&cfg.CodexAPIKey, token) }},
+	{route: "openai", auth: "codex", apply: func(cfg *websearch.Config, token string) bool { return fillIfEmpty(&cfg.CodexAPIKey, token) }},
+	{route: "xai", auth: "xai", apply: func(cfg *websearch.Config, token string) bool { return fillIfEmpty(&cfg.XAIAPIKey, token) }},
+	{route: "zai", auth: "zai", apply: func(cfg *websearch.Config, token string) bool { return fillIfEmpty(&cfg.ZAIAPIKey, token) }},
+	{route: "kimi", auth: "kimi", apply: func(cfg *websearch.Config, token string) bool { return fillIfEmpty(&cfg.KimiAPIKey, token) }},
 }
 
 // borrowedSearchCredentials returns the usable login sessions for the given
-// search providers. A session marked disabled or unavailable is skipped: it
-// is a credential the operator has already taken out of rotation, and using
-// it for search would burn quota the model traffic no longer needs.
+// route providers, each paired with the search key it should fill. A
+// session marked disabled or unavailable is skipped: it is a credential the
+// operator has already taken out of rotation, and using it for search would
+// burn quota the model traffic no longer needs.
 func borrowedSearchCredentials(manager *coreauth.Manager, providers []string) borrowedCredential {
 	out := borrowedCredential{}
 	if manager == nil || len(providers) == 0 {
@@ -42,26 +58,50 @@ func borrowedSearchCredentials(manager *coreauth.Manager, providers []string) bo
 	if len(auths) == 0 {
 		return out
 	}
-	for _, searchProvider := range providers {
-		authProvider, ok := searchCredentialProviders[strings.TrimSpace(searchProvider)]
-		if !ok {
+	for _, route := range providers {
+		route = strings.ToLower(strings.TrimSpace(route))
+		if route == "" {
 			continue
 		}
-		for _, auth := range auths {
-			if auth == nil || auth.Disabled || auth.Unavailable {
+		for _, candidate := range routeSearchProviders {
+			if !strings.HasPrefix(route, candidate.route) {
 				continue
 			}
-			if strings.TrimSpace(auth.Provider) != authProvider {
-				continue
+			if auth := firstUsableSession(auths, candidate.auth); auth != nil {
+				out.auths = append(out.auths, auth)
+				out.apply = append(out.apply, candidate.apply)
 			}
-			out.auths = append(out.auths, auth)
-			// One session per provider is enough: search requests are
-			// independent of each other and cycling the rest would only
-			// spread rate-limit rejections.
 			break
 		}
 	}
 	return out
+}
+
+// fillIfEmpty sets a search key only when the operator left it blank. A
+// configured key is a deliberate choice and must survive borrowing.
+func fillIfEmpty(dst *string, token string) bool {
+	if strings.TrimSpace(*dst) != "" {
+		return false
+	}
+	*dst = token
+	return true
+}
+
+// firstUsableSession returns one live session for an auth provider, or nil.
+func firstUsableSession(auths []*coreauth.Auth, provider string) *coreauth.Auth {
+	for _, auth := range auths {
+		if auth == nil || auth.Disabled || auth.Unavailable {
+			continue
+		}
+		if strings.TrimSpace(auth.Provider) != provider {
+			continue
+		}
+		// One session per provider is enough: search requests are
+		// independent of each other and cycling the rest would only
+		// spread rate-limit rejections.
+		return auth
+	}
+	return nil
 }
 
 // applyBorrowedSearchCredentials fills in provider credentials that the
@@ -73,42 +113,16 @@ func applyBorrowedSearchCredentials(cfg *websearch.Config, manager *coreauth.Man
 		return false
 	}
 	changed := false
-	for _, auth := range borrowed.auths {
+	for index, auth := range borrowed.auths {
+		if index >= len(borrowed.apply) {
+			break
+		}
 		access := authSearchAccessToken(auth)
 		if access == "" {
 			continue
 		}
-		switch strings.TrimSpace(auth.Provider) {
-		case "claude":
-			if strings.TrimSpace(cfg.AnthropicAPIKey) == "" {
-				cfg.AnthropicAPIKey = access
-				changed = true
-			}
-		case "gemini":
-			if strings.TrimSpace(cfg.GeminiAPIKey) == "" {
-				cfg.GeminiAPIKey = access
-				changed = true
-			}
-		case "codex":
-			if strings.TrimSpace(cfg.CodexAPIKey) == "" {
-				cfg.CodexAPIKey = access
-				changed = true
-			}
-		case "xai":
-			if strings.TrimSpace(cfg.XAIAPIKey) == "" {
-				cfg.XAIAPIKey = access
-				changed = true
-			}
-		case "zai":
-			if strings.TrimSpace(cfg.ZAIAPIKey) == "" {
-				cfg.ZAIAPIKey = access
-				changed = true
-			}
-		case "kimi":
-			if strings.TrimSpace(cfg.KimiAPIKey) == "" {
-				cfg.KimiAPIKey = access
-				changed = true
-			}
+		if borrowed.apply[index](cfg, access) {
+			changed = true
 		}
 	}
 	return changed

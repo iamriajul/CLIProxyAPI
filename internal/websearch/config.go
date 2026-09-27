@@ -284,13 +284,14 @@ func (c Config) AnthropicKey() string {
 
 // AnthropicBaseURL resolves the search-only base URL, else the general one.
 func (c Config) AnthropicBaseURL() string {
+	// Explicit config wins over the environment, as above.
+	if base := strings.TrimSuffix(strings.TrimSpace(c.AnthropicEndpoint), "/"); base != "" {
+		return base
+	}
 	for _, env := range []string{"ANTHROPIC_SEARCH_BASE_URL", "ANTHROPIC_BASE_URL", "FOUNDRY_BASE_URL"} {
 		if base := strings.TrimSuffix(strings.TrimSpace(os.Getenv(env)), "/"); base != "" {
 			return base
 		}
-	}
-	if base := strings.TrimSuffix(strings.TrimSpace(c.AnthropicEndpoint), "/"); base != "" {
-		return base
 	}
 	return defaultAnthropicBaseURL
 }
@@ -341,13 +342,17 @@ func (c Config) GeminiSearchModel() string {
 
 // GeminiBaseURL resolves the Google generative-language endpoint.
 func (c Config) GeminiBaseURL() string {
+	// Explicit config wins over the environment: an operator who set the
+	// endpoint in the config file must not be silently overridden by a
+	// globally exported variable. This matches XAI, Codex, OpenRouter and
+	// SearXNG, which all resolve explicit-first.
+	if base := strings.TrimSuffix(strings.TrimSpace(c.GeminiEndpoint), "/"); base != "" {
+		return base
+	}
 	for _, env := range []string{"GEMINI_SEARCH_BASE_URL", "GEMINI_BASE_URL"} {
 		if base := strings.TrimSuffix(strings.TrimSpace(os.Getenv(env)), "/"); base != "" {
 			return base
 		}
-	}
-	if base := strings.TrimSuffix(strings.TrimSpace(c.GeminiEndpoint), "/"); base != "" {
-		return base
 	}
 	return defaultGeminiBaseURL
 }
@@ -380,13 +385,14 @@ func (c Config) FirecrawlKey() string {
 // FirecrawlBaseURL resolves the Firecrawl endpoint, honoring the
 // self-hosting override aliases.
 func (c Config) FirecrawlBaseURL() string {
+	// Explicit config wins over the environment, as above.
+	if base := strings.TrimSuffix(strings.TrimSpace(c.FirecrawlEndpoint), "/"); base != "" {
+		return base
+	}
 	for _, env := range []string{"FIRECRAWL_BASE_URL", "FIRECRAWL_API_URL"} {
 		if base := strings.TrimSuffix(strings.TrimSpace(os.Getenv(env)), "/"); base != "" {
 			return base
 		}
-	}
-	if base := strings.TrimSuffix(strings.TrimSpace(c.FirecrawlEndpoint), "/"); base != "" {
-		return base
 	}
 	return defaultFirecrawlBaseURL
 }
