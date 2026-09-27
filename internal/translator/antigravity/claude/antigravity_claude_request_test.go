@@ -309,7 +309,7 @@ func TestConvertClaudeRequestToAntigravity_FutureWebSearchVersionBuildsSearchReq
 		"tools": [{"type": "web_search_20990101", "name": "web_search"}]
 	}`)
 
-	output := ConvertClaudeRequestToAntigravity("gemini-3.1-flash-lite", inputJSON, true)
+	output, _ := ConvertClaudeRequestToAntigravity("gemini-3.1-flash-lite", inputJSON, true)
 	if got := gjson.GetBytes(output, "requestType").String(); got != "web_search" {
 		t.Fatalf("requestType = %q, want web_search: %s", got, output)
 	}

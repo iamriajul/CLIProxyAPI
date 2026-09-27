@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 	internalsignature "github.com/router-for-me/CLIProxyAPI/v8/internal/signature"
 	"github.com/tidwall/gjson"
 )
@@ -880,5 +881,58 @@ func TestConvertClaudeRequestToGemini_ImageURLAndRedactedThinkingStaySkipped(t *
 	parts := gjson.GetBytes(output, "contents.0.parts").Array()
 	if len(parts) != 1 || parts[0].Get("text").String() != "keep me" {
 		t.Fatalf("old skip paths changed the turn: %s", output)
+	}
+}
+
+func TestConvertClaudeRequestToGemini_TypedWebSearchInjectsGoogleSearch(t *testing.T) {
+	registry.GetGlobalRegistry().RegisterClient("test-gemini-claude-websearch", "gemini", []*registry.ModelInfo{
+		{ID: "gemini-search-capable", SupportsWebSearch: true},
+		{ID: "gemini-search-plain"},
+	})
+	t.Cleanup(func() { registry.GetGlobalRegistry().UnregisterClient("test-gemini-claude-websearch") })
+
+	searchOnly := []byte(`{
+		"model": "gemini-search-capable",
+		"messages": [{"role": "user", "content": "weather"}],
+		"tools": [{"type": "web_search_20250305", "name": "web_search", "allowed_domains": ["example.com"]}]
+	}`)
+	out, _ := ConvertClaudeRequestToGemini("gemini-search-capable", searchOnly, false)
+	if !gjson.GetBytes(out, "tools.0.googleSearch").Exists() {
+		t.Fatalf("capable model should inject googleSearch: %s", out)
+	}
+	if got := gjson.GetBytes(out, "tools.0.googleSearch.includedDomains.0").String(); got != "example.com" {
+		t.Fatalf("includedDomains.0 = %q: %s", got, out)
+	}
+
+	plain, _ := ConvertClaudeRequestToGemini("gemini-search-plain", searchOnly, false)
+	if gjson.GetBytes(plain, "tools.#(googleSearch)").Raw != "" {
+		t.Fatalf("incapable model should not inject googleSearch: %s", plain)
+	}
+
+	choiceNone := []byte(`{
+		"model": "gemini-search-capable",
+		"messages": [{"role": "user", "content": "weather"}],
+		"tool_choice": {"type": "none"},
+		"tools": [{"type": "web_search_20250305", "name": "web_search"}]
+	}`)
+	noneOut, _ := ConvertClaudeRequestToGemini("gemini-search-capable", choiceNone, false)
+	if gjson.GetBytes(noneOut, "tools.#(googleSearch)").Raw != "" {
+		t.Fatalf("choice=none should not inject googleSearch: %s", noneOut)
+	}
+
+	mixed := []byte(`{
+		"model": "gemini-search-capable",
+		"messages": [{"role": "user", "content": "weather"}],
+		"tools": [
+			{"type": "web_search_20250305", "name": "web_search"},
+			{"name": "lookup", "input_schema": {"type": "object", "properties": {}}}
+		]
+	}`)
+	mixedOut, _ := ConvertClaudeRequestToGemini("gemini-search-capable", mixed, false)
+	if gjson.GetBytes(mixedOut, "tools.#(googleSearch)").Raw == "" {
+		t.Fatalf("mixed tools should keep googleSearch: %s", mixedOut)
+	}
+	if gjson.GetBytes(mixedOut, "tools.#(functionDeclarations)").Raw == "" {
+		t.Fatalf("mixed tools should keep functionDeclarations: %s", mixedOut)
 	}
 }

@@ -529,7 +529,7 @@ func TestConvertClaudeRequestToCodex_FutureWebSearchVersionMapping(t *testing.T)
 		"messages": [{"role": "user", "content": "hello"}]
 	}`
 
-	result := ConvertClaudeRequestToCodex("test-model", []byte(inputJSON), false)
+	result, _ := ConvertClaudeRequestToCodex("test-model", []byte(inputJSON), false)
 	resultJSON := gjson.ParseBytes(result)
 
 	if got := resultJSON.Get("tools.0.type").String(); got != "web_search" {
