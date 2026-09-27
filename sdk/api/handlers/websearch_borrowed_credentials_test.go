@@ -166,3 +166,44 @@ func TestBorrowedCredentialsRouteAntigravityToGemini(t *testing.T) {
 		t.Fatalf("gemini key = %q, want the antigravity session token", cfg.GeminiAPIKey)
 	}
 }
+
+// A namespaced route must resolve to its own provider, not the generic
+// "openai" entry, and must keep scanning when an earlier prefix match has
+// no live session.
+func TestBorrowedCredentialsPreferNamespacedRouteOverGeneric(t *testing.T) {
+	dir := t.TempDir()
+	kimiFile := filepath.Join(dir, "kimi.json")
+	if errWrite := os.WriteFile(kimiFile, []byte(`{"type":"kimi","access_token":"kimi-tok"}`), 0o600); errWrite != nil {
+		t.Fatalf("write credential: %v", errWrite)
+	}
+	codexFile := filepath.Join(dir, "codex.json")
+	if errWrite := os.WriteFile(codexFile, []byte(`{"type":"codex","access_token":"codex-tok"}`), 0o600); errWrite != nil {
+		t.Fatalf("write credential: %v", errWrite)
+	}
+
+	// With both sessions present, the namespaced Kimi route borrows Kimi.
+	both := borrowedManager(
+		&coreauth.Auth{ID: "kimi-1", Provider: "kimi", FileName: kimiFile},
+		&coreauth.Auth{ID: "codex-1", Provider: "codex", FileName: codexFile},
+	)
+	cfg := websearch.Config{}
+	if !applyBorrowedSearchCredentials(&cfg, both, []string{"openai-compatible-kimi"}) {
+		t.Fatal("expected the namespaced route to borrow a credential")
+	}
+	if cfg.KimiAPIKey != "kimi-tok" {
+		t.Fatalf("kimi key = %q, want the Kimi session", cfg.KimiAPIKey)
+	}
+	if cfg.CodexAPIKey != "" {
+		t.Fatalf("codex key = %q, want the generic openai entry not to win", cfg.CodexAPIKey)
+	}
+
+	// With only Codex present, the generic entry is the fallback.
+	codexOnly := borrowedManager(&coreauth.Auth{ID: "codex-1", Provider: "codex", FileName: codexFile})
+	cfg2 := websearch.Config{}
+	if !applyBorrowedSearchCredentials(&cfg2, codexOnly, []string{"openai-compatible-kimi"}) {
+		t.Fatal("expected a fallback borrow when no Kimi session exists")
+	}
+	if cfg2.CodexAPIKey != "codex-tok" {
+		t.Fatalf("codex key = %q, want the generic fallback", cfg2.CodexAPIKey)
+	}
+}

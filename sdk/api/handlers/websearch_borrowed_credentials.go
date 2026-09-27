@@ -33,15 +33,18 @@ var routeSearchProviders = []struct {
 	// apply fills the borrowed token into the search configuration.
 	apply func(cfg *websearch.Config, token string) bool
 }{
-	{route: "claude", auth: "claude", apply: func(cfg *websearch.Config, token string) bool { return fillIfEmpty(&cfg.AnthropicAPIKey, token) }},
+	// Order matters: a route is matched by prefix, so the generic "openai"
+	// entry must come after every namespaced variant it would otherwise
+	// shadow.
 	{route: "anthropic", auth: "claude", apply: func(cfg *websearch.Config, token string) bool { return fillIfEmpty(&cfg.AnthropicAPIKey, token) }},
-	{route: "gemini", auth: "gemini", apply: func(cfg *websearch.Config, token string) bool { return fillIfEmpty(&cfg.GeminiAPIKey, token) }},
 	{route: "antigravity", auth: "antigravity", apply: func(cfg *websearch.Config, token string) bool { return fillIfEmpty(&cfg.GeminiAPIKey, token) }},
+	{route: "claude", auth: "claude", apply: func(cfg *websearch.Config, token string) bool { return fillIfEmpty(&cfg.AnthropicAPIKey, token) }},
 	{route: "codex", auth: "codex", apply: func(cfg *websearch.Config, token string) bool { return fillIfEmpty(&cfg.CodexAPIKey, token) }},
-	{route: "openai", auth: "codex", apply: func(cfg *websearch.Config, token string) bool { return fillIfEmpty(&cfg.CodexAPIKey, token) }},
+	{route: "gemini", auth: "gemini", apply: func(cfg *websearch.Config, token string) bool { return fillIfEmpty(&cfg.GeminiAPIKey, token) }},
+	{route: "kimi", auth: "kimi", apply: func(cfg *websearch.Config, token string) bool { return fillIfEmpty(&cfg.KimiAPIKey, token) }},
 	{route: "xai", auth: "xai", apply: func(cfg *websearch.Config, token string) bool { return fillIfEmpty(&cfg.XAIAPIKey, token) }},
 	{route: "zai", auth: "zai", apply: func(cfg *websearch.Config, token string) bool { return fillIfEmpty(&cfg.ZAIAPIKey, token) }},
-	{route: "kimi", auth: "kimi", apply: func(cfg *websearch.Config, token string) bool { return fillIfEmpty(&cfg.KimiAPIKey, token) }},
+	{route: "openai", auth: "codex", apply: func(cfg *websearch.Config, token string) bool { return fillIfEmpty(&cfg.CodexAPIKey, token) }},
 }
 
 // borrowedSearchCredentials returns the usable login sessions for the given
@@ -63,14 +66,24 @@ func borrowedSearchCredentials(manager *coreauth.Manager, providers []string) bo
 		if route == "" {
 			continue
 		}
+		// Keep scanning after a prefix hit that yielded no live session:
+		// a route like openai-compatible-kimi matches the generic "openai"
+		// entry first, and stopping there would leave a Kimi-only
+		// deployment with no borrowed credential at all. More specific
+		// entries are ordered after the generic ones, so the first session
+		// actually found wins.
 		for _, candidate := range routeSearchProviders {
-			if !strings.HasPrefix(route, candidate.route) {
+			// A namespaced route carries the provider as a suffix
+			// (openai-compatible-kimi), a bare one as a prefix.
+			if !strings.HasPrefix(route, candidate.route) && !strings.HasSuffix(route, "-"+candidate.route) {
 				continue
 			}
-			if auth := firstUsableSession(auths, candidate.auth); auth != nil {
-				out.auths = append(out.auths, auth)
-				out.apply = append(out.apply, candidate.apply)
+			auth := firstUsableSession(auths, candidate.auth)
+			if auth == nil {
+				continue
 			}
+			out.auths = append(out.auths, auth)
+			out.apply = append(out.apply, candidate.apply)
 			break
 		}
 	}
