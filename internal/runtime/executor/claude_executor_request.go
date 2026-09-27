@@ -765,6 +765,28 @@ func isAnthropicUpstreamBase(baseURL string) bool {
 	return isAnthropicUpstreamURL(parsed)
 }
 
+// stripAnthropicOnlyClassifierFields removes the `safeguards` request field,
+// which asks Anthropic's server to review an action as part of auto mode. A
+// non-Anthropic upstream speaks a Claude-compatible dialect without that
+// feature and rejects unknown top-level fields, so forwarding it turns every
+// auxiliary request into a hard 400 instead of a normal completion.
+//
+// Anthropic-format upstreams keep the field: dropping it silently disables
+// server-side classifier review, which is the whole point of the request.
+func stripAnthropicOnlyClassifierFields(body []byte, isAnthropicBase bool) []byte {
+	if isAnthropicBase {
+		return body
+	}
+	if !gjson.GetBytes(body, "safeguards").Exists() {
+		return body
+	}
+	stripped, err := sjson.DeleteBytes(body, "safeguards")
+	if err != nil {
+		return body
+	}
+	return stripped
+}
+
 // extractAndRemoveBetas extracts the "betas" array from the body and removes it.
 // Returns the extracted betas as a string slice and the modified body.
 func extractAndRemoveBetas(body []byte) ([]string, []byte) {
@@ -1398,6 +1420,7 @@ func applyClaudeHeadersWithNativeProfile(
 			"X-Claude-Code-Prev-Tool-Durations",
 			"X-Claude-Code-Compaction",
 			"X-Claude-Code-Context-Compacted",
+			"X-Claude-Code-Prompt-Id",
 		} {
 			if val := helps.HeaderValueCaseInsensitive(incomingHeaders, hdr); val != "" {
 				r.Header.Set(hdr, val)
