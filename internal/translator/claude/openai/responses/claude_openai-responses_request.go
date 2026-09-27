@@ -1630,6 +1630,9 @@ func appendResponsesToolDescriptors(descriptors []responsesToolDescriptor, tools
 	}
 	tools.ForEach(func(_, tool gjson.Result) bool {
 		toolType := strings.TrimSpace(tool.Get("type").String())
+		if common.IsResponsesWebSearchToolType(toolType) {
+			toolType = "web_search"
+		}
 		switch toolType {
 		case "", "function":
 			appendDescriptor(tool, responsesToolName(tool), "", "", "function", true)
