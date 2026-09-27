@@ -8,6 +8,7 @@ import (
 
 	"github.com/MoeForge/moego/ojson"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
+	translatorcommon "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/common"
 )
 
 type webSearchGroundingSupport struct {
@@ -30,7 +31,7 @@ func antigravitySupportsNativeGoogleSearch(model string) bool {
 }
 
 func isClaudeTypedWebSearchToolType(toolType string) bool {
-	return toolType == "web_search_20250305" || toolType == "web_search_20260209"
+	return translatorcommon.IsClaudeWebSearchToolType(toolType)
 }
 
 func hasClaudeTypedWebSearchTool(payload []byte) bool {
