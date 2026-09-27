@@ -161,3 +161,35 @@ grep -q "model_group/info" internal/api/server_routes.go
 grep -q "handleLiteLLMModelInfo" internal/api/server_litellm.go
 go test ./internal/api/ -run 'TestLiteLLMDiscovery'
 ```
+
+## claude-auto-mode-classifier
+
+**Anthropic auto-mode server-side classifier review survives the proxy**
+
+Claude Code's auto mode asks Anthropic's server to review an action as part
+of the session's own model requests. That travels as the `safeguards` request
+field plus the `dangerous-tool-use` beta, and the verdict returns as
+`safeguard_results` on `message_delta`. A gateway that breaks either half
+makes the client fall back to its own billable classifier requests — the
+notice in <https://code.claude.com/docs/en/auto-mode-classifier-billing> and
+the failure behind router-for-me/CLIProxyAPI#6015.
+
+Anthropic upstreams pass both halves through untouched. Two gaps are closed
+here. `safeguards` is stripped for non-Anthropic Claude-compatible upstreams
+(Kimi, custom gateways), which reject unknown top-level fields and would turn
+every auxiliary request into a hard 400; it is kept for Anthropic, where
+dropping it would silently disable the review the request asks for.
+`X-Claude-Code-Prompt-Id` joins the confirmed-native gateway hint list, which
+Anthropic documents as open: capabilities arrive with each Claude Code
+release, so the full documented set is pinned rather than the fields observed
+so far.
+
+Unaffected by design: a Codex or Gemini harness sends Responses/Gemini wire
+format, whose translator rebuilds the body from modeled fields, so there is
+no `safeguards` to carry and no server-side review to request.
+
+```bash
+grep -q 'stripAnthropicOnlyClassifierFields' internal/runtime/executor/claude_executor_request.go
+grep -q 'X-Claude-Code-Prompt-Id' internal/runtime/executor/claude_executor_request.go
+go test ./internal/runtime/executor/ -run 'TestClaudeExecutor_AutoModeClassifier'
+```
