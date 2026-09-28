@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	coreusage "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/usage"
+	coreusage "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/usage"
 )
 
 var base = time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
