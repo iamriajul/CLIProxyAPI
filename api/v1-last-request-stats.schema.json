@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cliproxyapi.local/schemas/v1-last-request-stats.json",
+  "title": "LastRequestStats",
+  "description": "GET /v1/last-request-stats[?model=<id>] — throughput and token/timing stats of the LAST request this proxy served for a model. Auth: inference API key (Bearer). The body is a single flat object describing that one request, with no nesting. The 'model' parameter is optional ('model_id' is an alias) and filters to one model; when omitted the most recent request across every model is returned. Thinking suffixes (e.g. 'model(high)') are stripped before lookup, and either the upstream model name or the client-requested alias resolves a model. There are no aggregation parameters by design: this endpoint reports one request, which is what a polling client UI needs. TPS is output tokens per second of GENERATION time, so time to first token is excluded whenever the upstream reported one (see 'generation_ms'). There is no in-body empty state: when nothing has matched yet — a model that has not run, or an idle session — the endpoint answers 404 with {\"error\": string} (see $defs/error). Clients therefore have exactly two states: 200 with this object, or 404. Data is in-process history of completed requests: failed, non-generating and zero-token requests are never recorded, and a late-arriving older record for the same model never displaces a newer one. Status codes: 200 (this schema), 401 bad key, 404 no matching request. Suitable for polling on an interval (e.g. 30s) while a client UI is visible; the read path performs no upstream calls. The route was /v1/last-request-tps in v8.0.901 and was renamed to /v1/last-request-stats in v8.0.902; the body and every field are identical, and the old path is not served. Compatibility: additive-only under /v1 — new optional fields may appear, existing fields never change type or meaning; clients MUST ignore unknown properties and tolerate absent optional fields. Retention is one sample per model in memory, so after a restart, or for a model that has not run since, the endpoint answers 404 again.",
+  "type": "object",
+  "required": [
+    "model",
+    "at",
+    "duration_ms",
+    "ttft_ms",
+    "generation_ms",
+    "input_tokens",
+    "output_tokens",
+    "tps",
+    "stream"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "model": {
+      "type": "string",
+      "description": "Upstream model that served the request."
+    },
+    "alias": {
+      "type": "string",
+      "description": "Client-requested model name, when the request used an alias."
+    },
+    "provider": {
+      "type": "string",
+      "description": "Upstream provider key that served the request."
+    },
+    "at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Request completion time."
+    },
+    "duration_ms": {
+      "type": "integer",
+      "description": "Total request latency in milliseconds."
+    },
+    "ttft_ms": {
+      "type": "integer",
+      "description": "Time to first token in milliseconds; 0 when the upstream reported none."
+    },
+    "generation_ms": {
+      "type": "integer",
+      "description": "Time spent producing tokens: duration_ms minus ttft_ms when both are known, otherwise the full duration."
+    },
+    "input_tokens": {
+      "type": "integer",
+      "description": "Prompt or input token count."
+    },
+    "output_tokens": {
+      "type": "integer",
+      "description": "Completion token count; the numerator of tps."
+    },
+    "tps": {
+      "type": "number",
+      "description": "output_tokens per second of generation_ms; 0 when there is no generation time or no output."
+    },
+    "stream": {
+      "type": "boolean",
+      "description": "Whether the request was executed in streaming mode."
+    }
+  },
+  "$defs": {
+    "error": {
+      "type": "object",
+      "required": [
+        "error"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
