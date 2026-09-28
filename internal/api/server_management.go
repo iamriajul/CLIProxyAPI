@@ -87,6 +87,7 @@ func (s *Server) registerManagementRoutes() {
 
 		mgmt.GET("/modelsdev/status", s.mgmt.GetModelsDevStatus)
 		mgmt.POST("/modelsdev/refresh", s.mgmt.RefreshModelsDev)
+		mgmt.GET("/modelsdev/providers", s.mgmt.GetModelsDevProviders)
 
 		mgmt.GET("/api-keys", s.mgmt.GetAPIKeys)
 		mgmt.PUT("/api-keys", s.mgmt.PutAPIKeys)

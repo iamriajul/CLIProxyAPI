@@ -758,6 +758,7 @@ requests:
 #           output-modalities: [text]       # optional: declare output modalities when known
 #           is-compat: false                # optional: preserve Claude thinking blocks for compatible upstreams
 #           use-max-completion-tokens: false # optional: default false (uses max_tokens); set true to use max_completion_tokens
+#           models-dev-provider: "openrouter" # optional: pin which models.dev provider supplies this model's capabilities
 #           thinking:                      # optional: omit to default to levels ["low","medium","high"]. Exceeding levels (e.g. "max", "xhigh") are clamped to "high"; explicitly declare levels here if the upstream supports them
 #             levels: ["low", "medium", "high"]
 #         # You may repeat the same alias to build an internal model pool.
@@ -771,6 +772,27 @@ requests:
 #           alias: "claude-opus-4.66"
 #         - name: "kimi-k2.5"
 #           alias: "claude-opus-4.66"
+#
+# Capability metadata (context window, output limit, input/output modalities,
+# tool/structured-output/temperature support, and reasoning effort levels) is
+# filled in automatically from the models.dev catalog when `base-url` matches an
+# endpoint models.dev knows and the listed `name` appears there. The catalog is
+# refreshed every three hours, and the match ignores the scheme, host case and
+# a trailing "/v1". Anything set explicitly in this file always wins.
+#
+# A model name is often published by many providers with different limits, so
+# `models-dev-provider` selects which catalog entry applies. It resolves against
+# that provider's own catalog, so metadata also works through a proxy in front
+# of the endpoint. Omit it and the entry reachable at `base-url` is used.
+#
+# Reasoning levels are adopted verbatim, including upstream-specific ones such
+# as "xhigh" or "max". Levels are only published to clients when they are known
+# to be real: if the endpoint is unknown to models.dev, or the model only
+# supports a reasoning toggle with no effort ladder, no levels are advertised
+# and the client falls back to its own reference data rather than being offered
+# a level the model rejects. Declare `thinking` explicitly to publish levels
+# for such a model. The same applies to `input-modalities`: unconfigured
+# modalities are left undeclared unless models.dev knows the answer.
 
 # END API KEY EXAMPLES
 
