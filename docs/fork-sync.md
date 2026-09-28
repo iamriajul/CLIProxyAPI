@@ -86,8 +86,11 @@ git tag vA.B.9NN && git push origin vA.B.9NN
 series, e.g. `v7.3.905` on upstream `v7.3.4`) marks fork revisions.
 Upstream owns the low patch range, so never mint below `900` on a shared
 `A.B` line — if upstream's own patches ever approach `900`, roll the fork
-line forward to the next minor first. Version bumps live in the tag —
-never land package-version churn on a feature PR.
+line forward to the next minor first. Never mint a `*-muse*` tag: that
+namespace is not this fork's format. If a run instruction prescribes it,
+this doc wins — follow the 900-series and flag the conflict in the report.
+Version bumps live in the tag — never land package-version churn on
+a feature PR.
 
 First-tag bootstrap: a fork tag with no ancestor tag makes the release job
 build notes from the full repo history, which GitHub rejects (HTTP 422, body
