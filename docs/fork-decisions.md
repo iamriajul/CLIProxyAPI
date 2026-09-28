@@ -219,3 +219,55 @@ grep -q '"/last-request-tps"' internal/api/server_routes.go
 go test ./internal/tps/
 go test ./internal/api/ -run 'TestHandleLastRequestTPS|TestLastRequestTPSSchemaParity'
 ```
+
+## modelsdev-custom-providers
+**Custom (OpenAI-compatible) providers inherit models.dev capabilities**
+
+The fixed `opencode-go` / `zai-coding-plan` sections are keyed by models.dev
+provider ID, so a provider configured with a base URL and an API key matched
+none of them and inherited nothing: clients were told a guessed
+low/medium/high reasoning ladder, no context window, and no supported
+parameters. The catalog is now indexed by normalized base URL as well, so a
+custom provider inherits what models.dev publishes for that endpoint.
+Normalization folds scheme, host case, userinfo, a trailing "/v1" and
+trailing slashes — the differences operators write over — while leaving the
+path intact, so `/api/paas/v4` and `/api/coding/paas/v4` stay distinct APIs.
+Providers with no `api` field are not reachable by base URL and are skipped.
+
+Published and internal reasoning levels are deliberately separate fields. The
+internal ladder gates request-time validation and must stay non-nil for a
+reasoning model, or the pipeline would strip reasoning configuration before it
+reached the upstream. The published ladder is what client catalogs advertise
+and carries only levels models.dev declares, so an unknown endpoint or a
+reasoning-toggle-only model advertises nothing and the client falls back to
+its own reference data instead of being offered a level the model rejects.
+The curated opencode/zai sections keep their default ladder, which is correct
+for those fixed lanes.
+
+`models-dev-provider` pins which catalog entry supplies a model, resolved
+against that provider's own catalog so metadata also works through a proxy in
+front of the endpoint. Explicit configuration always wins; the catalog only
+fills fields left unset. The request-time snapshot reads the same catalog as
+the published metadata, so a level advertised as supported is not rejected by
+ValidateConfig when a client sends it.
+
+Duplicate model IDs on one endpoint are the normal case: several vendors
+publish both a pay-per-token and a coding-plan route on one host. Agreeing
+entries collapse to one copy. Entries that disagree on a client-visible limit
+are dropped with a warning naming both routes, because picking either would
+advertise a number the upstream may reject.
+
+A refresh re-registers affected custom providers by base URL and, separately,
+by pinned provider — a proxied provider's base URL is absent from the catalog,
+so base-URL matching alone left it stale until the next restart.
+
+```bash
+grep -q 'models-dev-provider' internal/config/config_types.go
+grep -q 'GetModelsDevByBaseURL' sdk/cliproxy/service_models.go
+grep -q 'modelsdev/providers' internal/api/server_management.go
+go test ./internal/registry/ -run 'TestLoadModelsDevCustomProviders|TestGetModelsDevProvider|TestModelsDevBaseKey'
+go test ./sdk/cliproxy/ -run 'TestBuildOpenAICompatibilityConfigModels'
+go test ./sdk/cliproxy/auth/ -run 'TestCompatCapabilities'
+go test ./internal/api/handlers/management/ -run 'TestGetModelsDevProviders'
+go test ./internal/config/ -run 'TestOpenAICompatibilityModelsDevProvider'
+```
