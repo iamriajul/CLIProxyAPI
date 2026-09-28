@@ -132,6 +132,12 @@ type ModelsDevProviderStatus struct {
 // ModelsDevStatus is the management payload for the catalog freshness UI.
 type ModelsDevStatus struct {
 	Providers []ModelsDevProviderStatus `json:"providers"`
+
+	// CustomProviders is the number of OpenAI-compatible base URLs the live
+	// index can enrich. It stays 0 until the first successful fetch, and it is
+	// reported separately from Providers because these entries are matched by
+	// base URL rather than by a fixed models.dev provider ID.
+	CustomProviders int `json:"custom_providers"`
 }
 
 // GetModelsDevStatus snapshots per-provider freshness: live when the overlay
@@ -162,10 +168,13 @@ func GetModelsDevStatus() ModelsDevStatus {
 		}
 		return status
 	}
-	return ModelsDevStatus{Providers: []ModelsDevProviderStatus{
-		describe("opencode-go", liveOpencode, WithOpencodeBuiltins(cloneModelInfos(getModels().Opencode)), opencodeFetched),
-		describe("zai-coding-plan", liveZai, WithZaiBuiltins(cloneModelInfos(getModels().ZAI)), zaiFetched),
-	}}
+	return ModelsDevStatus{
+		Providers: []ModelsDevProviderStatus{
+			describe("opencode-go", liveOpencode, WithOpencodeBuiltins(cloneModelInfos(getModels().Opencode)), opencodeFetched),
+			describe("zai-coding-plan", liveZai, WithZaiBuiltins(cloneModelInfos(getModels().ZAI)), zaiFetched),
+		},
+		CustomProviders: len(GetModelsDevBaseURLs()),
+	}
 }
 
 // markModelsDevExplicit restores the converter's Explicit flags on

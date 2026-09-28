@@ -67,10 +67,23 @@ func refreshModelsDev(ctx context.Context, label string) ([]string, error) {
 	}
 
 	changed, err := loadModelsDevLiveFromBytes(data, sourceURL)
+	changedCustom, errIndex := loadModelsDevCustomProviders(data, sourceURL)
+	if errIndex != nil {
+		// The fixed opencode/zai sections already loaded, so a failure here
+		// must not discard them. Keep the previous custom-provider index and
+		// report the fault without failing the whole refresh.
+		log.Warnf("%s: custom provider capability index rejected, keeping previous index: %v", label, errIndex)
+	}
 	if err != nil {
 		setModelsDevLastError(err.Error())
 		log.Warnf("%s: fetched catalog rejected, keeping current data: %v", label, err)
 		return nil, err
+	}
+	// Custom providers are matched by base URL rather than by a models.dev
+	// provider ID, so their entries are appended to the changed list: the
+	// registration callback keys custom-provider auths off this payload.
+	for _, base := range changedCustom {
+		changed = append(changed, ModelsDevCustomProviderPrefix+base)
 	}
 	setModelsDevLastError("")
 	if len(changed) == 0 {
