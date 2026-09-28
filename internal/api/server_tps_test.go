@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v7/internal/tps"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/tps"
 )
 
 func newTPSTestServer(t *testing.T) *Server {
