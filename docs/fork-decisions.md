@@ -193,3 +193,29 @@ grep -q 'stripAnthropicOnlyClassifierFields' internal/runtime/executor/claude_ex
 grep -q 'X-Claude-Code-Prompt-Id' internal/runtime/executor/claude_executor_request.go
 go test ./internal/runtime/executor/ -run 'TestClaudeExecutor_AutoModeClassifier'
 ```
+
+## tps-endpoint
+**Last-request TPS endpoint (`GET /v1/last-request-tps`) for GUI polling**
+`internal/tps` subscribes to the usage record bus (the same registration shape
+as the usage queue plugin) and keeps the most recent generation per model.
+`GET /v1/last-request-tps[?model=<id>]` serves that on the v1 group. TPS is
+output tokens per second of generation time, so TTFT is excluded when the
+upstream reported one. Only successful generating requests are recorded, so
+every number shown describes tokens that were actually produced. A record that
+arrives out of order (older than what is stored) never regresses the reported
+request, which a single slot per model would otherwise do. The read path makes
+no upstream calls, so a client UI can poll it on an interval (e.g. 30s) while
+visible. Deliberately minimal: the body is one flat object with no nesting, and
+there is no in-body empty state — a model that has not run, or an idle session,
+is a 404 with the standard error envelope, so a client has exactly two states
+(200 with the object, or 404) and never has to interpret a null or a zero-filled
+record. An unmatched model never falls back to another model's reading. No
+aggregation parameters: the endpoint answers one request, and a rolling average
+is a later, additive change driven by an actual UI need. Machine contract:
+api/v1-last-request-tps.schema.json, enforced by TestLastRequestTPSSchemaParity.
+
+```bash
+grep -q '"/last-request-tps"' internal/api/server_routes.go
+go test ./internal/tps/
+go test ./internal/api/ -run 'TestHandleLastRequestTPS|TestLastRequestTPSSchemaParity'
+```
