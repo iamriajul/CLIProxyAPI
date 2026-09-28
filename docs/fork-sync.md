@@ -95,12 +95,44 @@ over 125000 characters). `release-notes-cap` bounds the entries, but still
 create the release with concise notes and check the `release` workflow goes
 green; re-running is safe once an ancestor tag exists.
 
+Checking that the release workflow went green means running `gh` against the
+fork, not upstream — see [gh always means the fork](#gh-always-means-the-fork).
+In short: use `scripts/fork-gh.sh run list ...`, never a bare `gh run list`.
+
 The panel (`management.html`) comes from the management-center fork's latest
 release via `panel-github-repository`; release that fork first, then point the
 live config at it. The proxy image is published to
 `ghcr.io/<fork-owner>/cli-proxy-api` by `.github/workflows/docker-ghcr.yml`
 (tag push or dispatch) — upstream's `docker-image.yml` has no DockerHub
 secrets in a fork and is expected to stay red there.
+
+## gh always means the fork
+
+This checkout has an `upstream` remote (router-for-me) for rebasing, and `gh`
+picks the repository by remote NAME — preferring a remote called `upstream`
+over `origin`. A bare `gh ...` therefore targets **upstream**, not the fork:
+a release dispatch aimed upstream fails with a confusing `HTTP 403: Must
+have admin rights`. `GH_REPO` and `GH_HOST` do not override it (gh resolves
+from the remotes and wins with the named `upstream`), so the repo must be
+passed explicitly.
+
+Use the wrapper, which always pins the fork:
+
+```bash
+scripts/fork-gh.sh release view v7.3.925
+scripts/fork-gh.sh run list --workflow release.yaml --limit 5
+scripts/fork-gh.sh workflow run release.yaml --ref v7.3.925
+```
+
+For interactive use, add a shell function so a forgotten flag cannot reach
+upstream:
+
+```bash
+gh() { command gh --repo iamriajul/CLIProxyAPI "$@"; }
+```
+
+Never run a bare `gh` write (release/workflow/tag/PR) from this checkout. `git`
+remotes are unaffected — push to `origin` as documented above.
 
 ## What not to do
 
