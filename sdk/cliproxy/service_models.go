@@ -778,6 +778,7 @@ func buildOpenAICompatibilityConfigModels(compat *config.OpenAICompatibility) []
 		return nil
 	}
 	now := time.Now().Unix()
+	catalog := compatModelsDevCatalog(compat.BaseURL)
 	models := make([]*ModelInfo, 0, len(compat.Models))
 	for i := range compat.Models {
 		model := compat.Models[i]
@@ -789,22 +790,57 @@ func buildOpenAICompatibilityConfigModels(compat *config.OpenAICompatibility) []
 		if info == nil {
 			continue
 		}
+		// The published ladder and the internal ladder are deliberately
+		// separate. info.Thinking.Levels is what client-facing catalogs read to
+		// advertise reasoning levels, and the Codex catalog builder publishes
+		// it for any aliased non-codex model regardless of ExplicitThinking. So
+		// an unverified ladder must carry no levels at all, or clients are
+		// shown levels the upstream may reject. The struct stays non-nil, which
+		// is what keeps the thinking pipeline forwarding reasoning
+		// configuration instead of stripping it.
+		publishedLevels := []string{}
 		thinkingSupport := model.Thinking
-		if thinkingSupport == nil && !model.Image {
-			thinkingSupport = &registry.ThinkingSupport{Levels: []string{"low", "medium", "high"}}
-		}
-		if model.Thinking != nil {
+		if thinkingSupport != nil {
 			info.ExplicitThinking = true
+			publishedLevels = thinkingSupport.Levels
+		} else if catalogEntry := compatModelsDevEntry(model.ModelsDevProvider, catalog, model.Name); catalogEntry != nil && catalogEntry.Thinking != nil {
+			// The catalog publishes effort levels for this model: use exactly
+			// those, so clients see the levels the upstream takes.
+			thinkingSupport = catalogEntry.Thinking
+			info.ExplicitThinking = true
+			publishedLevels = catalogEntry.Thinking.Levels
+		} else if !model.Image {
+			// No ladder is known — the endpoint is unknown to models.dev, or
+			// the model only reports a reasoning toggle. Publish nothing and
+			// let clients fall back to their own reference data.
+			thinkingSupport = &registry.ThinkingSupport{Levels: []string{"low", "medium", "high"}}
 		}
 		if len(model.InputModalities) > 0 {
 			info.ExplicitInputModalities = true
 		}
-		info.Thinking = modelconfig.NormalizeThinkingSupport(thinkingSupport)
+		info.Thinking = withPublishedThinkingLevels(thinkingSupport, publishedLevels)
 		info.SupportedInputModalities = normalizeCompatConfigModalities(model.InputModalities)
 		info.SupportedOutputModalities = normalizeCompatConfigModalities(model.OutputModalities)
+		applyCompatModelsDevMetadata(info, model.ModelsDevProvider, catalog, model.Name)
 		models = append(models, info)
 	}
 	return models
+}
+
+// withPublishedThinkingLevels returns the thinking support a client-facing
+// catalog should carry: the verified levels when they are known, and none when
+// they are not. It always returns a non-nil value for a non-nil input so the
+// thinking pipeline continues to treat the model as reasoning-capable.
+func withPublishedThinkingLevels(support *registry.ThinkingSupport, levels []string) *registry.ThinkingSupport {
+	if support == nil {
+		return nil
+	}
+	normalized := modelconfig.NormalizeThinkingSupport(support)
+	if normalized == nil {
+		return nil
+	}
+	normalized.Levels = normalizeCompatConfigModalities(levels)
+	return normalized
 }
 
 func normalizeCompatConfigModalities(raw []string) []string {
@@ -828,6 +864,96 @@ func normalizeCompatConfigModalities(raw []string) []string {
 		return nil
 	}
 	return out
+}
+
+// compatModelsDevCatalog resolves the models.dev capability entries published
+// for a custom provider's base URL, keyed by lowercased model ID. It returns
+// nil when the endpoint is unknown to models.dev, which is the common case
+// for a private deployment: the configuration then stays authoritative.
+func compatModelsDevCatalog(baseURL string) map[string]*registry.ModelInfo {
+	entries := registry.GetModelsDevByBaseURL(baseURL)
+	if len(entries) == 0 {
+		return nil
+	}
+	catalog := make(map[string]*registry.ModelInfo, len(entries))
+	for _, entry := range entries {
+		if entry == nil {
+			continue
+		}
+		key := strings.ToLower(strings.TrimSpace(entry.ID))
+		if key == "" {
+			continue
+		}
+		catalog[key] = entry
+	}
+	return catalog
+}
+
+// compatModelsDevEntry resolves the models.dev capability entry for one
+// configured model.
+//
+// A models-dev-provider pin always wins, and is resolved against that
+// provider's own catalog rather than the configured base URL, so a proxy in
+// front of the endpoint still resolves. An unpinned model falls back to the
+// base-URL catalog. Either way a miss yields nil, meaning "no catalog entry";
+// the configuration stays authoritative.
+func compatModelsDevEntry(pinnedProvider string, catalog map[string]*registry.ModelInfo, upstreamName string) *registry.ModelInfo {
+	name := strings.TrimSpace(upstreamName)
+	if pinned := strings.TrimSpace(pinnedProvider); pinned != "" {
+		return registry.GetModelsDevProviderModel(pinned, name)
+	}
+	if len(catalog) == 0 {
+		return nil
+	}
+	return catalog[strings.ToLower(name)]
+}
+
+// applyCompatModelsDevMetadata fills the capability fields a custom provider
+// cannot configure: context window, output limit, input/output modalities and
+// supported parameters (tool calling, structured output, temperature). Only
+// fields the configuration left unset are taken, so an explicit
+// max-context-length, input-modalities or thinking block still wins.
+//
+// The metadata is applied to the upstream model name, because that is the name
+// models.dev publishes under; the client-facing alias may be an unrelated
+// label.
+func applyCompatModelsDevMetadata(info *ModelInfo, pinnedProvider string, catalog map[string]*registry.ModelInfo, upstreamName string) {
+	if info == nil {
+		return
+	}
+	entry := compatModelsDevEntry(pinnedProvider, catalog, upstreamName)
+	if entry == nil {
+		return
+	}
+	if info.ContextLength <= 0 {
+		info.ContextLength = entry.ContextLength
+	}
+	if info.MaxContextLength <= 0 {
+		info.MaxContextLength = entry.MaxContextLength
+	}
+	if info.MaxCompletionTokens <= 0 {
+		info.MaxCompletionTokens = entry.MaxCompletionTokens
+	}
+	if info.InputTokenLimit <= 0 {
+		info.InputTokenLimit = entry.InputTokenLimit
+	}
+	if info.OutputTokenLimit <= 0 {
+		info.OutputTokenLimit = entry.OutputTokenLimit
+	}
+	if len(info.SupportedParameters) == 0 {
+		info.SupportedParameters = append([]string(nil), entry.SupportedParameters...)
+	}
+	if len(info.SupportedInputModalities) == 0 && len(entry.SupportedInputModalities) > 0 {
+		info.SupportedInputModalities = append([]string(nil), entry.SupportedInputModalities...)
+		// The catalog is a real answer rather than a guess, so it is
+		// published; an unconfigured model stays unopinionated and lets the
+		// client fall back to its own reference data. Modality names beyond
+		// text/image are filtered out per client surface downstream.
+		info.ExplicitInputModalities = true
+	}
+	if len(info.SupportedOutputModalities) == 0 && len(entry.SupportedOutputModalities) > 0 {
+		info.SupportedOutputModalities = append([]string(nil), entry.SupportedOutputModalities...)
+	}
 }
 
 func buildConfigModels[T modelEntry](models []T, ownedBy, modelType, metadataChannel string) []*ModelInfo {

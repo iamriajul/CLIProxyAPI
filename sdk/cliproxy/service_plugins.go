@@ -330,17 +330,27 @@ func (s *Service) registerModelRefreshCallback() {
 		}
 
 		providerSet := make(map[string]bool, len(changedProviders))
+		// Custom providers are keyed by base URL rather than provider ID, so
+		// collect the changed base URLs and match them per auth. Without this a
+		// models.dev change to a custom endpoint would update the index in
+		// place while the models clients see stayed stale until a restart.
+		changedBases := make(map[string]bool)
 		for _, p := range changedProviders {
 			norm := strings.ToLower(strings.TrimSpace(p))
-			if norm != "" {
-				providerSet[norm] = true
-				switch norm {
-				case "kimi", "kimi-ai", "kimi.ai", "kimi.com":
-					providerSet["kimi"] = true
-					providerSet["kimi-ai"] = true
-					providerSet["kimi.ai"] = true
-					providerSet["kimi.com"] = true
-				}
+			if norm == "" {
+				continue
+			}
+			if base, ok := strings.CutPrefix(norm, registry.ModelsDevCustomProviderPrefix); ok {
+				changedBases[base] = true
+				continue
+			}
+			providerSet[norm] = true
+			switch norm {
+			case "kimi", "kimi-ai", "kimi.ai", "kimi.com":
+				providerSet["kimi"] = true
+				providerSet["kimi-ai"] = true
+				providerSet["kimi.ai"] = true
+				providerSet["kimi.com"] = true
 			}
 		}
 
@@ -357,7 +367,19 @@ func (s *Service) registerModelRefreshCallback() {
 				continue
 			}
 			provider := strings.ToLower(strings.TrimSpace(auth.Provider))
-			if !providerSet[provider] {
+			_, _, isCompatAuth := openAICompatInfoFromAuth(auth)
+			switch {
+			case isCompatAuth:
+				// A custom provider is refreshed when its own endpoint changed,
+				// or when a models.dev provider it pins changed. The pin matters
+				// because it lets metadata resolve through a proxy whose base URL
+				// the catalog never lists, so base-URL matching alone would
+				// leave that provider stale until a restart.
+				base := registry.ModelsDevBaseURLKey(authBaseURL(auth))
+				if !changedBases[base] && !pinnedProviderChanged(s.cfg, auth, changedBases) {
+					continue
+				}
+			case !providerSet[provider]:
 				continue
 			}
 			authForRefresh := auth
@@ -379,4 +401,71 @@ func (s *Service) registerModelRefreshCallback() {
 			log.Infof("re-registered models for %d auth(s) due to model catalog changes: %v", refreshed, changedProviders)
 		}
 	})
+}
+
+// authBaseURL returns the endpoint an auth was configured with, or "" when it
+// has none. It is used to match an auth against models.dev custom-provider
+// changes, which are keyed by base URL.
+func authBaseURL(auth *coreauth.Auth) string {
+	if auth == nil {
+		return ""
+	}
+	return strings.TrimSpace(auth.Attributes["base_url"])
+}
+
+// pinnedProviderChanged reports whether any model of this auth's provider pins
+// a models.dev provider whose catalog entry changed. It keys off the pinned
+// provider's own base URL, because a pin resolves against that provider's
+// catalog rather than the configured endpoint — which is what lets metadata
+// resolve through a proxy the catalog never lists.
+func pinnedProviderChanged(cfg *config.Config, auth *coreauth.Auth, changedBases map[string]bool) bool {
+	if cfg == nil || auth == nil || len(changedBases) == 0 {
+		return false
+	}
+	providerKey, compatName := "", ""
+	if auth.Attributes != nil {
+		providerKey = strings.TrimSpace(auth.Attributes["provider_key"])
+		compatName = strings.TrimSpace(auth.Attributes["compat_name"])
+	}
+	entry := findOpenAICompatEntry(cfg, compatName, providerKey)
+	if entry == nil {
+		return false
+	}
+	for i := range entry.Models {
+		pinned := strings.TrimSpace(entry.Models[i].ModelsDevProvider)
+		if pinned == "" {
+			continue
+		}
+		for _, info := range registry.GetModelsDevProvidersForModel(entry.Models[i].Name, entry.BaseURL) {
+			if info.ID == pinned && changedBases[registry.ModelsDevBaseURLKey(info.API)] {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// findOpenAICompatEntry locates the openai-compatibility config entry backing
+// an auth, preferring the compat name recorded on the auth and falling back to
+// the provider key.
+func findOpenAICompatEntry(cfg *config.Config, compatName, providerKey string) *config.OpenAICompatibility {
+	compatName = strings.TrimSpace(compatName)
+	providerKey = strings.TrimSpace(providerKey)
+	for i := range cfg.OpenAICompatibility {
+		entry := &cfg.OpenAICompatibility[i]
+		if entry.Disabled {
+			continue
+		}
+		name := strings.TrimSpace(entry.Name)
+		if compatName != "" {
+			if strings.EqualFold(name, compatName) {
+				return entry
+			}
+			continue
+		}
+		if providerKey != "" && strings.EqualFold(name, providerKey) {
+			return entry
+		}
+	}
+	return nil
 }

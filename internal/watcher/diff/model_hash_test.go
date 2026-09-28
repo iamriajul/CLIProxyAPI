@@ -216,6 +216,26 @@ func TestComputeOpenAICompatModelsHashIncludesUseMaxCompletionTokens(t *testing.
 	}
 }
 
+func TestComputeOpenAICompatModelsHashIncludesModelsDevProvider(t *testing.T) {
+	// The pin changes which catalog entry supplies the model's capabilities,
+	// so hot reload must re-register when it changes.
+	withoutPin := ComputeOpenAICompatModelsHash([]config.OpenAICompatibilityModel{{Name: "m"}})
+	withPin := ComputeOpenAICompatModelsHash([]config.OpenAICompatibilityModel{{Name: "m", ModelsDevProvider: "alpha"}})
+	otherPin := ComputeOpenAICompatModelsHash([]config.OpenAICompatibilityModel{{Name: "m", ModelsDevProvider: "beta"}})
+	if withoutPin == "" || withoutPin == withPin {
+		t.Fatalf("models-dev-provider must change model hash: %q / %q", withoutPin, withPin)
+	}
+	if withPin == otherPin {
+		t.Fatalf("different models-dev-provider values must differ: %q / %q", withPin, otherPin)
+	}
+	// Case and surrounding whitespace are normalized, matching how the field
+	// is read at resolution time.
+	spaced := ComputeOpenAICompatModelsHash([]config.OpenAICompatibilityModel{{Name: "m", ModelsDevProvider: "  ALPHA "}})
+	if spaced != withPin {
+		t.Fatalf("models-dev-provider hash must normalize case and spaces: %q / %q", withPin, spaced)
+	}
+}
+
 func TestComputeExcludedModelsHash_Normalizes(t *testing.T) {
 	hash1 := ComputeExcludedModelsHash([]string{" A ", "b", "a"})
 	hash2 := ComputeExcludedModelsHash([]string{"a", " b", "A"})

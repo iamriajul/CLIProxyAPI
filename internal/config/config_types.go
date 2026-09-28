@@ -882,6 +882,15 @@ type OpenAICompatibilityModel struct {
 	// Thinking configures the thinking/reasoning capability for this model.
 	// If nil, the model defaults to level-based reasoning with levels ["low", "medium", "high"].
 	Thinking *registry.ThinkingSupport `yaml:"thinking,omitempty" json:"thinking,omitempty"`
+
+	// ModelsDevProvider pins which models.dev provider entry supplies this
+	// model's capability metadata. A model name is often published by several
+	// providers with different limits and reasoning ladders; naming one here
+	// selects which catalog entry applies.
+	//
+	// Empty keeps the default resolution: the provider reachable at this
+	// provider's base-url, or the sole publisher when the model is unambiguous.
+	ModelsDevProvider string `yaml:"models-dev-provider,omitempty" json:"models-dev-provider,omitempty"`
 }
 
 func (m OpenAICompatibilityModel) GetName() string { return m.Name }

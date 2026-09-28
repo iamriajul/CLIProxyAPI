@@ -313,7 +313,7 @@ func compileAPIKeyModelCapabilitiesForAuth(cfg *internalconfig.Config, auth *Aut
 			compatName = strings.TrimSpace(auth.Attributes["compat_name"])
 		}
 		if entry := resolveOpenAICompatConfigForAuth(cfg, auth, providerKey, compatName); entry != nil {
-			compileOpenAICompatibleModelCapabilities(out, entry.Models)
+			compileOpenAICompatibleModelCapabilities(out, entry.Models, entry.BaseURL)
 		}
 	}
 	if len(out) == 0 {
@@ -336,11 +336,35 @@ func compileConfiguredModelCapabilities[T interface {
 	}
 }
 
-func compileOpenAICompatibleModelCapabilities(out map[string][]apiKeyModelCapabilityRoute, models []internalconfig.OpenAICompatibilityModel) {
+func compileOpenAICompatibleModelCapabilities(out map[string][]apiKeyModelCapabilityRoute, models []internalconfig.OpenAICompatibilityModel, baseURL string) {
+	// The same models.dev ladder the client catalog advertises must govern
+	// request-time validation, otherwise a level published as supported is
+	// rejected by ValidateConfig when the client actually sends it.
+	catalog := make(map[string]*registry.ThinkingSupport)
+	for _, entry := range registry.GetModelsDevByBaseURL(baseURL) {
+		if entry == nil || entry.Thinking == nil {
+			continue
+		}
+		catalog[strings.ToLower(strings.TrimSpace(entry.ID))] = entry.Thinking
+	}
 	for i := range models {
 		support := models[i].Thinking
 		if support == nil && !models[i].Image {
-			support = &registry.ThinkingSupport{Levels: []string{"low", "medium", "high"}}
+			// A pinned provider resolves against that provider's catalog, so a
+			// proxy in front of the endpoint still finds the pinned entry.
+			var verified *registry.ThinkingSupport
+			if pinned := strings.TrimSpace(models[i].ModelsDevProvider); pinned != "" {
+				if entry := registry.GetModelsDevProviderModel(pinned, models[i].Name); entry != nil {
+					verified = entry.Thinking
+				}
+			} else if entry := catalog[strings.ToLower(strings.TrimSpace(models[i].Name))]; entry != nil {
+				verified = entry
+			}
+			if verified != nil {
+				support = verified
+			} else {
+				support = &registry.ThinkingSupport{Levels: []string{"low", "medium", "high"}}
+			}
 		}
 		addConfiguredModelCapability(out, models[i].Name, models[i].Alias, "openai-compatibility", support, models[i].IsCompat)
 	}
