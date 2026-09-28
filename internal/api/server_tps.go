@@ -10,8 +10,8 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/tps"
 )
 
-// lastRequestTPSResponse is the body of GET /v1/last-request-tps: a single flat
-// object describing the most recent generation request, with no nesting.
+// lastRequestStatsResponse is the body of GET /v1/last-request-stats: a single
+// flat object describing the most recent generation request, with no nesting.
 //
 // Compatibility policy (this endpoint is consumed by external integrations):
 //   - The route and the optional "model" query parameter are stable under
@@ -27,9 +27,14 @@ import (
 //   - Errors are {"error": string} with HTTP semantics (401 bad key,
 //     404 no matching request), matching the v1 authentication middleware
 //     and the inference quota endpoint envelope on this group.
-//   - The machine-readable contract lives in api/v1-last-request-tps.schema.json
-//     and is enforced by TestLastRequestTPSSchemaParity.
-type lastRequestTPSResponse struct {
+//   - The machine-readable contract lives in api/v1-last-request-stats.schema.json
+//     and is enforced by TestLastRequestStatsSchemaParity.
+//
+// The route was named /v1/last-request-tps in v8.0.901 and renamed to
+// /v1/last-request-stats in v8.0.902 with the body unchanged, because it
+// reports more than throughput. The old path is not kept: no client had
+// consumed it yet.
+type lastRequestStatsResponse struct {
 	// Model is the model that served the request.
 	Model string `json:"model"`
 	// Alias is the client-requested model name, when the request used one.
@@ -51,8 +56,8 @@ type lastRequestTPSResponse struct {
 	Stream bool    `json:"stream"`
 }
 
-// handleLastRequestTPS reports the throughput of the last generation request
-// this proxy served for a model.
+// handleLastRequestStats reports throughput and token/timing stats of the last
+// generation request this proxy served for a model.
 //
 // It is authenticated with the inference API key (v1 group middleware) and
 // reads the in-process tracker only, so it never calls upstream and stays fast
@@ -60,7 +65,7 @@ type lastRequestTPSResponse struct {
 // Omitting the model parameter matches the most recent request across all
 // models. A 404 means nothing matched yet, which is a normal idle state rather
 // than a failure.
-func (s *Server) handleLastRequestTPS(c *gin.Context) {
+func (s *Server) handleLastRequestStats(c *gin.Context) {
 	model := strings.TrimSpace(c.Query("model"))
 	if model == "" {
 		model = strings.TrimSpace(c.Query("model_id"))
@@ -80,7 +85,7 @@ func (s *Server) handleLastRequestTPS(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "no request served for model " + model})
 		return
 	}
-	c.JSON(http.StatusOK, lastRequestTPSResponse{
+	c.JSON(http.StatusOK, lastRequestStatsResponse{
 		Model:        sample.Model,
 		Alias:        sample.Alias,
 		Provider:     sample.Provider,

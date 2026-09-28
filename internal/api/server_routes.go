@@ -69,7 +69,7 @@ func (s *Server) setupRoutes() {
 			s.unifiedModelsHandler(openaiHandlers, claudeCodeHandlers)(c)
 		})
 		v1.GET("/quota", s.handleInferenceQuota)
-		v1.GET("/last-request-tps", s.handleLastRequestTPS)
+		v1.GET("/last-request-stats", s.handleLastRequestStats)
 		v1.GET("/model/info", s.handleLiteLLMModelInfo)
 		v1.POST("/chat/completions", openaiHandlers.ChatCompletions)
 		v1.POST("/completions", openaiHandlers.Completions)
