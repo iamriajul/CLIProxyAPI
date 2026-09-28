@@ -194,11 +194,11 @@ grep -q 'X-Claude-Code-Prompt-Id' internal/runtime/executor/claude_executor_requ
 go test ./internal/runtime/executor/ -run 'TestClaudeExecutor_AutoModeClassifier'
 ```
 
-## tps-endpoint
-**Last-request TPS endpoint (`GET /v1/last-request-tps`) for GUI polling**
+## last-request-stats-endpoint
+**Last-request stats endpoint (`GET /v1/last-request-stats`) for GUI polling**
 `internal/tps` subscribes to the usage record bus (the same registration shape
 as the usage queue plugin) and keeps the most recent generation per model.
-`GET /v1/last-request-tps[?model=<id>]` serves that on the v1 group. TPS is
+`GET /v1/last-request-stats[?model=<id>]` serves that on the v1 group. TPS is
 output tokens per second of generation time, so TTFT is excluded when the
 upstream reported one. Only successful generating requests are recorded, so
 every number shown describes tokens that were actually produced. A record that
@@ -212,12 +212,21 @@ is a 404 with the standard error envelope, so a client has exactly two states
 record. An unmatched model never falls back to another model's reading. No
 aggregation parameters: the endpoint answers one request, and a rolling average
 is a later, additive change driven by an actual UI need. Machine contract:
-api/v1-last-request-tps.schema.json, enforced by TestLastRequestTPSSchemaParity.
+api/v1-last-request-stats.schema.json, enforced by
+TestLastRequestStatsSchemaParity.
+
+The route shipped as `/v1/last-request-tps` in v8.0.901 and was renamed to
+`/v1/last-request-stats` in v8.0.902: the body already reported token counts and
+timings, not only throughput, so the old name undersold it. The body and every
+field are byte-identical across the rename. The old path is deliberately NOT
+served — the rename landed within hours of the tag and no client had adopted the
+name, so there is no compatibility shim to carry.
 
 ```bash
-grep -q '"/last-request-tps"' internal/api/server_routes.go
+grep -q '"/last-request-stats"' internal/api/server_routes.go
+! grep -rq '"/last-request-tps"' internal/api/server_routes.go
 go test ./internal/tps/
-go test ./internal/api/ -run 'TestHandleLastRequestTPS|TestLastRequestTPSSchemaParity'
+go test ./internal/api/ -run 'TestHandleLastRequestStats|TestLastRequestStatsSchemaParity'
 ```
 
 ## modelsdev-custom-providers
