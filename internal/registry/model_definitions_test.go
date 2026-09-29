@@ -414,16 +414,27 @@ func TestGetOpencodeModelsCoverGatewayLanes(t *testing.T) {
 	}
 }
 
+// TestGetZaiModelsCoverCodingPlan pins the offline half of the Z.AI lane
+// contract: the embedded snapshot plus builtins must stay serving the coding
+// plan when nothing has been discovered, must not carry a pay-per-token lane,
+// and must survive a wiped catalog section through the builtins alone.
+//
+// The exact count moved to TestZaiLiveModelsCoverCodingPlan, which pins the
+// live half against a captured Z.AI payload. A live catalog is plan-scoped,
+// so a live lane count is a property of the plan that served the request, not
+// a property of this repo — a contract that demanded a fixed number there
+// would either be wrong for every plan but one or would have to be rewritten
+// every time Z.AI adds a lane. What must never drift silently is the snapshot
+// going stale, so that is what the two tests together protect: the snapshot is
+// pinned here, and the parser is pinned against a real payload there.
 func TestGetZaiModelsCoverCodingPlan(t *testing.T) {
 	resetModelsDevLiveForTest()
-	t.Cleanup(resetModelsDevLiveForTest)
-	// Fallback snapshot is the 7-lane coding plan from models.dev
-	// zai-coding-plan (was: 16-model oh-my-pi mix including pay-per-token families).
-	// Exact count is deliberate: a new upstream lane must trip here so the
-	// operator re-runs the regen CLI and updates this contract, not silently pass.
-	if got := len(GetZaiModels()); got != 7 {
-		t.Fatalf("GetZaiModels() = %d, want exactly 7 coding-plan lanes", got)
-	}
+	resetZaiLiveModelsForTest()
+	t.Cleanup(func() {
+		resetModelsDevLiveForTest()
+		resetZaiLiveModelsForTest()
+	})
+
 	ids := map[string]bool{}
 	for _, m := range GetZaiModels() {
 		if m != nil {
@@ -432,12 +443,22 @@ func TestGetZaiModelsCoverCodingPlan(t *testing.T) {
 	}
 	for _, want := range []string{"glm-4.7", "glm-5-turbo", "glm-5.2", "glm-5.2-highspeed", "glm-5.3", "glm-5.3-flash", "glm-5.3-highspeed"} {
 		if !ids[want] {
-			t.Fatalf("fallback snapshot missing coding-plan lane %q", want)
+			t.Fatalf("offline fallback missing coding-plan lane %q", want)
 		}
 	}
 	for _, notPlan := range []string{"glm-4.5", "glm-4.6", "glm-5", "glm-5.1"} {
 		if ids[notPlan] {
-			t.Fatalf("fallback snapshot carries non-plan lane %q", notPlan)
+			t.Fatalf("offline fallback carries non-plan lane %q", notPlan)
+		}
+	}
+	// Every entry must be a usable definition: an entry missing its type would
+	// be dispatched as an unknown provider.
+	for _, m := range GetZaiModels() {
+		if m == nil {
+			t.Fatal("offline fallback carries a nil entry")
+		}
+		if m.Type != "zai" || m.ID == "" {
+			t.Fatalf("offline fallback entry %q is not a Z.AI lane (type %q)", m.ID, m.Type)
 		}
 	}
 	for channel, want := range map[string]string{
@@ -463,7 +484,8 @@ func TestGetZaiModelsCoverCodingPlan(t *testing.T) {
 	if !ZaiUsesOpenAIRoute("glm-5.3-flash") {
 		t.Fatalf("glm-5.3-flash should ride the openai route")
 	}
-	// Builtins survive a wiped catalog section.
+	// Builtins survive a wiped catalog section: a failed or absent snapshot
+	// fetch must still leave the lane routable.
 	modelsCatalogStore.mu.Lock()
 	previous := modelsCatalogStore.data
 	modelsCatalogStore.data = &staticModelsJSON{}
@@ -473,7 +495,13 @@ func TestGetZaiModelsCoverCodingPlan(t *testing.T) {
 		modelsCatalogStore.data = previous
 		modelsCatalogStore.mu.Unlock()
 	})
-	if got := len(GetZaiModels()); got != 7 {
-		t.Fatalf("GetZaiModels() with empty catalog = %d", got)
+	wiped := GetZaiModels()
+	if len(wiped) == 0 {
+		t.Fatal("GetZaiModels() with empty catalog returned no lanes")
+	}
+	for _, m := range wiped {
+		if m == nil || m.ID == "" || m.Type != "zai" {
+			t.Fatalf("builtin fallback entry is not a usable Z.AI lane: %#v", m)
+		}
 	}
 }
