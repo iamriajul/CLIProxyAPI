@@ -7,18 +7,24 @@ import (
 )
 
 // zaiLiveModelsCapturedPayload is a real response from Z.AI's plan-scoped
-// discovery endpoint (GET https://api.z.ai/api/v1/models), captured with a real
-// GLM Coding Plan key. It is the reference for every field decision the
-// converter makes, and in particular for the three distinct reasoning shapes it
-// has to keep apart:
+// discovery endpoint, captured with a real GLM Coding Plan key and recorded
+// verbatim. It is the reference for every field decision the converter makes,
+// and in particular for the two distinct reasoning shapes it has to keep
+// apart:
 //
-//   - glm-5.3 declares a ladder (low/high/max)
-//   - glm-5.3-flash declares a ladder and image input
-//   - glm-5-turbo declares an EMPTY ladder while still reasoning, which means
-//     "toggle, no levels" and must never be back-filled with a guess
+//   - glm-5.3 and glm-5.3-flash declare a ladder (low/high/max)
+//   - glm-5-turbo declares an EMPTY ladder while still carrying
+//     supports_reasoning_summaries: true, which means "toggle, no levels" and
+//     must never be back-filled with a guess
 //
-// Two entries deliberately omit fields the first one carries, so the parser is
-// also pinned against the sparse entries the endpoint really returns.
+// The response does not depend on the ?client_version query parameter, so the
+// request uses the bare path.
+
+// The two entries below `zaiLiveModelsCapturedPayload` are not Z.AI's. They
+// exercise shapes the parser must still handle — a sparse entry, and a lane
+// with no reasoning flags at all — but they are deliberately kept out of the
+// captured fixture so the fixture stays a byte-for-byte record of what the
+// endpoint actually returns.
 const zaiLiveModelsCapturedPayload = `{
   "models": [
     {
@@ -31,7 +37,9 @@ const zaiLiveModelsCapturedPayload = `{
       "display_name": "glm-5.3",
       "effective_context_window_percent": 95,
       "experimental_supported_tools": [],
-      "input_modalities": ["text"],
+      "input_modalities": [
+        "text"
+      ],
       "max_context_window": 1048576,
       "priority": 0,
       "shell_type": "shell_command",
@@ -39,47 +47,95 @@ const zaiLiveModelsCapturedPayload = `{
       "support_verbosity": false,
       "supported_in_api": true,
       "supported_reasoning_levels": [
-        {"description": "Light reasoning", "effort": "low"},
-        {"description": "Enhanced reasoning", "effort": "high"},
-        {"description": "Deep reasoning", "effort": "max"}
+        {
+          "description": "Light reasoning",
+          "effort": "low"
+        },
+        {
+          "description": "Enhanced reasoning",
+          "effort": "high"
+        },
+        {
+          "description": "Deep reasoning",
+          "effort": "max"
+        }
       ],
       "supports_parallel_tool_calls": true,
       "supports_reasoning_summaries": true,
-      "truncation_policy": {"limit": 10000, "mode": "bytes"},
+      "truncation_policy": {
+        "limit": 10000,
+        "mode": "bytes"
+      },
       "visibility": "list"
     },
     {
-      "slug": "glm-5.3-flash",
-      "display_name": "glm-5.3-flash",
-      "description": "Fast multimodal coding model",
+      "apply_patch_tool_type": "freeform",
+      "base_instructions": "",
       "context_window": 1048576,
+      "default_reasoning_level": "max",
+      "default_reasoning_summary": "none",
+      "description": "Fast multimodal coding model",
+      "display_name": "glm-5.3-flash",
+      "effective_context_window_percent": 95,
+      "experimental_supported_tools": [],
+      "input_modalities": [
+        "text",
+        "image"
+      ],
       "max_context_window": 1048576,
-      "input_modalities": ["text", "image"],
-      "output_modalities": ["text"],
-      "supported_reasoning_levels": [{"effort": "low"}, {"effort": "high"}, {"effort": "max"}],
-      "supports_parallel_tool_calls": true,
       "priority": 1,
+      "shell_type": "shell_command",
+      "slug": "glm-5.3-flash",
+      "support_verbosity": false,
+      "supported_in_api": true,
+      "supported_reasoning_levels": [
+        {
+          "description": "Light reasoning",
+          "effort": "low"
+        },
+        {
+          "description": "Enhanced reasoning",
+          "effort": "high"
+        },
+        {
+          "description": "Deep reasoning",
+          "effort": "max"
+        }
+      ],
+      "supports_parallel_tool_calls": true,
+      "supports_reasoning_summaries": true,
+      "truncation_policy": {
+        "limit": 10000,
+        "mode": "bytes"
+      },
       "visibility": "list"
     },
     {
-      "slug": "glm-5-turbo",
-      "display_name": "glm-5-turbo",
-      "description": "Agent-optimized model",
+      "apply_patch_tool_type": "freeform",
+      "base_instructions": "",
       "context_window": 204800,
+      "default_reasoning_level": "max",
+      "default_reasoning_summary": "none",
+      "description": "Agent-optimized model",
+      "display_name": "glm-5-turbo",
+      "effective_context_window_percent": 95,
+      "experimental_supported_tools": [],
+      "input_modalities": [
+        "text"
+      ],
       "max_context_window": 204800,
-      "input_modalities": ["text"],
-      "output_modalities": ["text"],
+      "priority": 2,
+      "shell_type": "shell_command",
+      "slug": "glm-5-turbo",
+      "support_verbosity": false,
+      "supported_in_api": true,
       "supported_reasoning_levels": [],
       "supports_parallel_tool_calls": true,
-      "priority": 2,
-      "visibility": "list"
-    },
-    {
-      "slug": "glm-4.7-plain",
-      "display_name": "glm-4.7-plain",
-      "context_window": 200000,
-      "input_modalities": ["text"],
-      "output_modalities": ["text"],
+      "supports_reasoning_summaries": true,
+      "truncation_policy": {
+        "limit": 10000,
+        "mode": "bytes"
+      },
       "visibility": "list"
     }
   ]
@@ -108,10 +164,10 @@ func TestZaiLiveModelsCoverCodingPlan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ConvertZaiLiveModelsCatalog: %v", err)
 	}
-	// The four lanes the captured plan served. This list is the trip-wire: a
+	// The three lanes the captured plan served. This list is the trip-wire: a
 	// new Z.AI lane must show up here as a re-captured payload, not slip in
 	// unnoticed.
-	if got := idsOf(models); len(got) != 4 || got[0] != "glm-4.7-plain" || got[1] != "glm-5-turbo" || got[2] != "glm-5.3" || got[3] != "glm-5.3-flash" {
+	if got := idsOf(models); len(got) != 3 || got[0] != "glm-5-turbo" || got[1] != "glm-5.3" || got[2] != "glm-5.3-flash" {
 		t.Fatalf("discovered lanes = %v, want the captured plan lanes", got)
 	}
 
@@ -141,6 +197,8 @@ func TestZaiLiveModelsCoverCodingPlan(t *testing.T) {
 	if len(flagship.SupportedInputModalities) != 1 || flagship.SupportedInputModalities[0] != "text" {
 		t.Fatalf("input modalities = %v, want [text]", flagship.SupportedInputModalities)
 	}
+	// output_modalities is absent from the captured response, so the codec's
+	// text-only default applies rather than an invented modality.
 	if len(flagship.SupportedOutputModalities) != 1 || flagship.SupportedOutputModalities[0] != "text" {
 		t.Fatalf("output modalities = %v, want [text]", flagship.SupportedOutputModalities)
 	}
@@ -160,19 +218,26 @@ func TestZaiLiveModelsCoverCodingPlan(t *testing.T) {
 	if !equalModelsDevStrings(flash.SupportedInputModalities, []string{"text", "image"}) {
 		t.Fatalf("flash input modalities = %v, want [text image]", flash.SupportedInputModalities)
 	}
-	// A sparse entry with only the tool-call flag still reasons, and its
-	// declared ladder is published as-is.
+	// The flash lane declares the same ladder as the flagship and adds image
+	// input. Its ladder is published as-is.
 	if flash.Thinking == nil || !equalModelsDevStrings(flash.Thinking.Levels, []string{"low", "high", "max"}) {
 		t.Fatalf("flash thinking = %#v, want the declared ladder", flash.Thinking)
 	}
 	// A lane with neither reasoning flag nor levels does not reason, and
-	// advertising otherwise would offer a level it rejects.
-	plain := zaiLiveModelByID(t, models, "glm-4.7-plain")
-	if plain.Thinking != nil || plain.ExplicitThinking {
-		t.Fatalf("plain lane thinking = %#v, want none", plain.Thinking)
+	// advertising otherwise would offer a level it rejects. That shape is not
+	// in the captured response, so it is pinned separately.
+	plain, err := ConvertZaiLiveModelsCatalog([]byte(`{"models":[{"slug":"glm-plain","display_name":"glm-plain","context_window":200000,"input_modalities":["text"],"visibility":"list"}]}`))
+	if err != nil {
+		t.Fatalf("parse non-reasoning lane: %v", err)
+	}
+	if plain[0].Thinking != nil || plain[0].ExplicitThinking {
+		t.Fatalf("non-reasoning lane thinking = %#v, want none", plain[0].Thinking)
 	}
 
-	// The toggle-only lane. This is the case the whole separation exists for.
+	// The toggle-only lane, and the case the whole separation exists for. The
+	// captured entry carries supports_reasoning_summaries: true with an EMPTY
+	// level list: the provider says this model reasons and publishes no ladder.
+	// That is the exact input a "fill in a sensible default" shortcut destroys.
 	turbo := zaiLiveModelByID(t, models, "glm-5-turbo")
 	if turbo.Thinking == nil {
 		t.Fatal("toggle-only lane lost its reasoning: a non-nil Thinking is what keeps reasoning configuration forwarded")
@@ -183,8 +248,12 @@ func TestZaiLiveModelsCoverCodingPlan(t *testing.T) {
 	if !turbo.ExplicitThinking {
 		t.Fatal("toggle-only lane must still be explicit, or a client catalog would invent a ladder for it")
 	}
-	if turbo.ContextLength != 204800 {
-		t.Fatalf("turbo context length = %d, want 204800", turbo.ContextLength)
+	// 95% applies here too, so the advertised window is not the raw 204800.
+	if want := 204800 * 95 / 100; turbo.ContextLength != want {
+		t.Fatalf("turbo context length = %d, want the effective window %d", turbo.ContextLength, want)
+	}
+	if turbo.MaxContextLength != 204800 {
+		t.Fatalf("turbo max context length = %d, want the raw 204800", turbo.MaxContextLength)
 	}
 }
 
@@ -223,6 +292,9 @@ func TestZaiLiveModelErrorCredential(t *testing.T) {
 	}{
 		{`{"code":401,"msg":"token expired or incorrect","success":false}`, "token expired or incorrect", true},
 		{`{"code":403,"msg":"forbidden","success":false}`, "forbidden", true},
+		// Observed live: the endpoint's own code for a rejected key, returned
+		// inside a 200 body rather than as an HTTP 401.
+		{`{"code":1000,"msg":"Authentication Failed","success":false}`, "Authentication Failed", true},
 		{`{"code":500,"msg":"boom","success":false}`, "boom", false},
 		{`{"code":0,"msg":"unknown","success":false}`, "unknown", false},
 	} {
@@ -274,7 +346,7 @@ func TestZaiLiveModelsPrecedence(t *testing.T) {
 	// The credential-scoped reader resolves the same key the runtime stores
 	// under — auth ID plus key digest — so it must see the discovered lanes.
 	withLive := GetZaiModelsForCredential("auth-1", key)
-	if got := idsOf(withLive); len(got) != 4 || got[0] != "glm-4.7-plain" {
+	if got := idsOf(withLive); len(got) != 3 || got[0] != "glm-5-turbo" {
 		t.Fatalf("credential-scoped lanes = %v, want the discovered plan lanes", got)
 	}
 	// A different credential on the same deployment may hold a different plan.
@@ -327,8 +399,8 @@ func TestZaiLiveModelsStatus(t *testing.T) {
 	}
 	SetZaiLiveModels(GetZaiLiveModelsCacheKey("auth-1", "ak-1.2"), discovered)
 	row = ZaiLiveModelsStatus().Providers[0]
-	if row.Source != "live" || row.Models != 4 || row.FetchedAt == nil {
-		t.Fatalf("live row = %#v, want a live row with 4 lanes and a fetch time", row)
+	if row.Source != "live" || row.Models != 3 || row.FetchedAt == nil {
+		t.Fatalf("live row = %#v, want a live row with 3 lanes and a fetch time", row)
 	}
 }
 
