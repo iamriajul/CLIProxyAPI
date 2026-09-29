@@ -97,9 +97,9 @@ func TestHandleLastRequestStats_Contract(t *testing.T) {
 	if got.InputTokens != 120 || got.OutputTokens != 300 {
 		t.Fatalf("tokens = %d/%d, want 120/300", got.InputTokens, got.OutputTokens)
 	}
-	// 300 output tokens over 3s of generation.
-	if math.Abs(got.TPS-100) > 1e-9 {
-		t.Fatalf("tps = %v, want 100", got.TPS)
+	// 300 output tokens over the 4s request, not the 3s after the first byte.
+	if math.Abs(got.TPS-75) > 1e-9 {
+		t.Fatalf("tps = %v, want 75", got.TPS)
 	}
 	if got.At.IsZero() {
 		t.Fatal("at is zero, want the request completion time")
