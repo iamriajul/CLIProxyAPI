@@ -258,7 +258,6 @@ func GetOpencodeModels() []*ModelInfo {
 	return markModelsDevExplicit(WithOpencodeBuiltins(cloneModelInfos(getModels().Opencode)))
 }
 
-
 // WithCodexBuiltins injects hard-coded Codex-only model definitions that should
 // not depend on remote models.json updates. Built-ins replace any matching IDs
 // already present in the provided slice.
