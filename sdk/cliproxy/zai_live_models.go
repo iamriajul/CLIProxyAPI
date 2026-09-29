@@ -199,10 +199,12 @@ func (s *Service) zaiLiveModelsRoundTrip(ctx context.Context, auth *coreauth.Aut
 		return nil, fmt.Errorf("zai live model discovery: create request: %w", errReq)
 	}
 	req.Header.Set("Accept", "application/json")
-	// Z.AI rejects the Bearer prefix here, the same reason the Anthropic lanes
-	// run natively instead of through the shared Claude delegation. The key
-	// goes out verbatim, as it does on inference and quota.
-	req.Header.Set("Authorization", apiKey)
+	// Discovery accepts a Bearer token, unlike the inference and quota lanes,
+	// which send the plan key verbatim because those endpoints reject the
+	// Bearer prefix. Both forms are accepted here, so the conventional
+	// Authorization scheme is sent and the two paths stay independently
+	// verifiable.
+	req.Header.Set("Authorization", "Bearer "+apiKey)
 
 	client := &http.Client{Timeout: zaiLiveModelsProbeTimeout}
 	if proxyURL := s.zaiLiveModelsProxyURL(auth); proxyURL != "" {
