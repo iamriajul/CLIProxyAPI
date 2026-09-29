@@ -8,11 +8,19 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 )
 
-// GetModelsDevStatus reports models.dev catalog freshness per tracked
-// provider (opencode-go, zai-coding-plan): live overlay or embedded
-// fallback, model counts, last fetch time, and the latest refresh error.
+// GetModelsDevStatus reports catalog freshness for both live model sources:
+// the models.dev opencode-go section and the Z.AI plan catalog discovered from
+// Z.AI itself. Each row is live overlay or embedded fallback, with model
+// counts, last fetch time, and the latest refresh error.
+//
+// The Z.AI row carries no last_error: discovery is per credential, so a
+// single "latest error" would describe one plan key while the row's count
+// describes the last successful one. The fallback source is the honest signal
+// there — it already reads as "no live lanes for this deployment".
 func (h *Handler) GetModelsDevStatus(c *gin.Context) {
-	c.JSON(http.StatusOK, registry.GetModelsDevStatus())
+	status := registry.GetModelsDevStatus()
+	status.Providers = append(status.Providers, registry.ZaiLiveModelsStatus().Providers...)
+	c.JSON(http.StatusOK, status)
 }
 
 // RefreshModelsDev triggers one models.dev fetch outside the 3-hour ticker
