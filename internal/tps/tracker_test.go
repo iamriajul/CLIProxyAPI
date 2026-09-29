@@ -22,16 +22,36 @@ func sample(model string, at time.Time, latency, ttft time.Duration, output int6
 	}
 }
 
-// TestSampleTPSExcludesTimeToFirstToken locks the definition clients display:
-// 100 output tokens over 1s of generation after a 400ms TTFT is 100 TPS, not
-// 71.4 TPS measured against the full request duration.
-func TestSampleTPSExcludesTimeToFirstToken(t *testing.T) {
+// TestSampleTPSUsesTotalLatency locks the rate a client compares with CPA
+// Manager Plus: output tokens over the whole request. 100 tokens in 1.4s is
+// 71.4 TPS even when the first byte arrived 400ms in. Dividing by the
+// remainder instead reported the transfer tail — live, 2.1e6 tok/s on a
+// 28 tok/s request — because TTFT here is the first response byte, not the
+// moment generation started.
+func TestSampleTPSUsesTotalLatency(t *testing.T) {
 	s := sample("m", base, 1400*time.Millisecond, 400*time.Millisecond, 100)
 	if got := s.GenerationWindow(); got != time.Second {
 		t.Fatalf("GenerationWindow() = %v, want 1s", got)
 	}
-	if got := s.TPS(); got != 100 {
-		t.Fatalf("TPS() = %v, want 100", got)
+	const want = 100 / 1.4
+	if math.Abs(s.TPS()-want) > 1e-9 {
+		t.Fatalf("TPS() = %v, want %v", s.TPS(), want)
+	}
+}
+
+// TestSampleTPSIgnoresSubMillisecondFirstByteTail is the buffered-body
+// failure: TTFT and latency round to the same millisecond, but the duration
+// between them is a few hundred microseconds. That tail must not be the
+// denominator. 428 tokens in 15.0364s is about 28.5 TPS, not millions.
+func TestSampleTPSIgnoresSubMillisecondFirstByteTail(t *testing.T) {
+	s := sample("m", base,
+		15036*time.Millisecond+400*time.Microsecond,
+		15036*time.Millisecond+200*time.Microsecond,
+		428)
+	s.Stream = false
+	const want = 428 / 15.0364
+	if math.Abs(s.TPS()-want) > 1e-6 {
+		t.Fatalf("TPS() = %v, want %v", s.TPS(), want)
 	}
 }
 
@@ -237,8 +257,10 @@ func TestObserveRecordsGeneratingRequests(t *testing.T) {
 	if !got.Stream {
 		t.Fatal("Stream = false, want the context stream flag")
 	}
-	if math.Abs(got.TPS()-100) > 1e-9 {
-		t.Fatalf("TPS = %v, want 100", got.TPS())
+	// 200 tokens over the 3s request. The 1s first byte is not removed.
+	const want = 200 / 3.0
+	if math.Abs(got.TPS()-want) > 1e-9 {
+		t.Fatalf("TPS = %v, want %v", got.TPS(), want)
 	}
 	if got.Provider != "codex" || got.InputTokens != 10 {
 		t.Fatalf("sample = %+v, want provider and input tokens preserved", got)
