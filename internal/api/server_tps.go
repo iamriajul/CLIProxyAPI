@@ -15,15 +15,18 @@ import (
 //
 // Compatibility policy (this endpoint is consumed by external integrations):
 //   - The route and the optional "model" query parameter are stable under
-//     /v1. Changes are additive only: new optional fields may appear, but
-//     existing fields never change type or meaning.
+//     /v1. Changes are additive only: new optional fields may appear, and
+//     existing fields do not change type. `tps` is the meaning that changed
+//     after it shipped: its denominator is total latency, not the first-byte
+//     tail. That tail was the transfer on a buffered body.
 //   - There is no "no data" representation inside the body: when no request
 //     has been served the endpoint answers 404 with the standard error
 //     envelope, so a client has exactly two states to handle — 200 with this
 //     object, or 404. A model that has not run, or an idle session, is the
 //     404 case.
-//   - TPS is output tokens per second of generation time, so time to first
-//     token is excluded whenever the upstream reported one.
+//   - TPS is output tokens per second of total request latency. It used to
+//     exclude TTFT. That exclusion measured the first-byte tail, not decode
+//     time, once TTFT was the first response byte of a buffered body.
 //   - Errors are {"error": string} with HTTP semantics (401 bad key,
 //     404 no matching request), matching the v1 authentication middleware
 //     and the inference quota endpoint envelope on this group.
@@ -44,14 +47,15 @@ type lastRequestStatsResponse struct {
 	At time.Time `json:"at"`
 	// DurationMs is the total request latency.
 	DurationMs int64 `json:"duration_ms"`
-	// TTFTMs is time to first token, zero when the upstream reported none.
+	// TTFTMs is the first response byte, zero when none was observed.
 	TTFTMs int64 `json:"ttft_ms"`
-	// GenerationMs is the time spent producing tokens: DurationMs minus
-	// TTFTMs when both are known, otherwise the full duration.
+	// GenerationMs is DurationMs minus TTFTMs when TTFT falls inside the
+	// request, otherwise the full duration. TTFT is the first response
+	// byte, so this interval is the transfer when the upstream buffers.
 	GenerationMs int64 `json:"generation_ms"`
 	InputTokens  int64 `json:"input_tokens"`
 	OutputTokens int64 `json:"output_tokens"`
-	// TPS is OutputTokens per second of GenerationMs.
+	// TPS is OutputTokens per second of DurationMs.
 	TPS    float64 `json:"tps"`
 	Stream bool    `json:"stream"`
 }
