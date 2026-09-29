@@ -23,8 +23,8 @@ func TestModelsDevLiveOverlayPrecedence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load live: %v", err)
 	}
-	if len(changed) != 2 {
-		t.Fatalf("changed = %v, want [opencode zai]", changed)
+	if len(changed) != 1 || changed[0] != "opencode" {
+		t.Fatalf("changed = %v, want [opencode] (the Z.AI section is no longer a live overlay)", changed)
 	}
 
 	got := GetOpencodeModels()
@@ -34,9 +34,14 @@ func TestModelsDevLiveOverlayPrecedence(t *testing.T) {
 	if got[0].ID != "glm-5.2" || got[1].ID != "gpt-5.6-luna" {
 		t.Fatalf("live IDs = [%s %s]", got[0].ID, got[1].ID)
 	}
-	gotZai := GetZaiModels()
-	if len(gotZai) != 2 {
-		t.Fatalf("GetZaiModels with live = %d, want 2", len(gotZai))
+	// A models.dev payload carrying a zai-coding-plan section must not move the
+	// Z.AI lane: that lane is discovered from Z.AI's own plan-scoped catalog,
+	// so a third-party section cannot be allowed to overwrite it.
+	if got := idsOf(GetZaiModels()); len(got) < 7 {
+		t.Fatalf("GetZaiModels with a live models.dev payload = %v, want the offline lanes", got)
+	}
+	if got := GetModelsDevLive("zai"); got != nil {
+		t.Fatalf("models.dev live store returned %d Z.AI lanes; the Z.AI lane has no models.dev live section", len(got))
 	}
 
 	// Same bytes again: no change reported.
@@ -44,14 +49,16 @@ func TestModelsDevLiveOverlayPrecedence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload live: %v", err)
 	}
+
 	if len(changed) != 0 {
 		t.Fatalf("reload changed = %v, want none", changed)
 	}
 
-	// Reset restores fallback.
+	// Reset restores the offline fallback for every lane, including Z.AI,
+	// which has no models.dev live section to restore.
 	resetModelsDevLiveForTest()
 	if got := len(GetZaiModels()); got < 7 {
-		t.Fatalf("GetZaiModels after reset = %d, want fallback", got)
+		t.Fatalf("GetZaiModels after reset = %d, want the offline snapshot", got)
 	}
 }
 
@@ -73,8 +80,9 @@ func TestModelsDevLiveBeatsFallback(t *testing.T) {
 	if got := len(GetOpencodeModels()); got < 39 {
 		t.Fatalf("fallback opencode = %d, want >= 39", got)
 	}
-	if got := len(GetZaiModels()); got != 7 {
-		t.Fatalf("fallback zai = %d, want 7", got)
+	zaiOffline := idsOf(GetZaiModels())
+	if len(zaiOffline) < 7 {
+		t.Fatalf("fallback zai = %v, want the offline snapshot lanes", zaiOffline)
 	}
 
 	data, err := os.ReadFile("modelsdev_testdata_api.json")
@@ -87,8 +95,11 @@ func TestModelsDevLiveBeatsFallback(t *testing.T) {
 	if got := GetOpencodeModels(); len(got) != 2 || got[0].ID != "glm-5.2" {
 		t.Fatalf("live opencode = %v, want 2 fixture models", idsOf(got))
 	}
-	if got := GetZaiModels(); len(got) != 2 {
-		t.Fatalf("live zai = %v, want 2 fixture models", idsOf(got))
+	// The Z.AI lane ignores models.dev entirely: its offline lanes are
+	// unchanged by a live payload, and only a credential-scoped discovery
+	// result can move it.
+	if got := idsOf(GetZaiModels()); !equalModelsDevStrings(got, zaiOffline) {
+		t.Fatalf("live models.dev payload moved the Z.AI lane to %v, want the unchanged %v", got, zaiOffline)
 	}
 
 	resetModelsDevLiveForTest()
@@ -123,8 +134,8 @@ func TestModelsDevLiveKeepsMissingSection(t *testing.T) {
 		t.Fatal("revision must advance on first load")
 	}
 
-	// Payload carrying only opencode-go must preserve the zai section and
-	// report no change when opencode content is identical.
+	// A payload carrying only opencode-go must report no change when the
+	// opencode content is identical.
 	partial := []byte(`{"opencode-go": {"models": {
 		"glm-5.2": {"id": "glm-5.2", "name": "GLM-5.2", "reasoning": true,
 			"reasoning_options": [{"type": "effort", "values": ["high", "max"]}],
@@ -146,26 +157,28 @@ func TestModelsDevLiveKeepsMissingSection(t *testing.T) {
 	if len(changed) != 0 {
 		t.Fatalf("partial identical changed = %v, want none", changed)
 	}
-	if got := GetZaiModels(); len(got) != 2 {
-		t.Fatalf("zai after partial load = %d, want 2 preserved", len(got))
+	if got := GetOpencodeModels(); len(got) != 2 {
+		t.Fatalf("opencode after partial load = %d, want 2 preserved", len(got))
 	}
 	if got := GetModelsDevRevision(); got != rev {
 		t.Fatalf("revision = %d, want %d (no semantic change)", got, rev)
 	}
 
-	// A present-but-empty section keeps previous data instead of wiping it.
-	changed, err = loadModelsDevLiveFromBytes([]byte(`{"zai-coding-plan": {"models": {}}}`), "test")
+	// A present-but-empty tracked section keeps previous data instead of
+	// wiping it. That contract is unchanged, but it now applies to the only
+	// section the overlay tracks.
+	changed, err = loadModelsDevLiveFromBytes([]byte(`{"opencode-go": {"models": {}}}`), "test")
 	if err != nil {
 		t.Fatalf("load empty section: %v", err)
 	}
 	if len(changed) != 0 {
 		t.Fatalf("empty section changed = %v, want none", changed)
 	}
-	if got := GetZaiModels(); len(got) != 2 {
-		t.Fatalf("zai after empty section = %d, want 2 preserved", len(got))
-	}
 	if got := GetOpencodeModels(); len(got) != 2 {
 		t.Fatalf("opencode after empty section = %d, want 2 preserved", len(got))
+	}
+	if got := GetModelsDevRevision(); got != rev {
+		t.Fatalf("revision = %d, want %d after an empty section", got, rev)
 	}
 }
 
@@ -289,24 +302,26 @@ func TestGetModelsDevStatus(t *testing.T) {
 	resetModelsDevLiveForTest()
 	t.Cleanup(resetModelsDevLiveForTest)
 
-	// Cold boot: both providers on fallback, no fetch metadata.
+	// Cold boot: the tracked section is on fallback, with no fetch metadata.
+	// Only opencode-go is reported: the Z.AI lane is discovered from Z.AI
+	// itself and is reported by ZaiLiveModelsStatus, which the management
+	// handler merges in.
 	status := GetModelsDevStatus()
-	if len(status.Providers) != 2 {
-		t.Fatalf("providers = %d, want 2", len(status.Providers))
+	if len(status.Providers) != 1 {
+		t.Fatalf("providers = %d, want 1 (opencode-go only)", len(status.Providers))
 	}
-	if status.Providers[0].ID != "opencode-go" || status.Providers[1].ID != "zai-coding-plan" {
-		t.Fatalf("provider ids = %q/%q", status.Providers[0].ID, status.Providers[1].ID)
+	row := status.Providers[0]
+	if row.ID != "opencode-go" {
+		t.Fatalf("provider id = %q, want opencode-go", row.ID)
 	}
-	for _, p := range status.Providers {
-		if p.Source != "fallback" {
-			t.Fatalf("%s source = %q, want fallback", p.ID, p.Source)
-		}
-		if p.FetchedAt != nil || p.LastError != nil {
-			t.Fatalf("%s metadata not nil on cold boot", p.ID)
-		}
+	if row.Source != "fallback" {
+		t.Fatalf("source = %q, want fallback", row.Source)
 	}
-	if status.Providers[0].Models < 39 || status.Providers[1].Models != 7 {
-		t.Fatalf("fallback counts = %d/%d", status.Providers[0].Models, status.Providers[1].Models)
+	if row.FetchedAt != nil || row.LastError != nil {
+		t.Fatalf("metadata not nil on cold boot")
+	}
+	if row.Models < 39 {
+		t.Fatalf("fallback count = %d, want >= 39", row.Models)
 	}
 
 	// Live load flips source and stamps fetch time.
@@ -318,27 +333,18 @@ func TestGetModelsDevStatus(t *testing.T) {
 		t.Fatalf("load live: %v", err)
 	}
 	status = GetModelsDevStatus()
-	for _, p := range status.Providers {
-		if p.Source != "live" || len(status.Providers) != 2 {
-			t.Fatalf("%s source = %q, want live", p.ID, p.Source)
-		}
-		if p.FetchedAt == nil {
-			t.Fatalf("%s missing fetch timestamp", p.ID)
-		}
-		if p.Models != 2 {
-			t.Fatalf("%s models = %d, want 2", p.ID, p.Models)
-		}
+	row = status.Providers[0]
+	if row.Source != "live" || row.FetchedAt == nil || row.Models != 2 {
+		t.Fatalf("live row = %#v, want a live row with 2 models and a fetch time", row)
 	}
 
-	// A recorded failure surfaces on both rows without changing source.
+	// A recorded failure surfaces without changing source.
 	setModelsDevLastError("boom")
-	status = GetModelsDevStatus()
-	for _, p := range status.Providers {
-		if p.LastError == nil || *p.LastError != "boom" {
-			t.Fatalf("%s last_error missing", p.ID)
-		}
-		if p.Source != "live" {
-			t.Fatalf("%s source = %q, want live (error must not flip source)", p.ID, p.Source)
-		}
+	row = GetModelsDevStatus().Providers[0]
+	if row.LastError == nil || *row.LastError != "boom" {
+		t.Fatalf("last_error missing")
+	}
+	if row.Source != "live" {
+		t.Fatalf("source = %q, want live (error must not flip source)", row.Source)
 	}
 }
