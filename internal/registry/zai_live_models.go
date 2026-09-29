@@ -134,12 +134,29 @@ func (e *ZaiLiveModelError) Error() string {
 // Credential reports whether the failure is the credential's fault rather than
 // an upstream fault, so the caller can suppress discovery for a while instead
 // of re-asking with a key the provider already rejected.
+//
+// Z.AI's own codes are matched alongside HTTP semantics because both observed
+// shapes are authentication failures: 401/403 are the HTTP-mapped ones, and
+// code 1000 with "Authentication Failed" is what the endpoint actually
+// returns for a rejected key. Treating 1000 as a transient fault would only
+// cost a longer suppression window, but matching the real code keeps the log
+// honest about why discovery stopped.
 func (e *ZaiLiveModelError) Credential() bool {
 	if e == nil {
 		return false
 	}
-	return e.Code == 401 || e.Code == 403
+	switch e.Code {
+	case 401, 403, zaiLiveCodeAuthFailed:
+		return true
+	default:
+		return false
+	}
 }
+
+// zaiLiveCodeAuthFailed is Z.AI's own code for a rejected credential,
+// observed on the discovery endpoint. It is not an HTTP status: Z.AI returns
+// it inside a 200 body.
+const zaiLiveCodeAuthFailed = 1000
 
 // ErrZaiLiveModelsNoCredential reports a discovery attempt made without a
 // usable credential. It is deliberately distinct from a rejected credential: a
