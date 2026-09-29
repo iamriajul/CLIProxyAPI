@@ -1,12 +1,19 @@
 // Package registry model source for models.dev.
 //
 // models.dev (https://models.dev/api.json) is the realtime source of truth
-// for the OpenCode Zen Go gateway lanes and the Z.AI GLM Coding Plan lanes.
-// Provider IDs are exact: "opencode-go" is the Go gateway
-// (https://opencode.ai/zen/go/v1) and must never be confused with "opencode"
-// (OpenCode Zen, https://opencode.ai/zen/v1); "zai-coding-plan" is the flat
-// coding plan (https://api.z.ai/api/coding/paas/v4), not the "zai" or
-// "zhipu" pay-per-token lanes.
+// for the OpenCode Zen Go gateway lanes. The provider ID is exact:
+// "opencode-go" is the Go gateway (https://opencode.ai/zen/go/v1) and must
+// never be confused with "opencode" (OpenCode Zen,
+// https://opencode.ai/zen/v1).
+//
+// The Z.AI GLM Coding Plan lanes are no longer sourced here: Z.AI publishes
+// its own plan-scoped catalog at /api/v1/models, which is authoritative and
+// per-credential, so it is read directly (see zai_live_models.go). The
+// "zai-coding-plan" section is still converted below, but only because the
+// regen CLI refreshes the embedded offline snapshot from it, and because the
+// custom-provider index below covers every provider models.dev publishes
+// (Z.AI's coding-plan base URL included) for an operator who points a custom
+// provider at it.
 package registry
 
 import (
@@ -22,10 +29,17 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// ModelsDevProviderIDs lists the exact models.dev provider IDs this fork tracks.
+// ModelsDevProviderIDs lists the exact models.dev provider IDs this fork
+// refreshes an embedded offline snapshot from.
 func ModelsDevProviderIDs() []string {
 	return []string{"opencode-go", "zai-coding-plan"}
 }
+
+// modelsdevLiveProviderID is the single models.dev section the runtime overlay
+// tracks. The Z.AI section feeds the checked-in offline snapshot and the
+// custom-provider index, but not the live overlay: that lane is discovered
+// from Z.AI itself.
+const modelsdevLiveProviderID = "opencode-go"
 
 // modelsDevCatalog is the top-level shape of https://models.dev/api.json:
 // a map from provider ID to provider payload.
@@ -89,13 +103,17 @@ type ModelsDevSections struct {
 // ConvertModelsDevCatalog parses api.json bytes and returns ModelInfo slices
 // for the opencode-go and zai-coding-plan providers. A missing provider key
 // sets its Has flag false; a payload carrying neither key is an error.
+//
+// The Z.AI section is converted for the checked-in offline snapshot and the
+// custom-provider index, never for the runtime live overlay — see
+// modelsdevLiveProviderID.
 func ConvertModelsDevCatalog(data []byte) (ModelsDevSections, error) {
 	var out ModelsDevSections
 	var catalog modelsDevCatalog
 	if err := json.Unmarshal(data, &catalog); err != nil {
 		return out, fmt.Errorf("decode models.dev catalog: %w", err)
 	}
-	ocProvider, ocOK := catalog["opencode-go"]
+	ocProvider, ocOK := catalog[modelsdevLiveProviderID]
 	zaiProvider, zaiOK := catalog["zai-coding-plan"]
 	if !ocOK && !zaiOK {
 		return out, fmt.Errorf("models.dev payload carries neither opencode-go nor zai-coding-plan")
