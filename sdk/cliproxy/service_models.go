@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	zaiauth "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/zai"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/constant"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/modelconfig"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
@@ -157,7 +158,10 @@ func (s *Service) registerModelsForAuthWithCache(ctx context.Context, a *coreaut
 		models = registry.GetOpencodeModels()
 		models = applyExcludedModels(models, excluded)
 	case "zai", "glm", "zhipu":
-		models = registry.GetZaiModels()
+		// Lanes are discovered from Z.AI's own plan-scoped catalog, which is
+		// keyed by this credential's plan key. A credential with no live
+		// result reads the embedded snapshot plus builtins.
+		models = registry.GetZaiModelsForCredential(a.ID, zaiauth.ZaiCreds(a.Metadata, a.Attributes))
 		models = applyExcludedModels(models, excluded)
 	case "xai":
 		models = registry.GetXAIModels()
@@ -304,6 +308,16 @@ func (s *Service) registerModelsForAuthWithCache(ctx context.Context, a *coreaut
 		s.registerResolvedModelsForAuth(a, key, applyModelPrefixes(models, a.Prefix, s.cfg != nil && s.cfg.ForceModelPrefix))
 		if strings.EqualFold(strings.TrimSpace(a.Provider), "antigravity") {
 			s.asyncProbeAntigravityCapabilities(ctx, a, key)
+		}
+		// Z.AI discovery runs after registration, not before it: a credential
+		// registering for the first time has nothing cached yet, so asking
+		// first would always answer from the offline snapshot and a stale lane
+		// list could survive a credential that is already re-registering for
+		// another reason. Registering first publishes the snapshot immediately;
+		// a changed live set then triggers a re-registration that supersedes
+		// it. The TTL keeps this to one round trip per plan change window.
+		if strings.EqualFold(strings.TrimSpace(a.Provider), "zai") || key == "zai" {
+			s.discoverZaiLiveModels(ctx, a)
 		}
 		return
 	}
