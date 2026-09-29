@@ -31,7 +31,7 @@ type Sample struct {
 	Provider string
 	// Latency is the total request latency.
 	Latency time.Duration
-	// TTFT is the time to first token; zero when the upstream reported none.
+	// TTFT is the first response byte; zero when none was observed.
 	TTFT        time.Duration
 	InputTokens int64
 	// OutputTokens is the completion token count, the numerator of TPS.
@@ -39,10 +39,9 @@ type Sample struct {
 	Stream       bool
 }
 
-// GenerationWindow is the time during which tokens were produced. TTFT is
-// queueing plus prefill rather than generation, so it is subtracted whenever
-// the upstream reported one. Requests without a TTFT fall back to full
-// latency.
+// GenerationWindow is latency minus the first response byte when that byte
+// falls inside the request, otherwise the full latency. On a buffered body
+// this is the transfer tail, not a decode interval. TPS does not use it.
 func (s Sample) GenerationWindow() time.Duration {
 	if s.TTFT > 0 && s.TTFT < s.Latency {
 		return s.Latency - s.TTFT
@@ -50,13 +49,21 @@ func (s Sample) GenerationWindow() time.Duration {
 	return s.Latency
 }
 
-// TPS is generation throughput: output tokens per second of generation.
+// TPS is output tokens per second of the whole request.
+//
+// The denominator used to be GenerationWindow, which excludes TTFT. That was
+// the right decode rate when TTFT was the first generated token. The value
+// recorded here is the first response byte. On a buffered body — non-streaming,
+// or a "stream" the upstream holds until the end — that byte arrives as the
+// response finishes, and the remainder is the transfer. Dividing by it reported
+// 2.1e6 tok/s for a 28 tok/s request and 886 for one whose end-to-end rate was
+// 10. CPA Manager Plus divides by total latency for the same reason. The
+// generation window stays on the sample so a client can still show the tail.
 func (s Sample) TPS() float64 {
-	window := s.GenerationWindow()
-	if window <= 0 || s.OutputTokens <= 0 {
+	if s.Latency <= 0 || s.OutputTokens <= 0 {
 		return 0
 	}
-	return float64(s.OutputTokens) / window.Seconds()
+	return float64(s.OutputTokens) / s.Latency.Seconds()
 }
 
 // Reset clears all retained samples. It exists for tests, which share the
