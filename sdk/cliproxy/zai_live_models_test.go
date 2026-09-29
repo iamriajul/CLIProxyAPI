@@ -108,9 +108,13 @@ func TestZaiLiveDiscoveryRegistersDiscoveredLanes(t *testing.T) {
 	if gotPath != "/api/v1/models" {
 		t.Fatalf("discovery path = %q, want /api/v1/models", gotPath)
 	}
-	// Z.AI rejects the Bearer prefix, so the key must go out verbatim.
-	if gotAuth != "ak-1.2" {
-		t.Fatalf("Authorization = %q, want the key verbatim", gotAuth)
+	// Discovery accepts a Bearer token, so the conventional scheme is sent.
+	// The inference and quota lanes deliberately do NOT do this — they send the
+	// key verbatim because those endpoints reject the Bearer prefix — which is
+	// why this endpoint is the independent check that a valid credential is
+	// being transmitted at all.
+	if gotAuth != "Bearer ak-1.2" {
+		t.Fatalf("Authorization = %q, want a Bearer token", gotAuth)
 	}
 	var flagship *internalregistry.ModelInfo
 	for _, model := range models {
