@@ -86,18 +86,22 @@ type zaiLiveModelsPayload struct {
 }
 
 type zaiLiveModelEntry struct {
-	Slug                       string                  `json:"slug"`
-	DisplayName                string                  `json:"display_name"`
-	Description                string                  `json:"description"`
-	ContextWindow              int                     `json:"context_window"`
-	MaxContextWindow           int                     `json:"max_context_window"`
-	InputModalities            []string                `json:"input_modalities"`
-	OutputModalities           []string                `json:"output_modalities"`
-	SupportedReasoningLevels   []zaiLiveReasoningLevel `json:"supported_reasoning_levels"`
-	SupportsReasoningSummaries bool                    `json:"supports_reasoning_summaries"`
-	SupportsParallelToolCalls  bool                    `json:"supports_parallel_tool_calls"`
-	Visibility                 string                  `json:"visibility"`
-	Priority                   *int                    `json:"priority"`
+	Slug             string `json:"slug"`
+	DisplayName      string `json:"display_name"`
+	Description      string `json:"description"`
+	ContextWindow    int    `json:"context_window"`
+	MaxContextWindow int    `json:"max_context_window"`
+	// EffectiveContextWindowPercent is the share of context_window a client may
+	// actually use (95 on the captured 1 MiB lanes). An absent or out-of-range
+	// value means "no scaling".
+	EffectiveContextWindowPercent *int                    `json:"effective_context_window_percent"`
+	InputModalities               []string                `json:"input_modalities"`
+	OutputModalities              []string                `json:"output_modalities"`
+	SupportedReasoningLevels      []zaiLiveReasoningLevel `json:"supported_reasoning_levels"`
+	SupportsReasoningSummaries    bool                    `json:"supports_reasoning_summaries"`
+	SupportsParallelToolCalls     bool                    `json:"supports_parallel_tool_calls"`
+	Visibility                    string                  `json:"visibility"`
+	Priority                      *int                    `json:"priority"`
 }
 
 type zaiLiveReasoningLevel struct {
@@ -237,10 +241,11 @@ func zaiLiveModelInfo(entry zaiLiveModelEntry) *ModelInfo {
 	if displayName == "" {
 		displayName = id
 	}
-	contextLength := entry.ContextWindow
-	if contextLength <= 0 {
-		contextLength = entry.MaxContextWindow
-	}
+	// context_window is the maximum the model has; the effective window is what
+	// a client may actually use, which the provider publishes separately as a
+	// percentage of it. Advertising the maximum would let a client fill the
+	// context right up to the point the upstream starts truncating.
+	contextLength := zaiLiveEffectiveContextWindow(entry)
 	info := &ModelInfo{
 		ID:                        id,
 		Object:                    "model",
@@ -283,10 +288,36 @@ func zaiLiveModelInfo(entry zaiLiveModelEntry) *ModelInfo {
 		info.Thinking = &ThinkingSupport{Levels: zaiLiveModelLevels(entry)}
 		info.ExplicitThinking = true
 	}
+
 	if entry.SupportsParallelToolCalls {
 		info.SupportedParameters = append(info.SupportedParameters, "tool_choice")
 	}
 	return info
+}
+
+// zaiLiveEffectiveContextWindow resolves the window a client may use.
+// context_window is the ceiling Z.AI enforces; effective_context_window_percent
+// is the share of it that survives accounting for the request overhead the
+// provider reserves. A percentage of 100 or less scales the window down, and
+// an absent, non-positive, or out-of-range value leaves it untouched rather
+// than guessing a ratio the provider did not state.
+func zaiLiveEffectiveContextWindow(entry zaiLiveModelEntry) int {
+	window := entry.ContextWindow
+	if window <= 0 {
+		window = entry.MaxContextWindow
+	}
+	if entry.EffectiveContextWindowPercent == nil {
+		return window
+	}
+	percent := *entry.EffectiveContextWindowPercent
+	if percent <= 0 || percent > 100 {
+		return window
+	}
+	effective := window * percent / 100
+	if effective <= 0 {
+		return window
+	}
+	return effective
 }
 
 // zaiLiveModelLevels returns the declared reasoning effort levels, in declared
@@ -329,6 +360,19 @@ func GetZaiLiveModels(keyID string) []*ModelInfo {
 		return nil
 	}
 	return cloneModelInfos(entry.models)
+}
+
+// ZaiLiveModelsFetchedAt reports when a credential's lanes were last stored,
+// with ok=false when nothing has been discovered for it. The runtime uses it
+// to honor the discovery TTL without duplicating the freshness window.
+func ZaiLiveModelsFetchedAt(keyID string) (time.Time, bool) {
+	zaiLiveCatalogStore.mu.RLock()
+	defer zaiLiveCatalogStore.mu.RUnlock()
+	entry, ok := zaiLiveCatalogStore.byKeyID[keyID]
+	if !ok || len(entry.models) == 0 {
+		return time.Time{}, false
+	}
+	return entry.fetchedAt, true
 }
 
 // SetZaiLiveModels stores the lanes discovered for one plan credential and
