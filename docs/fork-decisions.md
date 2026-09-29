@@ -101,12 +101,21 @@ go test ./internal/registry/ -run 'TestGetZaiModelsCoverCodingPlan|TestZaiLiveMo
 **Z.AI plan lanes are discovered from Z.AI itself, not from models.dev**
 
 Z.AI publishes a plan-scoped catalog at `GET /api/v1/models` on the origin of
-whatever `base_url` the credential records, authorized with the plan key sent
-verbatim (it rejects `Bearer`). The response is the Codex client model catalog
-format, so the field names are the Codex field names and the semantics follow
-`internal/client/codex/models/models.go`. Z.AI's own client sends
-`?client_version`, but the response does not vary with it, so the bare path is
-requested rather than guessing a value for a parameter that changes nothing.
+whatever `base_url` the credential records. The response is the Codex client
+model catalog format, so the field names are the Codex field names and the
+semantics follow `internal/client/codex/models/models.go`. Z.AI's own client
+sends `?client_version`, but the response does not vary with it, so the bare
+path is requested rather than guessing a value for a parameter that changes
+nothing.
+
+Discovery authenticates with `Authorization: Bearer <key>`, which this endpoint
+accepts. That is the opposite of the inference and quota lanes, which send the
+plan key verbatim because those endpoints reject the Bearer prefix. The two
+are kept independent on purpose: a proxy or gateway that silently re-authenticates
+one path will not silently re-authenticate the other, and a valid-credential
+fault therefore surfaces as a discovery failure rather than as a lane that
+quietly stops working.
+
 The converter is pinned against a response captured verbatim from a live
 Coding Plan key (`zaiLiveModelsCapturedPayload`), so every field decision below
 is anchored to bytes the provider actually returned rather than to an
