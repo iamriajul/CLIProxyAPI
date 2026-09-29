@@ -11,12 +11,12 @@ import (
 )
 
 // modelsdevLiveStore holds the last successfully converted models.dev
+// opencode-go section. The Z.AI section is not tracked here: that lane is
+// discovered from Z.AI's own plan-scoped catalog (zai_live_models.go).
 type modelsdevLiveStore struct {
 	mu              sync.RWMutex
 	opencode        []*ModelInfo
-	zai             []*ModelInfo
 	opencodeFetched time.Time
-	zaiFetched      time.Time
 	lastError       string
 	rawJSON         []byte
 	revision        uint64
@@ -24,16 +24,15 @@ type modelsdevLiveStore struct {
 
 var modelsdevCatalogStore = &modelsdevLiveStore{}
 
-// GetModelsDevLive returns a clone of the live models.dev section for
-// provider ("opencode" or "zai"), or nil when no live data is loaded.
+// GetModelsDevLive returns a clone of the live models.dev opencode-go section,
+// or nil when no live data is loaded. The Z.AI lane has no models.dev live
+// section: use GetZaiModels / GetZaiLiveModels for it.
 func GetModelsDevLive(provider string) []*ModelInfo {
 	modelsdevCatalogStore.mu.RLock()
 	defer modelsdevCatalogStore.mu.RUnlock()
 	switch strings.ToLower(strings.TrimSpace(provider)) {
 	case "opencode", "opencode-go", "opencode_go":
 		return cloneModelInfos(modelsdevCatalogStore.opencode)
-	case "zai", "glm", "zhipu":
-		return cloneModelInfos(modelsdevCatalogStore.zai)
 	default:
 		return nil
 	}
@@ -47,12 +46,11 @@ func GetModelsDevRevision() uint64 {
 }
 
 // loadModelsDevLiveFromBytes converts api.json bytes and stores the live
-// sections. It returns the provider names whose sections changed
-// ("opencode" and/or "zai"). Update contract: only sections whose provider
-// key is present AND non-empty are stored — a missing or empty section keeps
-// the previous live data, so an upstream glitch can never wipe last-good
-// state or fire a spurious refresh. revision advances only on semantic
-// change, never on untracked byte churn.
+// opencode-go section. It returns the provider names whose sections changed.
+// Update contract: only a section whose provider key is present AND non-empty
+// is stored — a missing or empty section keeps the previous live data, so an
+// upstream glitch can never wipe last-good state or fire a spurious refresh.
+// revision advances only on semantic change, never on untracked byte churn.
 func loadModelsDevLiveFromBytes(data []byte, source string) ([]string, error) {
 	sections, err := ConvertModelsDevCatalog(data)
 	if err != nil {
@@ -74,25 +72,9 @@ func loadModelsDevLiveFromBytes(data []byte, source string) ([]string, error) {
 	} else if sections.HasOpencode {
 		log.Warnf("%s: opencode-go section empty, keeping previous live data", source)
 	}
-	if sections.HasZai && len(sections.Zai) > 0 {
-		if modelSectionChanged(modelsdevCatalogStore.zai, sections.Zai) {
-			modelsdevCatalogStore.zai = sections.Zai
-			changed = append(changed, "zai")
-		}
-	} else if sections.HasZai {
-		log.Warnf("%s: zai-coding-plan section empty, keeping previous live data", source)
-	}
 	modelsdevCatalogStore.rawJSON = clonedData
 	if len(changed) > 0 {
-		now := time.Now().UTC()
-		for _, provider := range changed {
-			switch provider {
-			case "opencode":
-				modelsdevCatalogStore.opencodeFetched = now
-			case "zai":
-				modelsdevCatalogStore.zaiFetched = now
-			}
-		}
+		modelsdevCatalogStore.opencodeFetched = time.Now().UTC()
 		modelsdevCatalogStore.revision++
 	}
 	return changed, nil
@@ -103,9 +85,7 @@ func resetModelsDevLiveForTest() {
 	modelsdevCatalogStore.mu.Lock()
 	defer modelsdevCatalogStore.mu.Unlock()
 	modelsdevCatalogStore.opencode = nil
-	modelsdevCatalogStore.zai = nil
 	modelsdevCatalogStore.opencodeFetched = time.Time{}
-	modelsdevCatalogStore.zaiFetched = time.Time{}
 	modelsdevCatalogStore.lastError = ""
 	modelsdevCatalogStore.rawJSON = nil
 	modelsdevCatalogStore.revision = 0
@@ -137,35 +117,69 @@ type ModelsDevStatus struct {
 // GetModelsDevStatus snapshots per-provider freshness: live when the overlay
 // holds the section, fallback otherwise (counts follow the same getters the
 // harness reads, so the UI can never disagree with serving state).
+//
+// Only opencode-go is reported. The Z.AI lane is discovered from the provider
+// itself, one entry per plan credential, so it is reported by
+// ZaiLiveModelsStatus instead of being flattened into a single models.dev
+// section here.
 func GetModelsDevStatus() ModelsDevStatus {
 	modelsdevCatalogStore.mu.RLock()
 	liveOpencode := cloneModelInfos(modelsdevCatalogStore.opencode)
-	liveZai := cloneModelInfos(modelsdevCatalogStore.zai)
 	opencodeFetched := modelsdevCatalogStore.opencodeFetched
-	zaiFetched := modelsdevCatalogStore.zaiFetched
 	lastError := modelsdevCatalogStore.lastError
 	modelsdevCatalogStore.mu.RUnlock()
 
-	describe := func(id string, live []*ModelInfo, fallback []*ModelInfo, fetched time.Time) ModelsDevProviderStatus {
-		status := ModelsDevProviderStatus{ID: id, Source: "fallback", Models: len(fallback)}
-		if len(live) > 0 {
-			status.Source = "live"
-			status.Models = len(live)
-			fetchedCopy := fetched.UTC()
-			if !fetched.IsZero() {
-				status.FetchedAt = &fetchedCopy
-			}
-		}
-		if lastError != "" {
-			lastErrorCopy := lastError
-			status.LastError = &lastErrorCopy
-		}
-		return status
+	status := ModelsDevStatus{
+		Providers: []ModelsDevProviderStatus{
+			describeCatalogProviderStatus("opencode-go", liveOpencode, WithOpencodeBuiltins(cloneModelInfos(getModels().Opencode)), opencodeFetched),
+		},
 	}
-	return ModelsDevStatus{Providers: []ModelsDevProviderStatus{
-		describe("opencode-go", liveOpencode, WithOpencodeBuiltins(cloneModelInfos(getModels().Opencode)), opencodeFetched),
-		describe("zai-coding-plan", liveZai, WithZaiBuiltins(cloneModelInfos(getModels().ZAI)), zaiFetched),
-	}}
+	if lastError != "" {
+		status.Providers[0].LastError = &lastError
+	}
+	return status
+}
+
+// describeCatalogProviderStatus builds one freshness row: live when the source
+// holds entries, fallback otherwise, with the fetch time attached only to a
+// live row. Shared by the models.dev overlay and the Z.AI live discovery
+// status so both render through the same payload and the same TUI card.
+func describeCatalogProviderStatus(id string, live, fallback []*ModelInfo, fetchedAt time.Time) ModelsDevProviderStatus {
+	status := ModelsDevProviderStatus{ID: id, Source: "fallback", Models: len(fallback)}
+	if len(live) > 0 {
+		status.Source = "live"
+		status.Models = len(live)
+		if !fetchedAt.IsZero() {
+			fetched := fetchedAt.UTC()
+			status.FetchedAt = &fetched
+		}
+	}
+	return status
+}
+
+// GetZaiModels returns Z.AI GLM model definitions.
+//
+// Precedence: lanes discovered from Z.AI's own plan-scoped catalog win, then
+// the embedded models.dev zai-coding-plan snapshot plus builtins, then the
+// builtins alone. A credential with no live result — never discovered,
+// currently failing, or refreshing with a key the provider rejected — reads
+// the offline catalog, so a discovery fault degrades the lane instead of
+// emptying it.
+func GetZaiModels() []*ModelInfo {
+	return GetZaiModelsForCredential("")
+}
+
+// GetZaiModelsForCredential is GetZaiModels for one plan credential. The
+// apiKey selects that credential's discovered lanes; an empty apiKey (no
+// credential in hand) reads the embedded snapshot plus builtins, which is
+// what the static channel lookups and the management surfaces use.
+func GetZaiModelsForCredential(apiKey string) []*ModelInfo {
+	if keyID := zaiLiveModelsCacheKey("", apiKey); keyID != "" {
+		if live := GetZaiLiveModels(keyID); len(live) > 0 {
+			return live
+		}
+	}
+	return markModelsDevExplicit(WithZaiBuiltins(cloneModelInfos(getModels().ZAI)))
 }
 
 // markModelsDevExplicit restores the converter's Explicit flags on
