@@ -199,8 +199,14 @@ go test ./internal/runtime/executor/ -run 'TestClaudeExecutor_AutoModeClassifier
 `internal/tps` subscribes to the usage record bus (the same registration shape
 as the usage queue plugin) and keeps the most recent generation per model.
 `GET /v1/last-request-stats[?model=<id>]` serves that on the v1 group. TPS is
-output tokens per second of generation time, so TTFT is excluded when the
-upstream reported one. Only successful generating requests are recorded, so
+output tokens per second of the whole request. It used to exclude TTFT, which
+was the right decode rate when TTFT was the first generated token. The value
+recorded is the first response byte. On a buffered body that byte arrives as
+the response finishes, and dividing by the remainder reported 2.1e6 tok/s for
+a 28 tok/s request and 886 for one whose end-to-end rate was 10. CPA Manager
+Plus divides by total latency for the same reason. `generation_ms` stays on
+the body so a client can still show the tail. Only successful generating
+requests are recorded, so
 every number shown describes tokens that were actually produced. A record that
 arrives out of order (older than what is stored) never regresses the reported
 request, which a single slot per model would otherwise do. The read path makes
