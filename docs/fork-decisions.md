@@ -255,7 +255,12 @@ for those fixed lanes.
 
 `models-dev-provider` pins which catalog entry supplies a model, resolved
 against that provider's own catalog so metadata also works through a proxy in
-front of the endpoint. Explicit configuration always wins; the catalog only
+front of the endpoint. This is not a rare edge case: of the ~3.9k distinct
+model IDs in the models.dev catalog, about 29% (1134) have more than one
+publisher, and a popular name such as `glm-5.2` is published by 29 providers
+with differing limits. The base URL resolves the answer whenever it identifies
+the serving route, but a proxy in front of an endpoint defeats that, which is
+what the pin is for. Explicit configuration always wins; the catalog only
 fills fields left unset. The request-time snapshot reads the same catalog as
 the published metadata, so a level advertised as supported is not rejected by
 ValidateConfig when a client sends it.

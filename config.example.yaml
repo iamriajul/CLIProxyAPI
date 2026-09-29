@@ -780,10 +780,13 @@ requests:
 # refreshed every three hours, and the match ignores the scheme, host case and
 # a trailing "/v1". Anything set explicitly in this file always wins.
 #
-# A model name is often published by many providers with different limits, so
-# `models-dev-provider` selects which catalog entry applies. It resolves against
-# that provider's own catalog, so metadata also works through a proxy in front
-# of the endpoint. Omit it and the entry reachable at `base-url` is used.
+# A model name is often published by many providers with different limits: of
+# the ~3.9k distinct model IDs in the models.dev catalog, about 29% have more
+# than one publisher and therefore need a pin, while the rest resolve on their
+# own. `models-dev-provider` selects which catalog entry applies. It resolves
+# against that provider's own catalog, so metadata also works through a proxy
+# in front of the endpoint. Omit it and the entry reachable at `base-url` is
+# used, which is correct whenever that endpoint is the one serving the model.
 #
 # Reasoning levels are adopted verbatim, including upstream-specific ones such
 # as "xhigh" or "max". Levels are only published to clients when they are known
