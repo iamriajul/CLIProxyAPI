@@ -157,24 +157,27 @@ func describeCatalogProviderStatus(id string, live, fallback []*ModelInfo, fetch
 	return status
 }
 
-// GetZaiModels returns Z.AI GLM model definitions.
-//
-// Precedence: lanes discovered from Z.AI's own plan-scoped catalog win, then
-// the embedded models.dev zai-coding-plan snapshot plus builtins, then the
-// builtins alone. A credential with no live result — never discovered,
-// currently failing, or refreshing with a key the provider rejected — reads
-// the offline catalog, so a discovery fault degrades the lane instead of
-// emptying it.
+// GetZaiModels returns Z.AI GLM model definitions for the offline snapshot:
+// the embedded models.dev zai-coding-plan section plus builtins. Callers that
+// hold a credential should use GetZaiModelsForCredential, which prefers that
+// credential's discovered lanes.
 func GetZaiModels() []*ModelInfo {
-	return GetZaiModelsForCredential("")
+	return GetZaiModelsForCredential("", "")
 }
 
-// GetZaiModelsForCredential is GetZaiModels for one plan credential. The
-// apiKey selects that credential's discovered lanes; an empty apiKey (no
-// credential in hand) reads the embedded snapshot plus builtins, which is
-// what the static channel lookups and the management surfaces use.
-func GetZaiModelsForCredential(apiKey string) []*ModelInfo {
-	if keyID := zaiLiveModelsCacheKey("", apiKey); keyID != "" {
+// GetZaiModelsForCredential is GetZaiModels for one plan credential, which is
+// the shape the Z.AI lane needs: Z.AI's catalog is plan-scoped, so two
+// credentials on one deployment may legitimately serve different lanes.
+//
+// Precedence: the lanes discovered for this credential win, then the embedded
+// snapshot plus builtins. A credential with no live result — never discovered,
+// currently failing, or refreshing with a key the provider rejected — reads
+// the offline catalog, so a discovery fault degrades the lane instead of
+// emptying it. An empty credential has no discovery result by construction and
+// always reads the offline catalog, which is what the static channel lookups
+// and the management surfaces use.
+func GetZaiModelsForCredential(authID, apiKey string) []*ModelInfo {
+	if keyID := zaiLiveModelsCacheKey(authID, apiKey); keyID != "" {
 		if live := GetZaiLiveModels(keyID); len(live) > 0 {
 			return live
 		}
@@ -186,7 +189,9 @@ func GetZaiModelsForCredential(apiKey string) []*ModelInfo {
 // models.dev-derived entries whose flags were lost in JSON serialization
 // (Explicit* is json:"-"). The opencode/zai embedded sections and builtins
 // are 100% converter output, so every entry gets ExplicitInputModalities and
-// thinking entries get ExplicitThinking — matching the live overlay exactly.
+// thinking entries get ExplicitThinking — matching what the live sources
+// publish, so a lane constrains harnesses identically whichever source it
+// came from.
 func markModelsDevExplicit(models []*ModelInfo) []*ModelInfo {
 	for _, m := range models {
 		if m == nil {
