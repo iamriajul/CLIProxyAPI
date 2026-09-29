@@ -13,19 +13,24 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
 )
 
-// zaiDiscoveryCapturedPayload is the captured response from Z.AI's plan-scoped
-// discovery endpoint, mirrored here so the runtime path is exercised against
-// the same bytes the registry converter is pinned to.
+// zaiDiscoveryCapturedPayload is the same captured response the registry
+// converter is pinned to, re-serialized compactly so the runtime path is
+// exercised against the same fields. The registry fixture is the verbatim
+// record; this one exists only so the two runtime tests that need a response
+// body do not depend on the other package's test data.
 const zaiDiscoveryCapturedPayload = `{"models":[
   {"slug":"glm-5.3","display_name":"glm-5.3","description":"Z.ai's latest flagship model",
    "context_window":1048576,"max_context_window":1048576,"effective_context_window_percent":95,
-   "input_modalities":["text"],"output_modalities":["text"],
+   "input_modalities":["text"],
    "supported_reasoning_levels":[{"effort":"low"},{"effort":"high"},{"effort":"max"}],
-   "supports_parallel_tool_calls":true,"supports_reasoning_summaries":true,"visibility":"list"},
+   "supports_parallel_tool_calls":true,"supports_reasoning_summaries":true,
+   "truncation_policy":{"limit":10000,"mode":"bytes"},"visibility":"list"},
   {"slug":"glm-5-turbo","display_name":"glm-5-turbo","description":"Agent-optimized model",
-   "context_window":204800,"max_context_window":204800,
-   "input_modalities":["text"],"output_modalities":["text"],
-   "supported_reasoning_levels":[],"supports_parallel_tool_calls":true,"visibility":"list"}
+   "context_window":204800,"max_context_window":204800,"effective_context_window_percent":95,
+   "input_modalities":["text"],
+   "supported_reasoning_levels":[],
+   "supports_parallel_tool_calls":true,"supports_reasoning_summaries":true,
+   "truncation_policy":{"limit":10000,"mode":"bytes"},"visibility":"list"}
 ]}`
 
 func zaiDiscoveryAuth(id, key string) *coreauth.Auth {
