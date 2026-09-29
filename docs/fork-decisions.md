@@ -80,9 +80,8 @@ authorize-in-browser plus paste-back through the generic oauth-callback
 endpoint (same UX as the xAI manual flow). The token exchange yields a
 durable id.secret key stored as the credential. GLM lanes ride Anthropic by
 default with glm-5.3-flash on the OpenAI coding lane; lane windows and
-capabilities ride live models.dev `zai-coding-plan` sections refreshed every
-3 hours (was: a static 16-model oh-my-pi snapshot mixing pay-per-token
-families — the plan itself has 7 lanes); the key is sent
+capabilities are discovered from Z.AI's own plan-scoped catalog (see
+zai-direct-discovery); the key is sent
 verbatim on every path (Z.AI rejects Bearer, which the shared Claude
 delegation would otherwise stamp — so the Anthropic lanes run natively, not
 delegated). Dashboard keys paste via POST /v0/management/zai/import
@@ -94,7 +93,106 @@ grep -q "zai-auth-url" internal/api/server_management.go
 grep -q "zai/import" internal/api/server_management.go
 go test ./internal/auth/zai/...
 go test ./internal/runtime/executor/ -run 'TestZai'
-go test ./internal/registry/ -run TestGetZaiModelsCoverCodingPlan
+go test ./internal/registry/ -run 'TestGetZaiModelsCoverCodingPlan|TestZaiLiveModelsCoverCodingPlan'
+```
+
+## zai-direct-discovery
+
+**Z.AI plan lanes are discovered from Z.AI itself, not from models.dev**
+
+Z.AI publishes a plan-scoped catalog at `GET /api/v1/models` on the origin of
+whatever `base_url` the credential records, authorized with the plan key sent
+verbatim (it rejects `Bearer`). The response is the Codex client model catalog
+format, so the field names are the Codex field names and the semantics follow
+`internal/client/codex/models/models.go`.
+
+Discovery is **per credential**, not per provider: the catalog is scoped to
+the plan the key is on, so two credentials on one deployment may legitimately
+serve different lanes and a single global overlay would be wrong for at least
+one of them. Entries are keyed by auth ID plus a digest of the key, so a
+re-minted key never inherits the previous key's lanes and the store never holds
+a credential. Precedence at registration is: lanes discovered for **this**
+credential, then the embedded models.dev `zai-coding-plan` snapshot plus
+builtins, then the builtins alone. A credential with no live result — never
+discovered, currently failing, or refreshing with a rejected key — reads the
+offline catalog, so a discovery fault degrades the lane instead of emptying
+it.
+
+**HTTP 200 is not success.** Z.AI answers a bad key with HTTP 200 and
+`{"code":401,"msg":"token expired or incorrect","success":false}` (verified by
+probe, and re-observed during development as
+`{"code":1000,"msg":"Authentication Failed","success":false}`). Error
+detection therefore inspects the payload, never the status, and a payload that
+decodes to no usable models is refused outright — accepting it would
+unregister the lane. A missing credential never reaches the network: there is
+nothing to ask, and "no lanes" must not be mistaken for an empty plan. A
+rejected credential backs off for 15 minutes so a re-registration is not a
+request to be told the same key is bad; a transport or payload fault backs off
+for one minute, because backing a transient fault off as if the key were bad
+would hide a plan change for a quarter of an hour. Discovered lanes are reused
+for an hour.
+
+Discovery runs **after** registration, not before: a credential registering
+for the first time has nothing cached, so asking first would always answer
+from the offline snapshot. Registering publishes the snapshot immediately and
+a changed live set then triggers a re-registration that supersedes it. The
+call is synchronous, unlike the Antigravity capability probe — that probe is
+best-effort enrichment of a list that is already correct, whereas a stale lane
+list is the defect being fixed.
+
+Two decisions in the converter are load-bearing:
+
+`effective_context_window_percent` **is** honored. `context_window` is the
+ceiling Z.AI enforces; the percentage is the share of it a client may actually
+use (95 on the captured 1 MiB lanes, so ~996k). Advertising the raw maximum
+would let a client fill the context right up to the point the upstream starts
+truncating. The raw `max_context_window` is kept in `MaxContextLength` so a
+client catalog can still report the full window. An absent or out-of-range
+percentage leaves the window untouched rather than guessing a ratio the
+provider did not state.
+
+An empty `supported_reasoning_levels` list is **preserved as empty**, never
+back-filled with a guessed low/medium/high ladder: publishing a level the
+model rejects is a request-time failure, and the captured `glm-5-turbo` entry
+is exactly this case. Reasoning capability itself comes from the catalog's two
+explicit booleans (`supports_reasoning_summaries`, and
+`supports_parallel_tool_calls` as the fallback Z.AI's stated invariant
+provides), never from the length of the level list — a model can reason with no
+ladder, and a non-reasoning model publishes none either. The `Thinking` struct
+stays non-nil for a reasoning lane because that is what keeps
+`internal/thinking` forwarding reasoning configuration: `ValidateConfig`
+guards its level-membership check on `len(support.Levels) > 0`, and
+`clampBudget` returns the value unchanged when no budget range is declared, so
+an empty ladder is inert in both directions.
+
+The Codex catalog format publishes no per-model output limit, and its
+`truncation_policy` is a byte-based compaction threshold rather than a
+completion bound, so a discovered lane carries **no** output limit rather than
+one invented from the plan's known ceiling. Clients read "unknown" instead of
+a number Z.AI never declared.
+
+models.dev remains the source for the embedded offline snapshot and for
+custom-provider capability inheritance; only its runtime live overlay stops
+carrying the Z.AI section.
+
+The exact-7 test became two tests. `TestGetZaiModelsCoverCodingPlan` keeps the
+offline contract: the snapshot's plan lanes, no pay-per-token lane, and the
+builtins still routable with the catalog section wiped. It no longer counts,
+because the offline snapshot's count is a property of the checked-in file that
+the regen CLI owns.
+`TestZaiLiveModelsCoverCodingPlan` pins the live contract against the captured
+payload: the exact lane set that plan served, plus the effective context
+window, the declared ladder, the preserved empty ladder, and the modalities. A
+live lane count is a property of the plan that served the request, not of this
+repo, so demanding a fixed number there would be wrong for every plan but one —
+what must not drift silently is the *published* data, and that stays pinned to a
+real response.
+
+```bash
+grep -q 'zaiLiveModelsPath = "/api/v1/models"' sdk/cliproxy/zai_live_models.go
+grep -q 'GetZaiModelsForCredential(a.ID' sdk/cliproxy/service_models.go
+go test ./internal/registry/ -run 'TestZaiLiveModels|TestGetZaiModelsCoverCodingPlan'
+go test ./sdk/cliproxy/ -run 'TestZai'
 ```
 
 ## zai-key-import
@@ -114,32 +212,40 @@ go test ./internal/auth/zai/ -run TestValidateKey
 
 ## modelsdev-catalog
 
-**OpenCode Go + Z.AI model data rides live models.dev sections**
+**OpenCode Go model data rides live models.dev sections; Z.AI reads Z.AI's own
+catalog instead**
 
 `internal/registry/modelsdev*.go` fetches `https://models.dev/api.json`
-every 3 hours, filters exactly `opencode-go` and `zai-coding-plan`
-(never Zen `opencode` or pay-per-token `zai`), and overlays the live
-sections over the embedded catalog plus builtins. New upstream lanes
-appear with no repo work; `go run ./cmd/fetch_modelsdev_models`
-refreshes the offline snapshots. Runs under Home mode, skipped by
-`--local-model`.
+every 3 hours, indexes the whole catalog by base URL for custom providers, and
+overlays the live `opencode-go` section over the embedded catalog plus builtins.
+New upstream gateway lanes appear with no repo work;
+`go run ./cmd/fetch_modelsdev_models` refreshes the offline snapshots. Runs
+under Home mode, skipped by `--local-model`.
+
+The Z.AI section is no longer a runtime live overlay. That lane discovers its
+plan-scoped roster from Z.AI itself (see zai-direct-discovery), so a
+third-party section must not be able to overwrite it. The section is still
+parsed for two things: `go run ./cmd/fetch_modelsdev_models` refreshes the
+embedded Z.AI offline snapshot from it, and the custom-provider index covers
+every provider models.dev publishes — Z.AI's coding-plan base URL included — for
+an operator who points a custom provider at that endpoint instead of importing
+a Z.AI credential. Exactly two providers are ever parsed: a payload carrying
+neither is an error, so a shape change cannot silently yield empty sections.
+
+Freshness is operator-visible: `GET /v0/management/modelsdev/status` reports
+per-provider live/fallback source, counts, fetch time, and the latest error,
+for both catalog sources; `POST /v0/management/modelsdev/refresh` triggers one
+models.dev fetch outside the ticker. The TUI dashboard renders both rows in a
+Model Catalog card (best-effort: old servers without the endpoint render
+nothing).
 
 ```bash
-go test ./internal/registry/ -run 'TestConvertModelsDevCatalog|TestModelsDevLive|TestTryRefreshModelsDev|TestGetOpencodeModelsCoverGatewayLanes|TestGetZaiModelsCoverCodingPlan|TestModelsDevLiveBeatsFallback'
+go test ./internal/registry/ -run 'TestConvertModelsDevCatalog|TestModelsDevLive|TestTryRefreshModelsDev|TestGetOpencodeModelsCoverGatewayLanes|TestGetModelsDevStatus'
+go test ./internal/registry/ -run 'TestGetZaiModelsCoverCodingPlan'
 go test ./cmd/fetch_modelsdev_models/
 go test ./cmd/server/ -run 'TestModelCatalogUpdaterPlan'
-```
-
-Freshness is operator-visible: `GET /v0/management/modelsdev/status`
-reports per-provider live/fallback source, counts, fetch time, and the
-latest error; `POST /v0/management/modelsdev/refresh` triggers one fetch
-outside the ticker. The TUI dashboard renders both rows in a Model Catalog
-card (best-effort: old servers without the endpoint render nothing).
-
-```bash
 go test ./internal/api/handlers/management/ -run TestGetModelsDevStatus_Shape
 go test ./internal/tui/ -run 'TestCatalogAge|TestRenderCatalogSectionStates'
-go test ./internal/registry/ -run TestGetModelsDevStatus
 ```
 
 ## litellm-discovery
@@ -256,8 +362,10 @@ reached the upstream. The published ladder is what client catalogs advertise
 and carries only levels models.dev declares, so an unknown endpoint or a
 reasoning-toggle-only model advertises nothing and the client falls back to
 its own reference data instead of being offered a level the model rejects.
-The curated opencode/zai sections keep their default ladder, which is correct
-for those fixed lanes.
+The curated opencode section keeps its default ladder, which is correct for
+that fixed gateway. The Z.AI section is no longer a runtime source: its lanes
+come from Z.AI's own catalog, where the published ladder is whatever Z.AI
+declares and an empty declaration stays empty (see zai-direct-discovery).
 
 `models-dev-provider` pins which catalog entry supplies a model, resolved
 against that provider's own catalog so metadata also works through a proxy in
