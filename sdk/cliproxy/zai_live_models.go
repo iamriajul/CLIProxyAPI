@@ -23,9 +23,11 @@ import (
 // ({"code":401,"msg":"token expired or incorrect","success":false}), so the
 // discovery path never treats a 200 as proof of success: the payload shape
 // decides, through registry.ConvertZaiLiveModelsCatalog.
-
 const (
 	// zaiLiveModelsPath is the plan-scoped discovery path on the Z.AI origin.
+	// Z.AI's own client sends ?client_version, but the response does not vary
+	// with it, so the bare path is requested rather than guessing at a value
+	// for a parameter that changes nothing.
 	zaiLiveModelsPath = "/api/v1/models"
 
 	// zaiLiveModelsProbeTimeout bounds one discovery round trip. This is
