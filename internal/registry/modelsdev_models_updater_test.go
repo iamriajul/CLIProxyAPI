@@ -30,8 +30,12 @@ func TestTryRefreshModelsDevFromHTTP(t *testing.T) {
 	if got := GetOpencodeModels(); len(got) != 2 {
 		t.Fatalf("opencode after refresh = %d, want 2", len(got))
 	}
-	if got := GetZaiModels(); len(got) != 2 {
-		t.Fatalf("zai after refresh = %d, want 2", len(got))
+	// The Z.AI lane is untouched by a models.dev refresh; it is discovered from
+	// Z.AI's own plan-scoped catalog, keyed by credential.
+	zaiOffline := len(GetZaiModels())
+	tryRefreshModelsDev(context.Background(), "test refresh")
+	if got := len(GetZaiModels()); got != zaiOffline {
+		t.Fatalf("zai after refresh = %d, want the unchanged offline %d", got, zaiOffline)
 	}
 
 	// A failing endpoint keeps current data.
@@ -56,7 +60,7 @@ func TestTryRefreshModelsDevRejectsGarbage(t *testing.T) {
 	t.Cleanup(func() { modelsdevURLs = previous })
 
 	tryRefreshModelsDev(context.Background(), "test refresh garbage")
-	if len(GetModelsDevLive("opencode")) != 0 || len(GetModelsDevLive("zai")) != 0 {
+	if len(GetModelsDevLive("opencode")) != 0 || GetModelsDevLive("zai") != nil {
 		t.Fatal("garbage payload must not populate live store")
 	}
 }
