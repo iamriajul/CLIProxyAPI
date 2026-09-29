@@ -104,7 +104,13 @@ Z.AI publishes a plan-scoped catalog at `GET /api/v1/models` on the origin of
 whatever `base_url` the credential records, authorized with the plan key sent
 verbatim (it rejects `Bearer`). The response is the Codex client model catalog
 format, so the field names are the Codex field names and the semantics follow
-`internal/client/codex/models/models.go`.
+`internal/client/codex/models/models.go`. Z.AI's own client sends
+`?client_version`, but the response does not vary with it, so the bare path is
+requested rather than guessing a value for a parameter that changes nothing.
+The converter is pinned against a response captured verbatim from a live
+Coding Plan key (`zaiLiveModelsCapturedPayload`), so every field decision below
+is anchored to bytes the provider actually returned rather than to an
+abbreviated reading of them.
 
 Discovery is **per credential**, not per provider: the catalog is scoped to
 the plan the key is on, so two credentials on one deployment may legitimately
@@ -118,19 +124,20 @@ discovered, currently failing, or refreshing with a rejected key — reads the
 offline catalog, so a discovery fault degrades the lane instead of emptying
 it.
 
-**HTTP 200 is not success.** Z.AI answers a bad key with HTTP 200 and
-`{"code":401,"msg":"token expired or incorrect","success":false}` (verified by
-probe, and re-observed during development as
-`{"code":1000,"msg":"Authentication Failed","success":false}`). Error
-detection therefore inspects the payload, never the status, and a payload that
-decodes to no usable models is refused outright — accepting it would
-unregister the lane. A missing credential never reaches the network: there is
-nothing to ask, and "no lanes" must not be mistaken for an empty plan. A
-rejected credential backs off for 15 minutes so a re-registration is not a
-request to be told the same key is bad; a transport or payload fault backs off
-for one minute, because backing a transient fault off as if the key were bad
-would hide a plan change for a quarter of an hour. Discovered lanes are reused
-for an hour.
+**HTTP 200 is not success.** Z.AI answers a bad key with HTTP 200 and an
+error body. Two shapes were observed on this endpoint:
+`{"code":401,"msg":"token expired or incorrect","success":false}` and
+`{"code":1000,"msg":"Authentication Failed","success":false}` — the second is
+Z.AI's own code, not an HTTP status, and it is what the endpoint really
+returns for a bad key. Error detection therefore inspects the payload, never
+the status, and a payload that decodes to no usable models is refused outright:
+accepting it would unregister the lane. A missing credential never reaches the
+network: there is nothing to ask, and "no lanes" must not be mistaken for an
+empty plan. A rejected credential (401, 403, or Z.AI's 1000) backs off for 15
+minutes so a re-registration is not a request to be told the same key is bad; a
+transport or payload fault backs off for one minute, because backing a
+transient fault off as if the key were bad would hide a plan change for a
+quarter of an hour. Discovered lanes are reused for an hour.
 
 Discovery runs **after** registration, not before: a credential registering
 for the first time has nothing cached, so asking first would always answer
@@ -144,32 +151,37 @@ Two decisions in the converter are load-bearing:
 
 `effective_context_window_percent` **is** honored. `context_window` is the
 ceiling Z.AI enforces; the percentage is the share of it a client may actually
-use (95 on the captured 1 MiB lanes, so ~996k). Advertising the raw maximum
-would let a client fill the context right up to the point the upstream starts
-truncating. The raw `max_context_window` is kept in `MaxContextLength` so a
-client catalog can still report the full window. An absent or out-of-range
+use. Every captured lane declares 95, so the flagship 1 MiB window is
+advertised as ~996k and `glm-5-turbo`'s 204800 as ~194k. Advertising the raw
+maximum would let a client fill the context right up to the point the upstream
+starts truncating. The raw `max_context_window` is kept in `MaxContextLength`
+so a client catalog can still report the full window. An absent or out-of-range
 percentage leaves the window untouched rather than guessing a ratio the
 provider did not state.
 
 An empty `supported_reasoning_levels` list is **preserved as empty**, never
 back-filled with a guessed low/medium/high ladder: publishing a level the
 model rejects is a request-time failure, and the captured `glm-5-turbo` entry
-is exactly this case. Reasoning capability itself comes from the catalog's two
-explicit booleans (`supports_reasoning_summaries`, and
-`supports_parallel_tool_calls` as the fallback Z.AI's stated invariant
-provides), never from the length of the level list — a model can reason with no
-ladder, and a non-reasoning model publishes none either. The `Thinking` struct
-stays non-nil for a reasoning lane because that is what keeps
-`internal/thinking` forwarding reasoning configuration: `ValidateConfig`
-guards its level-membership check on `len(support.Levels) > 0`, and
-`clampBudget` returns the value unchanged when no budget range is declared, so
-an empty ladder is inert in both directions.
+is exactly this case — it carries `supports_reasoning_summaries: true` with an
+empty ladder, so the provider says the model reasons and publishes no levels
+for it. Reasoning capability itself comes from the catalog's two explicit
+booleans (`supports_reasoning_summaries`, and `supports_parallel_tool_calls`
+as the fallback Z.AI's stated invariant provides), never from the length of
+the level list — a model can reason with no ladder, and a non-reasoning model
+publishes none either. The `Thinking` struct stays non-nil for a reasoning
+lane because that is what keeps `internal/thinking` forwarding reasoning
+configuration: `ValidateConfig` guards its level-membership check on
+`len(support.Levels) > 0`, and `clampBudget` returns the value unchanged when
+no budget range is declared, so an empty ladder is inert in both directions.
 
 The Codex catalog format publishes no per-model output limit, and its
-`truncation_policy` is a byte-based compaction threshold rather than a
-completion bound, so a discovered lane carries **no** output limit rather than
-one invented from the plan's known ceiling. Clients read "unknown" instead of
-a number Z.AI never declared.
+`truncation_policy` is byte-identical across every captured lane
+(`{"limit": 10000, "mode": "bytes"}`) — a fixed compaction threshold, not a
+completion bound. A discovered lane therefore carries **no** output limit
+rather than one invented from the plan's known ceiling. Clients read "unknown"
+instead of a number Z.AI never declared. `output_modalities` is likewise absent
+from the response, so output modalities fall back to the codec's text-only
+default.
 
 models.dev remains the source for the embedded offline snapshot and for
 custom-provider capability inheritance; only its runtime live overlay stops
