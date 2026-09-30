@@ -33,12 +33,14 @@ func TestGetModelsDevStatus_Shape(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("decode status: %v", err)
 	}
-	if len(payload.Providers) != 2 || payload.Providers[0].ID != "opencode-go" || payload.Providers[1].ID != "zai-coding-plan" {
-		t.Fatalf("providers = %+v", payload.Providers)
+	// Only opencode-go belongs in a models.dev freshness payload: it is the one
+	// provider whose lanes come from the models.dev catalogue. Z.AI is
+	// discovered from Z.AI itself, and claude, antigravity, gemini, kimi, meta
+	// and xai all serve from their own sources, so none of them are listed.
+	if len(payload.Providers) != 1 || payload.Providers[0].ID != "opencode-go" {
+		t.Fatalf("providers = %+v, want only opencode-go", payload.Providers)
 	}
-	for _, p := range payload.Providers {
-		if p.Source != "live" && p.Source != "fallback" {
-			t.Fatalf("%s source = %q", p.ID, p.Source)
-		}
+	if p := payload.Providers[0]; p.Source != "live" && p.Source != "fallback" {
+		t.Fatalf("%s source = %q", p.ID, p.Source)
 	}
 }
