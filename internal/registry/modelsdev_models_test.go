@@ -303,9 +303,8 @@ func TestGetModelsDevStatus(t *testing.T) {
 	t.Cleanup(resetModelsDevLiveForTest)
 
 	// Cold boot: the tracked section is on fallback, with no fetch metadata.
-	// Only opencode-go is reported: the Z.AI lane is discovered from Z.AI
-	// itself and is reported by ZaiLiveModelsStatus, which the management
-	// handler merges in.
+	// Only opencode-go is reported. The Z.AI lane is discovered from Z.AI
+	// itself and is not part of a models.dev freshness payload.
 	status := GetModelsDevStatus()
 	if len(status.Providers) != 1 {
 		t.Fatalf("providers = %d, want 1 (opencode-go only)", len(status.Providers))
