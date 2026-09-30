@@ -3,6 +3,7 @@ package registry
 import (
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -116,6 +117,27 @@ func idsOf(models []*ModelInfo) []string {
 		}
 	}
 	return out
+}
+
+// equalModelsDevStrings compares two string sets order-insensitively. Test-only
+// helper: the models.dev overlay is opencode-go alone and carries no string
+// comparison of its own.
+func equalModelsDevStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	counts := make(map[string]int, len(a))
+	for _, v := range a {
+		counts[strings.ToLower(strings.TrimSpace(v))]++
+	}
+	for _, v := range b {
+		key := strings.ToLower(strings.TrimSpace(v))
+		if counts[key] == 0 {
+			return false
+		}
+		counts[key]--
+	}
+	return true
 }
 
 func TestModelsDevLiveKeepsMissingSection(t *testing.T) {
