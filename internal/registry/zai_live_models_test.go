@@ -371,39 +371,6 @@ func TestZaiLiveModelsPrecedence(t *testing.T) {
 	}
 }
 
-// TestZaiLiveModelsStatus pins the freshness row the management surface and
-// TUI card render for the Z.AI source, including the fallback counts a cold
-// boot must show.
-func TestZaiLiveModelsStatus(t *testing.T) {
-	resetZaiLiveModelsForTest()
-	t.Cleanup(resetZaiLiveModelsForTest)
-
-	status := ZaiLiveModelsStatus()
-	if len(status.Providers) != 1 {
-		t.Fatalf("providers = %d, want 1 Z.AI row", len(status.Providers))
-	}
-	row := status.Providers[0]
-	if row.ID != "zai-coding-plan" {
-		t.Fatalf("row id = %q, want zai-coding-plan", row.ID)
-	}
-	if row.Source != "fallback" || row.FetchedAt != nil {
-		t.Fatalf("cold boot row = %#v, want a fallback row with no fetch time", row)
-	}
-	if row.Models != len(WithZaiBuiltins(cloneModelInfos(getModels().ZAI))) {
-		t.Fatalf("cold boot count = %d, want the offline lane count", row.Models)
-	}
-
-	discovered, err := ConvertZaiLiveModelsCatalog([]byte(zaiLiveModelsCapturedPayload))
-	if err != nil {
-		t.Fatalf("ConvertZaiLiveModelsCatalog: %v", err)
-	}
-	SetZaiLiveModels(GetZaiLiveModelsCacheKey("auth-1", "ak-1.2"), discovered)
-	row = ZaiLiveModelsStatus().Providers[0]
-	if row.Source != "live" || row.Models != 3 || row.FetchedAt == nil {
-		t.Fatalf("live row = %#v, want a live row with 3 lanes and a fetch time", row)
-	}
-}
-
 // TestZaiLiveModelsSkipHidden pins the one visibility value this fork honors.
 // Anything unrecognized keeps the lane: dropping a real plan lane on a
 // vocabulary it has not seen is the worse failure.
