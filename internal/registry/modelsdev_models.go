@@ -119,9 +119,9 @@ type ModelsDevStatus struct {
 // harness reads, so the UI can never disagree with serving state).
 //
 // Only opencode-go is reported. The Z.AI lane is discovered from the provider
-// itself, one entry per plan credential, so it is reported by
-// ZaiLiveModelsStatus instead of being flattened into a single models.dev
-// section here.
+// itself, one entry per plan credential, and so is absent from a models.dev
+// freshness payload entirely — as are claude, antigravity, gemini, kimi, meta
+// and xai, each of which serves from its own source.
 func GetModelsDevStatus() ModelsDevStatus {
 	modelsdevCatalogStore.mu.RLock()
 	liveOpencode := cloneModelInfos(modelsdevCatalogStore.opencode)

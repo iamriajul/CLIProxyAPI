@@ -309,13 +309,13 @@ func TestZaiOriginFromBaseURL(t *testing.T) {
 }
 
 // TestZaiLiveDiscoveryStatusRowShape pins that the management payload keeps its
-// existing shape now that it reports two catalog sources, so the TUI card and
-// the schema test keep working unchanged.
+// shape for the TUI card and the schema test. The payload lists opencode-go
+// only: Z.AI is discovered from Z.AI itself, so it is not a models.dev
+// freshness row.
 func TestZaiLiveDiscoveryStatusRowShape(t *testing.T) {
 	status := internalregistry.GetModelsDevStatus()
-	status.Providers = append(status.Providers, internalregistry.ZaiLiveModelsStatus().Providers...)
-	if len(status.Providers) != 2 {
-		t.Fatalf("providers = %d, want opencode-go and zai-coding-plan rows", len(status.Providers))
+	if len(status.Providers) != 1 || status.Providers[0].ID != "opencode-go" {
+		t.Fatalf("providers = %+v, want the opencode-go row only", status.Providers)
 	}
 	encoded, err := json.Marshal(status)
 	if err != nil {
