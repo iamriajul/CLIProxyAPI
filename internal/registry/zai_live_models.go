@@ -419,42 +419,6 @@ func ZaiLiveModelsRevision() uint64 {
 	return zaiLiveCatalogStore.revision
 }
 
-// ZaiLiveModelsStatus reports discovery freshness for the management surfaces
-// that already render one row per catalog source. Only the first live entry is
-// reported: the Z.AI coding plan ships one roster for every credential, so
-// extra rows would be the same lane list repeated per key, and one key's
-// result must not be presented as another's.
-func ZaiLiveModelsStatus() ModelsDevStatus {
-	zaiLiveCatalogStore.mu.RLock()
-	live := cloneModelInfos(zaiLiveCatalogStore.firstEntryModelsLocked())
-	fetchedAt := zaiLiveCatalogStore.firstEntryFetchedAtLocked()
-	zaiLiveCatalogStore.mu.RUnlock()
-
-	return ModelsDevStatus{
-		Providers: []ModelsDevProviderStatus{
-			describeCatalogProviderStatus("zai-coding-plan", live, WithZaiBuiltins(cloneModelInfos(getModels().ZAI)), fetchedAt),
-		},
-	}
-}
-
-func (s *zaiLiveModelsStore) firstEntryModelsLocked() []*ModelInfo {
-	for _, entry := range s.byKeyID {
-		if len(entry.models) > 0 {
-			return entry.models
-		}
-	}
-	return nil
-}
-
-func (s *zaiLiveModelsStore) firstEntryFetchedAtLocked() time.Time {
-	for _, entry := range s.byKeyID {
-		if len(entry.models) > 0 {
-			return entry.fetchedAt
-		}
-	}
-	return time.Time{}
-}
-
 // resetZaiLiveModelsForTest clears the discovery store. Tests only.
 func resetZaiLiveModelsForTest() {
 	zaiLiveCatalogStore.mu.Lock()
