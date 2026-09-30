@@ -254,11 +254,21 @@ a Z.AI credential. Exactly two providers are ever parsed: a payload carrying
 neither is an error, so a shape change cannot silently yield empty sections.
 
 Freshness is operator-visible: `GET /v0/management/modelsdev/status` reports
-per-provider live/fallback source, counts, fetch time, and the latest error,
-for both catalog sources; `POST /v0/management/modelsdev/refresh` triggers one
-models.dev fetch outside the ticker. The TUI dashboard renders both rows in a
-Model Catalog card (best-effort: old servers without the endpoint render
+live/fallback source, counts, fetch time, and the latest error for
+**opencode-go only**; `POST /v0/management/modelsdev/refresh` triggers one
+models.dev fetch outside the ticker. The TUI dashboard renders the single row in
+a Model Catalog card (best-effort: old servers without the endpoint render
 nothing).
+
+The payload deliberately lists one provider. opencode-go is the only lane whose
+models come from the models.dev catalogue; Z.AI is discovered from Z.AI's own
+plan-scoped endpoint, and claude, antigravity, gemini, kimi, meta and xai each
+serve from their own source with no catalogue dependency to report. Listing a
+provider that does not use models.dev would put a row in a models.dev freshness
+surface for a dependency that does not exist — and Z.AI's row could not even be
+compared like-for-like, since it is per-credential rather than one catalogue
+section. A Z.AI discovery fault surfaces as a degraded lane, not as a
+freshness row.
 
 ```bash
 go test ./internal/registry/ -run 'TestConvertModelsDevCatalog|TestModelsDevLive|TestTryRefreshModelsDev|TestGetOpencodeModelsCoverGatewayLanes|TestGetModelsDevStatus'
@@ -267,6 +277,7 @@ go test ./cmd/fetch_modelsdev_models/
 go test ./cmd/server/ -run 'TestModelCatalogUpdaterPlan'
 go test ./internal/api/handlers/management/ -run TestGetModelsDevStatus_Shape
 go test ./internal/tui/ -run 'TestCatalogAge|TestRenderCatalogSectionStates'
+! grep -rq 'ZaiLiveModelsStatus' internal/api/handlers/management/
 ```
 
 ## litellm-discovery
