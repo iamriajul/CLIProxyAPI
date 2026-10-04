@@ -191,29 +191,28 @@ func TestFetchCatalogRejectsOversize(t *testing.T) {
 	}
 }
 
-func TestOpencodeRouteFor(t *testing.T) {
+func TestOpencodeLaneFor(t *testing.T) {
+	responsesOnly := opencodeLane{route: "responses", chatUnsupported: true}
 	cases := []struct {
 		id   string
 		npm  string
-		want string
+		want opencodeLane
 	}{
-		{"gpt-6-luna", "@ai-sdk/openai", "responses"},
-		{"grok-4.7", "@ai-sdk/openai", "responses"},
-		{"minimax-m2.5", "@ai-sdk/anthropic", "anthropic"},
-		{"qwen3.8-flash", "@ai-sdk/anthropic", "anthropic"},
-		{"glm-5.3", "", "chat"},
-		{"mimo-v2.6-flash", "", "chat"},
-		// Pin wins over an absent hint: gateway-verified /responses
-		// (omp behavior.kdl, verified 2026-08-08).
-		{"deepseek-v4-flash", "", "responses"},
+		{"gpt-6-luna", "@ai-sdk/openai", responsesOnly},
+		{"grok-4.7", "@ai-sdk/openai", responsesOnly},
+		{"qwen3.8-flash", "@ai-sdk/anthropic", opencodeLane{route: "anthropic"}},
+		{"glm-5.3", "", opencodeChatLane},
+		{"mimo-v2.6-flash", "", opencodeChatLane},
+		// Pin wins over an absent hint, and the lane keeps serving chat.
+		{"deepseek-v4-flash", "", opencodeLane{route: "responses"}},
 		// Pin wins over even a conflicting hint.
-		{"deepseek-v4-flash", "@ai-sdk/anthropic", "responses"},
+		{"deepseek-v4-flash", "@ai-sdk/anthropic", opencodeLane{route: "responses"}},
 		// Unknown future npm values fall back to the safe chat lane.
-		{"some-future-model", "@ai-sdk/vertex", "chat"},
+		{"some-future-model", "@ai-sdk/vertex", opencodeChatLane},
 	}
 	for _, tc := range cases {
-		if got := opencodeRouteFor(tc.id, tc.npm); got != tc.want {
-			t.Errorf("opencodeRouteFor(%q, %q) = %q, want %q", tc.id, tc.npm, got, tc.want)
+		if got := opencodeLaneFor(tc.id, tc.npm); got != tc.want {
+			t.Errorf("opencodeLaneFor(%q, %q) = %+v, want %+v", tc.id, tc.npm, got, tc.want)
 		}
 	}
 }
@@ -267,12 +266,12 @@ func TestRewriteRoutesSection(t *testing.T) {
 }
 
 func TestRenderOpencodeRoutesDeterministic(t *testing.T) {
-	routes := map[string]string{
-		"glm-5.3":     "chat",
-		"zeta-model":  "responses",
-		"alpha-model": "responses",
-		"mid-model":   "anthropic",
-		"beta-model":  "anthropic",
+	routes := map[string]opencodeLane{
+		"glm-5.3":     opencodeChatLane,
+		"zeta-model":  {route: "responses"},
+		"alpha-model": {route: "responses"},
+		"mid-model":   {route: "anthropic"},
+		"beta-model":  {route: "anthropic"},
 	}
 	out := renderOpencodeRoutes(routes)
 	anthropicIdx := strings.Index(out, "opencodeAnthropicRouteModels")
