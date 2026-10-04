@@ -31,7 +31,10 @@ type ClaudeExecutor struct {
 	cfg                     *config.Config
 	requestLogProvider      string
 	upstreamModelNormalizer func(string) string
-	oauthProfileFetcher     claudeOAuthProfileFetcher
+	// upstreamBodyNormalizer, when set by a delegating gateway executor, rewrites
+	// the finished Messages body just before it is sent.
+	upstreamBodyNormalizer func([]byte) []byte
+	oauthProfileFetcher    claudeOAuthProfileFetcher
 	// oauthToolAliases is shared by every ForAPIKey copy of this executor;
 	// constructors allocate it so copies made per request reuse one store.
 	oauthToolAliases *claudeOAuthToolAliasStore
@@ -307,6 +310,13 @@ func (e *ClaudeExecutor) upstreamModel(baseModel string) string {
 		return e.upstreamModelNormalizer(baseModel)
 	}
 	return baseModel
+}
+
+func (e *ClaudeExecutor) normalizeUpstreamBody(body []byte) []byte {
+	if e.upstreamBodyNormalizer != nil {
+		return e.upstreamBodyNormalizer(body)
+	}
+	return body
 }
 
 func (e *ClaudeExecutor) restoreResponseModel(payload []byte, model string) []byte {
