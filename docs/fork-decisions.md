@@ -55,20 +55,37 @@ grep -q "github.repository == 'router-for-me/CLIProxyAPI'" .github/workflows/aut
 
 Zen Go keys are subscription API keys pasted from the Zen console (no
 OAuth): `POST /v0/management/opencode/import` validates against the live
-gateway models endpoint and saves a type-opencode auth file. The executor
-routes per model per the reference catalog: Claude-protocol lanes through the
-Claude executor, Responses-native lanes through /v1/responses, everything
-else through OpenAI chat completions; gateway lanes that reject tool_choice
-have it stripped. Models ride live models.dev `opencode-go` sections
-refreshed every 3 hours (was: a static oh-my-pi snapshot merged at build
-time — correct at integration, but already drifting within days); the
-embedded catalog plus builtins stay as the offline fallback.
+gateway models endpoint and saves a type-opencode auth file. Models ride live
+models.dev `opencode-go` sections refreshed every 3 hours (was: a static
+oh-my-pi snapshot merged at build time — correct at integration, but already
+drifting within days); the embedded catalog plus builtins stay as the offline
+fallback.
+
+The executor picks the gateway endpoint per request from the model's lane and
+the caller's wire: a caller whose own wire the lane serves rides it
+untranslated (Claude callers on /messages lanes through the embedded Claude
+executor, Responses callers on /responses lanes); everyone else rides
+/chat/completions, unless the gateway refuses chat for that lane, in which case
+the request is translated to the lane's own wire and the reply translated back.
+The lane data (`opencodeAnthropicRouteModels`, `opencodeResponsesRouteModels`,
+`opencodeChatUnsupportedModels`, `opencodeResponsesOnlyPrefixes`) is generated
+from models.dev npm hints plus gateway-verified pins in
+`cmd/fetch_modelsdev_models`. Forced tool_choice is relaxed to "auto" on every
+lane (the muse-spark lanes accept only "auto", so "none" there drops the tools),
+and replayed reasoning is filtered per lane. Routing used to send every
+non-native caller to chat and strip tool_choice on a fixed list of lanes; that
+was right while the gateway served chat on every lane, but it now refuses chat
+for the GPT, Grok, Muse and MiniMax M2.7 lanes, and forced tool_choice fails on
+a set of lanes that follows each model's thinking default rather than a stable
+list. The live probe behind every pin (2026-10-04, all lanes x all three wires)
+is encoded in `TestOpencodeRoutesMatchLiveGateway`.
 
 ```bash
 grep -q "opencode/import" internal/api/server_management.go
 go test ./internal/auth/opencode/...
-go test ./internal/runtime/executor/ -run 'TestOpencode'
-go test ./internal/registry/ -run TestGetOpencodeModelsCoverGatewayLanes
+go test ./internal/runtime/executor/ -run 'TestOpencode|TestSmoke'
+go test ./internal/registry/ -run 'TestGetOpencodeModelsCoverGatewayLanes|TestOpencodeRoutes|TestOpencodeRouteHelpers'
+go test ./cmd/fetch_modelsdev_models/ -run 'TestOpencode|TestRenderOpencodeRoutes'
 ```
 
 ## zai-oauth
