@@ -72,9 +72,13 @@ func TestSmokeReportedFailureNowRoutesToResponses(t *testing.T) {
 	if gotSession == "" {
 		t.Fatal("x-opencode-session header missing; prompt-cache alignment would break")
 	}
-	// 6. Response reaches the caller.
-	if !gjson.GetBytes(resp.Payload, "output").Exists() {
-		t.Fatalf("response not translated back to the caller: %s", resp.Payload)
+	// 6. The reply reaches the caller in its own chat-completions shape, not as
+	// a raw Responses object it cannot parse.
+	if got := gjson.GetBytes(resp.Payload, "object").String(); got != "chat.completion" {
+		t.Fatalf("response not translated back to chat completions: %s", resp.Payload)
+	}
+	if got := gjson.GetBytes(resp.Payload, "choices.0.message.content").String(); got != "hi" {
+		t.Fatalf("assistant text lost on the way back: %s", resp.Payload)
 	}
 }
 func TestSmokeEncryptedReasoningIsStripped(t *testing.T) {
@@ -113,5 +117,4 @@ func TestSmokeEncryptedReasoningIsStripped(t *testing.T) {
 	if !strings.Contains(string(gotBody), "next step") {
 		t.Fatalf("guard dropped the caller turn: %s", gotBody)
 	}
-	t.Logf("replay body: %s", gotBody)
 }

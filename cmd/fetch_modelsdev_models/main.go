@@ -129,26 +129,26 @@ func main() {
 	fmt.Printf("refreshed %s (%d opencode, %d zai models)\n", modelsJSONPath, len(opencode), len(zai))
 }
 
-// opencodeRoutesFromCatalog derives the model -> route map for the whole
-// opencode-go roster straight from the raw catalog plus the deepseek pin.
-func opencodeRoutesFromCatalog(data []byte) map[string]string {
+// opencodeRoutesFromCatalog derives the model -> lane map for the whole
+// opencode-go roster straight from the raw catalog plus the pinned lanes.
+func opencodeRoutesFromCatalog(data []byte) map[string]opencodeLane {
 	npm := extractOpencodeNPM(data)
-	routes := make(map[string]string, len(npm)+len(opencodePinnedRoutes()))
-	// Absent ids (no npm hint) are chat-routed by default; enumerate only
+	lanes := make(map[string]opencodeLane, len(npm)+len(opencodePinnedLanes()))
+	// Absent ids (no npm hint) are plain chat lanes by default; enumerate only
 	// models with a hint or a pin so the generated maps stay minimal.
 	for id, hint := range npm {
-		if route := opencodeRouteFor(id, hint); route != "chat" {
-			routes[id] = route
+		if lane := opencodeLaneFor(id, hint); lane != opencodeChatLane {
+			lanes[id] = lane
 		}
 	}
 	// Pins apply even when models.dev omits the id or changes its npm hint, so
-	// regeneration cannot silently drop a gateway-verified route.
-	for id, route := range opencodePinnedRoutes() {
-		if route != "chat" {
-			routes[id] = route
+	// regeneration cannot silently drop a gateway-verified lane.
+	for id, lane := range opencodePinnedLanes() {
+		if lane != opencodeChatLane {
+			lanes[id] = lane
 		}
 	}
-	return routes
+	return lanes
 }
 
 // checkSectionsNonEmpty refuses to publish empty provider sections: an empty
@@ -318,40 +318,48 @@ const (
 	routesEnd   = "// modelsdev:routes:end"
 )
 
-const (
-	// opencodePinDeepseekResponses pins deepseek-v4-flash to the Responses
-	// lane despite models.dev carrying no npm hint for it. Gateway-verified
-	// (live /responses probe, 2026-08-08).
-	opencodePinDeepseekResponses = "deepseek-v4-flash"
-	// opencodePinResponsesExact pins ids the gateway serves only at
-	// /responses. models.dev's npm hints misroute several of these (#887,
-	// #1617), so the pins win over any hint. Precedence:
-	// pins > npm hints > chat default.
-	//
-	// omp behavior.kdl "api-routes provider=\"opencode-go\"" carries the same
-	// pins plus the muse-spark- family prefix, which is emitted separately as
-	// opencodeResponsesRoutePrefixes so new revisions route correctly before
-	// models.dev publishes them.
-	opencodePinUnionAlpha = "union-alpha"
-)
+// opencodeLane is one model's gateway routing. route is the non-chat wire the
+// lane serves natively ("anthropic" or "responses"; "chat" for a plain chat
+// lane). chatUnsupported marks lanes the gateway refuses at /chat/completions
+// with ModelProtocolUnsupported, so callers speaking any other wire must be
+// translated to route instead of falling back to chat.
+type opencodeLane struct {
+	route           string
+	chatUnsupported bool
+}
 
-// opencodePinnedRoutes are gateway-verified ids whose protocol is pinned
-// regardless of the models.dev npm hint. Regeneration must reproduce these
-// exactly; dropping one silently regresses the lane back to npm routing.
-func opencodePinnedRoutes() map[string]string {
-	return map[string]string{
-		opencodePinDeepseekResponses: "responses",
-		// npm says @ai-sdk/anthropic, but the gateway serves minimax-m2.7 and
-		// minimax-m3 only at /chat/completions (#1617).
-		"minimax-m2.7":        "chat",
-		"minimax-m3":          "chat",
-		opencodePinUnionAlpha: "anthropic",
+var opencodeChatLane = opencodeLane{route: "chat"}
+
+// opencodePinnedLanes are gateway-verified lanes that win over the models.dev
+// npm hint. Regeneration must reproduce these exactly; dropping one silently
+// regresses the lane back to npm routing. Precedence: pins > family prefix >
+// npm hint > chat default.
+//
+// Every pin was verified against the live gateway on 2026-10-04 by sending a
+// minimal request to /chat/completions, /responses and /messages for each
+// model; a refused wire answers 400 ModelProtocolUnsupported. omp's
+// behavior.kdl pins some of these lanes too, but where omp and the live
+// gateway disagree the gateway wins (omp pins minimax-m2.7 to chat, which the
+// gateway refuses).
+func opencodePinnedLanes() map[string]opencodeLane {
+	return map[string]opencodeLane{
+		// No npm hint, but the lane serves all three wires; pinning Responses
+		// lets Responses callers skip translation while chat stays available.
+		"deepseek-v4-flash": {route: "responses"},
+		// Serves chat and /messages. models.dev dropped its anthropic npm hint,
+		// so the pin keeps Claude callers on the native /messages lane.
+		"minimax-m2.5": {route: "anthropic"},
+		// Served only at /messages: chat and Responses callers are translated.
+		"minimax-m2.7": {route: "anthropic", chatUnsupported: true},
 	}
 }
 
-// opencodeResponsesRoutePrefixes are id prefixes whose whole family is served
-// at /responses. Rendered verbatim into the generated block.
-var opencodeResponsesRoutePrefixes = []string{"muse-spark-"}
+// opencodeResponsesOnlyPrefixes are id prefixes whose whole family is served
+// only at /responses (opencode.ai/docs/go/#endpoints, live-verified for the
+// muse-spark lanes on 2026-10-04). The prefix covers revisions the gateway
+// ships before models.dev publishes them. Rendered verbatim into the
+// generated block.
+var opencodeResponsesOnlyPrefixes = []string{"muse-spark-"}
 
 // extractOpencodeNPM returns model id -> models.dev per-model provider.npm
 // for the opencode-go section only. This is the same field opencode's own
@@ -381,47 +389,53 @@ func extractOpencodeNPM(data []byte) map[string]string {
 	return out
 }
 
-// opencodeRouteFor maps one model to its gateway wire protocol. Precedence:
-// gateway-verified pin, then the models.dev npm hint (what opencode's own
-// client routes on), then the chat default, which is the lane the gateway
-// serves most broadly and the safe fallback for unknown future npm values.
+// opencodeLaneFor maps one model to its gateway lane. Precedence:
+// gateway-verified pin, then a responses-only family prefix, then the
+// models.dev npm hint (what opencode's own client routes on), then the chat
+// default, which is the wire the gateway serves most broadly and the safe
+// fallback for unknown future npm values.
 //
-// Pins beat npm deliberately: omp's behavior.kdl records that models.dev's
-// npm hints misroute several opencode-go lanes (#887, #1617).
-func opencodeRouteFor(id, npm string) string {
-	if route, pinned := opencodePinnedRoutes()[id]; pinned {
-		return route
+// "@ai-sdk/openai" lanes are the gateway's OpenAI-upstream models, which it
+// serves only at /responses (every such lane refused chat on 2026-10-04).
+// "@ai-sdk/anthropic" lanes serve /messages and, except where pinned, chat.
+func opencodeLaneFor(id, npm string) opencodeLane {
+	if lane, pinned := opencodePinnedLanes()[id]; pinned {
+		return lane
 	}
-	for _, prefix := range opencodeResponsesRoutePrefixes {
+	for _, prefix := range opencodeResponsesOnlyPrefixes {
 		if strings.HasPrefix(id, prefix) {
-			return "responses"
+			return opencodeLane{route: "responses", chatUnsupported: true}
 		}
 	}
 	switch npm {
 	case "@ai-sdk/openai":
-		return "responses"
+		return opencodeLane{route: "responses", chatUnsupported: true}
 	case "@ai-sdk/anthropic":
-		return "anthropic"
+		return opencodeLane{route: "anthropic"}
 	default:
-		return "chat"
+		return opencodeChatLane
 	}
 }
 
-// renderOpencodeRoutes renders the two generated route maps plus the family
-// prefix list. Sorted ids keep regen output deterministic; chat-route models
+// renderOpencodeRoutes renders the generated route maps plus the family
+// prefix list. Sorted ids keep regen output deterministic; plain chat lanes
 // stay out entirely (chat is the default in OpencodeUpstreamRoute).
-func renderOpencodeRoutes(routes map[string]string) string {
-	var anthropic, responses []string
-	for id, route := range routes {
-		switch route {
+func renderOpencodeRoutes(lanes map[string]opencodeLane) string {
+	var anthropic, responses, chatUnsupported []string
+	for id, lane := range lanes {
+		switch lane.route {
 		case "anthropic":
 			anthropic = append(anthropic, id)
 		case "responses":
 			responses = append(responses, id)
 		}
+		if lane.chatUnsupported {
+			chatUnsupported = append(chatUnsupported, id)
+		}
 	}
 	sort.Strings(anthropic)
 	sort.Strings(responses)
+	sort.Strings(chatUnsupported)
 	render := func(name string, ids []string) string {
 		var buf bytes.Buffer
 		fmt.Fprintf(&buf, "var %s = map[string]bool{\n", name)
@@ -431,21 +445,28 @@ func renderOpencodeRoutes(routes map[string]string) string {
 		buf.WriteString("}")
 		return buf.String()
 	}
-	prefixes := append([]string(nil), opencodeResponsesRoutePrefixes...)
+	prefixes := append([]string(nil), opencodeResponsesOnlyPrefixes...)
 	sort.Strings(prefixes)
 	var buf bytes.Buffer
 	buf.WriteString("// Generated from models.dev per-model provider.npm, overridden by the\n")
-	buf.WriteString("// gateway-verified pins below. npm hints alone misroute several lanes\n")
-	buf.WriteString("// (#887, #1617), so the pins are authoritative. Regenerate model lists\n")
-	buf.WriteString("// with: go run ./cmd/fetch_modelsdev_models\n")
+	buf.WriteString("// gateway-verified pins in cmd/fetch_modelsdev_models (opencodePinnedLanes).\n")
+	buf.WriteString("// Regenerate with: go run ./cmd/fetch_modelsdev_models\n")
+	buf.WriteString("//\n")
+	buf.WriteString("// opencodeAnthropicRouteModels serve /messages and opencodeResponsesRouteModels\n")
+	buf.WriteString("// serve /responses; callers already speaking that wire ride it untranslated.\n")
 	buf.WriteString(render("opencodeAnthropicRouteModels", anthropic))
 	buf.WriteString("\n\n")
 	buf.WriteString(render("opencodeResponsesRouteModels", responses))
 	buf.WriteString("\n\n")
-	buf.WriteString("// opencodeResponsesRoutePrefixes lists id prefixes whose whole family is\n")
-	buf.WriteString("// served at /responses. Exact entries stay in the map above; the prefix\n")
+	buf.WriteString("// opencodeChatUnsupportedModels are lanes the gateway refuses at\n")
+	buf.WriteString("// /chat/completions (ModelProtocolUnsupported); every caller is translated to\n")
+	buf.WriteString("// the lane's route instead.\n")
+	buf.WriteString(render("opencodeChatUnsupportedModels", chatUnsupported))
+	buf.WriteString("\n\n")
+	buf.WriteString("// opencodeResponsesOnlyPrefixes lists id prefixes whose whole family is\n")
+	buf.WriteString("// served only at /responses. Exact entries stay in the maps above; the prefix\n")
 	buf.WriteString("// covers ids the gateway ships before models.dev publishes them.\n")
-	buf.WriteString("var opencodeResponsesRoutePrefixes = []string{\n")
+	buf.WriteString("var opencodeResponsesOnlyPrefixes = []string{\n")
 	for _, prefix := range prefixes {
 		fmt.Fprintf(&buf, "\t%q,\n", prefix)
 	}

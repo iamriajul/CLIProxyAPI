@@ -42,6 +42,7 @@ func NewOpenCodeExecutor(cfg *config.Config) *OpenCodeExecutor {
 			cfg:                     cfg,
 			requestLogProvider:      "opencode",
 			upstreamModelNormalizer: normalizeOpencodeUpstreamModel,
+			upstreamBodyNormalizer:  normalizeOpencodeClaudeToolChoice,
 		},
 		cfg: cfg,
 	}
@@ -50,22 +51,38 @@ func NewOpenCodeExecutor(cfg *config.Config) *OpenCodeExecutor {
 // Identifier returns the executor identifier.
 func (e *OpenCodeExecutor) Identifier() string { return "opencode" }
 
-// opencodeUpstreamRoute reports the gateway wire protocol for a model.
-func opencodeUpstreamRoute(model string) string {
-	return registry.OpencodeUpstreamRoute(model)
+// opencodeUpstreamWire picks the gateway endpoint for one request: "anthropic"
+// (/messages), "responses" (/responses) or "chat" (/chat/completions).
+//
+// A caller whose own wire the lane serves natively rides it untranslated (Claude
+// callers on /messages lanes, Responses callers on /responses lanes). Everyone
+// else goes to chat, the wire the gateway serves most broadly, unless the lane
+// refuses chat (ModelProtocolUnsupported), in which case the request is
+// translated to the lane's own route. Sending every caller of a Responses lane
+// to /responses would also work, but it needlessly translates chat callers on
+// lanes that serve chat too (deepseek-v4-flash).
+func opencodeUpstreamWire(model string, from sdktranslator.Format) string {
+	route := registry.OpencodeUpstreamRoute(model)
+	switch {
+	case from == sdktranslator.FormatClaude && route == "anthropic":
+		return "anthropic"
+	case from == sdktranslator.FormatOpenAIResponse && route == "responses":
+		return "responses"
+	case registry.OpencodeServesChat(model):
+		return "chat"
+	default:
+		return route
+	}
 }
 
-// RequestToFormat reports the upstream request format used after auth selection.
-//
-// The lane's wire protocol is authoritative, not the caller's: a Responses-native
-// model is served at /responses whatever the source format was, and the request is
-// translated up to it. Gating on the source format instead (the old behavior) left a
-// chat-completions caller on /chat/completions for a Responses-only lane, which the
-// gateway rejects with ModelProtocolUnsupported. MetaExecutor has always worked this
-// way: it pins the wire and translates the caller.
+// RequestToFormat reports the upstream request format used after auth selection,
+// following the same wire decision as Execute.
 func (e *OpenCodeExecutor) RequestToFormat(req cliproxyexecutor.Request, opts cliproxyexecutor.Options) sdktranslator.Format {
-	switch opencodeUpstreamRoute(req.Model) {
+	switch opencodeUpstreamWire(req.Model, opts.SourceFormat) {
 	case "responses":
+		if opts.SourceFormat == sdktranslator.FormatOpenAIResponse {
+			return sdktranslator.FormatOpenAIResponse
+		}
 		// Codex format, matching executeResponses: it is the Responses wire and
 		// the only target every source format has a registered transform for.
 		return sdktranslator.FormatCodex
@@ -112,17 +129,12 @@ func (e *OpenCodeExecutor) HttpRequest(ctx context.Context, auth *cliproxyauth.A
 // Execute performs a non-streaming request to the Zen Go gateway.
 func (e *OpenCodeExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (resp cliproxyexecutor.Response, err error) {
 	from := opts.SourceFormat
-	if from.String() == "claude" && opencodeUpstreamRoute(req.Model) == "anthropic" {
-		e.ensureAttributes(auth)
-		auth.Attributes["base_url"] = opencodeAnthropicBaseURL(auth)
-		ensureOpencodeSessionHeader(&opts, sessionPayloadForOptions(req, opts))
+	switch opencodeUpstreamWire(req.Model, from) {
+	case "anthropic":
+		// The embedded ClaudeExecutor translates non-Claude callers itself.
+		e.prepareAnthropicDelegation(auth, req, &opts)
 		return e.ClaudeExecutor.Execute(ctx, auth, req, opts)
-	}
-	// The lane decides the wire, not the caller: a Responses-native model always
-	// rides /responses, and executeResponses translates the request up from
-	// whatever source format arrived. Chat-route models keep the chat lane,
-	// which the gateway serves most broadly.
-	if opencodeUpstreamRoute(req.Model) == "responses" {
+	case "responses":
 		return e.executeResponses(ctx, auth, req, opts)
 	}
 	responseFormat := cliproxyexecutor.ResponseFormatOrSource(opts)
@@ -230,20 +242,13 @@ func (e *OpenCodeExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth,
 // ExecuteStream performs a streaming request to the Zen Go gateway.
 func (e *OpenCodeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (_ *cliproxyexecutor.StreamResult, err error) {
 	from := opts.SourceFormat
-	// Anthropic lanes keep delegating to the embedded ClaudeExecutor, exactly as
-	// Execute does. This branch must stay ahead of the Responses check: a lane is
-	// only ever one of anthropic/responses/chat, but keeping the same order in
-	// both methods is what guarantees the streaming and non-streaming paths
-	// cannot drift apart again.
-	if from.String() == "claude" && opencodeUpstreamRoute(req.Model) == "anthropic" {
-		e.ensureAttributes(auth)
-		auth.Attributes["base_url"] = opencodeAnthropicBaseURL(auth)
-		ensureOpencodeSessionHeader(&opts, sessionPayloadForOptions(req, opts))
+	// Same wire decision as Execute, so the streaming and non-streaming paths
+	// cannot drift apart.
+	switch opencodeUpstreamWire(req.Model, from) {
+	case "anthropic":
+		e.prepareAnthropicDelegation(auth, req, &opts)
 		return e.ClaudeExecutor.ExecuteStream(ctx, auth, req, opts)
-	}
-	// Lane-authoritative, matching Execute: a Responses-native model always
-	// streams from /responses, whatever the caller's source format was.
-	if opencodeUpstreamRoute(req.Model) == "responses" {
+	case "responses":
 		return e.executeResponsesStream(ctx, auth, req, opts)
 	}
 	responseFormat := cliproxyexecutor.ResponseFormatOrSource(opts)
@@ -383,7 +388,7 @@ func (e *OpenCodeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth
 
 // CountTokens estimates token count for OpenCode requests.
 func (e *OpenCodeExecutor) CountTokens(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
-	if opts.SourceFormat.String() == "claude" && opencodeUpstreamRoute(req.Model) == "anthropic" {
+	if opts.SourceFormat == sdktranslator.FormatClaude && opencodeUpstreamWire(req.Model, opts.SourceFormat) == "anthropic" {
 		e.ensureAttributes(auth)
 		auth.Attributes["base_url"] = opencodeAnthropicBaseURL(auth)
 		return e.ClaudeExecutor.CountTokens(ctx, auth, req, opts)
@@ -553,26 +558,190 @@ func normalizeOpencodeUpstreamModel(model string) string {
 	return strings.TrimSpace(thinking.ParseSuffix(model).ModelName)
 }
 
-// opencodeNoToolChoiceModels lists the exact Zen lanes whose gateway rejects
-// tool_choice (reference contract notes). The vision-exp lane explicitly keeps
-// it, so substring matching would over-strip — hence the explicit set.
-var opencodeNoToolChoiceModels = map[string]bool{
-	"deepseek-v4-flash": true,
-	"deepseek-v4-pro":   true,
-	"mimo-v2-omni":      true,
-	"mimo-v2-pro":       true,
-	"mimo-v2.5":         true,
-	"mimo-v2.5-pro":     true,
+// Forced tool selection is not portable across the gateway. Live-probed on
+// 2026-10-04, "auto" was accepted on every model and wire, while a forced choice
+// ("required" or a named tool) failed on 14 of 55 model/wire pairs: DeepSeek's
+// thinking mode on /responses and /messages, Kimi K2.6/K2.7 Code, Qwen 3.7 Plus
+// and 3.8 Flash, and the muse-spark lanes. The failing set follows each model's
+// thinking default rather than a stable list, so like omp (which marks the whole
+// provider supportsForcedToolChoice=false) the rule is gateway-wide: a forced
+// choice becomes "auto" and the tools stay available.
+
+// isOpencodeMuseLane reports whether the model belongs to the muse-spark
+// family, which the gateway proxies to Meta with two quirks handled below:
+// tool_choice accepts only "auto", and replayed reasoning is unsafe.
+func isOpencodeMuseLane(model string) bool {
+	key := strings.ToLower(strings.TrimSpace(thinking.ParseSuffix(model).ModelName))
+	return strings.HasPrefix(key, "muse-spark-")
 }
 
-// opencodeRejectsToolChoice reports whether the lane rejects tool_choice.
-func opencodeRejectsToolChoice(model string) bool {
-	key := strings.ToLower(strings.TrimSpace(thinking.ParseSuffix(model).ModelName))
-	return opencodeNoToolChoiceModels[key]
+// normalizeOpencodeToolChoice rewrites an OpenAI chat or Responses tool_choice
+// the gateway would refuse: forced choices become "auto", and "none" on a
+// muse-spark lane, which accepts only "auto" ("only `auto` is supported for
+// `tool_choice`"), drops the tools so the model still cannot call one.
+func normalizeOpencodeToolChoice(body []byte, model string) []byte {
+	choice := gjson.GetBytes(body, "tool_choice")
+	if !choice.Exists() {
+		return body
+	}
+	if choice.Type == gjson.String {
+		switch strings.ToLower(strings.TrimSpace(choice.String())) {
+		case "auto":
+			return body
+		case "none":
+			if !isOpencodeMuseLane(model) {
+				return body
+			}
+			for _, path := range []string{"tool_choice", "tools"} {
+				if updated, err := sjson.DeleteBytes(body, path); err == nil {
+					body = updated
+				}
+			}
+			return body
+		}
+	}
+	// "required", a named function, or any other selector forces a tool call.
+	if updated, err := sjson.SetBytes(body, "tool_choice", "auto"); err == nil {
+		body = updated
+	}
+	return body
+}
+
+// normalizeOpencodeClaudeToolChoice applies the forced-choice rule to the
+// Claude Messages body sent on /messages lanes: "any" and named-tool choices
+// become "auto", keeping disable_parallel_tool_use.
+func normalizeOpencodeClaudeToolChoice(body []byte) []byte {
+	switch gjson.GetBytes(body, "tool_choice.type").String() {
+	case "any", "tool":
+	default:
+		return body
+	}
+	if updated, err := sjson.SetBytes(body, "tool_choice.type", "auto"); err == nil {
+		body = updated
+	}
+	if updated, err := sjson.DeleteBytes(body, "tool_choice.name"); err == nil {
+		body = updated
+	}
+	return body
+}
+
+// filterOpencodeReasoningReplay prepares replayed reasoning items in a
+// Responses body for the gateway.
+//
+// Reasoning is replayed only for native Responses callers, whose items come
+// back exactly as the gateway issued them. A translated caller's reasoning
+// does not survive the round trip: a Claude thinking signature restores to an
+// encrypted blob the Grok lanes refuse ("Could not decode the compaction
+// blob"), or to an empty shell they reject with 422 (both live-verified
+// 2026-10-04), while every lane accepts the turn without the reasoning.
+//
+// On the muse-spark lanes reasoning is never replayed and encrypted reasoning
+// is not requested: the gateway proxies them to Meta but cannot round-trip
+// encrypted reasoning bound to its own caller ("reasoning `encrypted_content`
+// was not issued to this caller", omp #11928), which omp handles the same way
+// (include-encrypted-reasoning false, filter-reasoning-history true).
+//
+// Elsewhere, reasoning items that carry nothing to replay (no encrypted
+// content, summary or text) are still dropped.
+func filterOpencodeReasoningReplay(body []byte, model string, translated bool) []byte {
+	input := gjson.GetBytes(body, "input")
+	muse := isOpencodeMuseLane(model)
+	if muse {
+		body = dropOpencodeEncryptedReasoningInclude(body)
+	}
+	if !input.IsArray() {
+		return body
+	}
+	dropAll := muse || translated
+	kept := make([]string, 0, len(input.Array()))
+	dropped := false
+	for _, item := range input.Array() {
+		if item.Get("type").String() == "reasoning" && (dropAll || opencodeReasoningItemIsEmpty(item)) {
+			dropped = true
+			continue
+		}
+		kept = append(kept, item.Raw)
+	}
+	if !dropped {
+		return body
+	}
+	if updated, err := sjson.SetRawBytes(body, "input", helps.JoinRawJSONStrings(kept)); err == nil {
+		body = updated
+	}
+	return body
+}
+
+func opencodeReasoningItemIsEmpty(item gjson.Result) bool {
+	if strings.TrimSpace(item.Get("encrypted_content").String()) != "" {
+		return false
+	}
+	for _, field := range []string{"summary", "content"} {
+		if value := item.Get(field); value.IsArray() && len(value.Array()) > 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func dropOpencodeEncryptedReasoningInclude(body []byte) []byte {
+	include := gjson.GetBytes(body, "include")
+	if !include.IsArray() {
+		return body
+	}
+	kept := make([]string, 0, len(include.Array()))
+	for _, value := range include.Array() {
+		if value.String() != "reasoning.encrypted_content" {
+			kept = append(kept, value.Raw)
+		}
+	}
+	if len(kept) == len(include.Array()) {
+		return body
+	}
+	if updated, err := sjson.SetRawBytes(body, "include", helps.JoinRawJSONStrings(kept)); err == nil {
+		body = updated
+	}
+	return body
+}
+
+// prepareAnthropicDelegation points the embedded ClaudeExecutor at the
+// gateway's /messages base and makes the request carry what the gateway
+// requires. The auth is the per-request clone handed out by the conductor, so
+// the attribute writes stay local to this request.
+//
+// The ClaudeExecutor's generic header handling does not fit this gateway, so
+// the essentials are pinned through the custom-header attributes, which it
+// applies after its own headers (all verified against the gateway 2026-10-04):
+//   - x-api-key: the executor sends API keys to non-Anthropic bases as a Bearer
+//     token, which /messages ignores (401 "Missing API key.").
+//   - x-opencode-session: the executor forwards it only for confirmed Claude
+//     Code callers, so other Claude clients and translated chat/Responses
+//     callers were rejected with MissingSessionID.
+//   - User-Agent: the executor forwards the caller's own User-Agent, which the
+//     gateway's Cloudflare front can ban outright (error 1010 for
+//     Python-urllib); the chat and Responses lanes always send CPA's own.
+//
+// The key is also copied to attributes["api_key"] because the ClaudeExecutor
+// reads only that or metadata["access_token"], while auth files written by the
+// OpenCode login flow store it as metadata["api_key"].
+func (e *OpenCodeExecutor) prepareAnthropicDelegation(auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts *cliproxyexecutor.Options) {
+	ensureOpencodeSessionHeader(opts, sessionPayloadForOptions(req, *opts))
+	e.ensureAttributes(auth)
+	if auth == nil {
+		return
+	}
+	auth.Attributes["base_url"] = opencodeAnthropicBaseURL(auth)
+	auth.Attributes["header:User-Agent"] = "CLIProxyAPI/" + buildinfo.Version
+	if token := strings.TrimSpace(opencodeCreds(auth)); token != "" {
+		auth.Attributes["api_key"] = token
+		auth.Attributes["header:x-api-key"] = token
+	}
+	if sessionID := opencodeIncomingSessionID(opts.Headers); sessionID != "" {
+		auth.Attributes["header:x-opencode-session"] = sessionID
+	}
 }
 
 // normalizeOpencodeTools converts `custom` tools to `function` tools, inlines
-// local $refs, and drops tool_choice selectors on lanes that reject them.
+// local $refs, and rewrites tool_choice selectors the gateway would refuse.
 func normalizeOpencodeTools(body []byte, model string) []byte {
 	if len(body) == 0 || !gjson.ValidBytes(body) {
 		return body
@@ -606,12 +775,7 @@ func normalizeOpencodeTools(body []byte, model string) []byte {
 			}
 		}
 	}
-	if opencodeRejectsToolChoice(model) {
-		if updated, err := sjson.DeleteBytes(body, "tool_choice"); err == nil {
-			body = updated
-		}
-	}
-	return body
+	return normalizeOpencodeToolChoice(body, model)
 }
 
 func (e *OpenCodeExecutor) executeResponses(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (resp cliproxyexecutor.Response, err error) {
@@ -625,16 +789,14 @@ func (e *OpenCodeExecutor) executeResponses(ctx context.Context, auth *cliproxya
 	reporter := helps.NewExecutorUsageReporter(ctx, e, baseModel, auth)
 	defer reporter.TrackFailure(ctx, &err)
 
-	// Translate up when the caller did not already speak Responses. The lane's
-	// protocol is authoritative, so a chat-completions or Claude payload is
-	// converted here rather than being sent down a wire the gateway refuses.
-	// This mirrors MetaExecutor, which always pins the Codex/Responses wire and
-	// lets the translator handle every source format.
+	// A caller that does not speak Responses reaches this path only for lanes
+	// the gateway refuses at /chat/completions (see opencodeUpstreamWire), so
+	// its payload is translated up here.
 	//
-	// The target is the Codex format, not "openai-response": only openai -> codex
-	// has a registered transform, so a chat or Claude caller would otherwise be
-	// forwarded untranslated. Codex output is the Responses shape this endpoint
-	// expects, and codex -> openai-response is registered for the way back.
+	// The target is the Codex format, not "openai-response": every source
+	// format has a registered transform to codex (none to openai-response), and
+	// codex output is the Responses shape this endpoint expects. The reply goes
+	// back through the same pair (codex -> caller) below.
 	sourcePayload := bytes.Clone(req.Payload)
 	body := sourcePayload
 	if opts.SourceFormat != sdktranslator.FormatOpenAIResponse {
@@ -659,11 +821,7 @@ func (e *OpenCodeExecutor) executeResponses(ctx context.Context, auth *cliproxya
 	requestPath := helps.PayloadRequestPath(opts)
 	body = helps.ApplyPayloadConfigWithRequest(e.cfg, baseModel, "openai-response", opts.SourceFormat.String(), "", body, sourcePayload, requestedModel, requestPath, opts.Headers)
 	body = normalizeOpencodeTools(body, baseModel)
-	// The gateway issues encrypted_content bound to its own caller, so replaying
-	// it on a later turn is rejected upstream (omp #11928). Strip it the same way
-	// the Meta lane does, or multi-step tool-call turns start failing after this
-	// change moves chat callers onto /responses.
-	body = sanitizeOpenAIResponsesReasoningEncryptedContent(ctx, "opencode executor", body)
+	body = filterOpencodeReasoningReplay(body, baseModel, opts.SourceFormat != sdktranslator.FormatOpenAIResponse)
 	reporter.SetTranslatedReasoningEffort(body, e.Identifier())
 
 	url := opencodeBaseURL(auth) + "/responses"
@@ -734,8 +892,19 @@ func (e *OpenCodeExecutor) executeResponses(ctx context.Context, auth *cliproxya
 
 	out := data
 	if responseFormat != sdktranslator.FormatOpenAIResponse {
+		// The request was translated to the Codex format, so the reply comes back
+		// through the same pair (codex -> caller). Those converters read the
+		// terminal stream event, so the plain Responses object is wrapped in one.
+		eventType := "response.completed"
+		if gjson.GetBytes(data, "status").String() == "incomplete" {
+			eventType = "response.incomplete"
+		}
+		event, errEvent := sjson.SetRawBytes([]byte(`{"type":"`+eventType+`"}`), "response", data)
+		if errEvent != nil {
+			return resp, fmt.Errorf("opencode executor: wrap responses payload: %w", errEvent)
+		}
 		var param any
-		out = sdktranslator.TranslateNonStream(ctx, sdktranslator.FormatOpenAIResponse, responseFormat, req.Model, opts.OriginalRequest, body, data, &param)
+		out = sdktranslator.TranslateNonStream(ctx, sdktranslator.FormatCodex, responseFormat, req.Model, opts.OriginalRequest, body, event, &param)
 	}
 	resp = cliproxyexecutor.Response{Payload: out, Headers: httpResp.Header.Clone()}
 	return resp, nil
@@ -752,9 +921,8 @@ func (e *OpenCodeExecutor) executeResponsesStream(ctx context.Context, auth *cli
 	reporter := helps.NewExecutorUsageReporter(ctx, e, baseModel, auth)
 	defer reporter.TrackFailure(ctx, &err)
 
-	// Same lane-authoritative translation as executeResponses: a non-Responses
-	// caller is converted up to the /responses wire instead of being sent to a
-	// chat endpoint the gateway refuses for this model.
+	// Same translation as executeResponses: a caller that does not speak
+	// Responses is converted up to the /responses wire.
 	sourcePayload := bytes.Clone(req.Payload)
 	body := sourcePayload
 	if opts.SourceFormat != sdktranslator.FormatOpenAIResponse {
@@ -778,9 +946,7 @@ func (e *OpenCodeExecutor) executeResponsesStream(ctx context.Context, auth *cli
 	requestPath := helps.PayloadRequestPath(opts)
 	body = helps.ApplyPayloadConfigWithRequest(e.cfg, baseModel, "openai-response", opts.SourceFormat.String(), "", body, sourcePayload, requestedModel, requestPath, opts.Headers)
 	body = normalizeOpencodeTools(body, baseModel)
-	// See executeResponses: the gateway binds encrypted_content to its own
-	// caller, so replayed reasoning items must be stripped (omp #11928).
-	body = sanitizeOpenAIResponsesReasoningEncryptedContent(ctx, "opencode executor", body)
+	body = filterOpencodeReasoningReplay(body, baseModel, opts.SourceFormat != sdktranslator.FormatOpenAIResponse)
 	reporter.SetTranslatedReasoningEffort(body, e.Identifier())
 
 	url := opencodeBaseURL(auth) + "/responses"
@@ -857,7 +1023,8 @@ func (e *OpenCodeExecutor) executeResponsesStream(ctx context.Context, auth *cli
 					return false
 				}
 			}
-			chunks := sdktranslator.TranslateStream(ctx, sdktranslator.FormatOpenAIResponse, responseFormat, req.Model, opts.OriginalRequest, body, line, &param)
+			// Same pair as the request translation: codex -> caller.
+			chunks := sdktranslator.TranslateStream(ctx, sdktranslator.FormatCodex, responseFormat, req.Model, opts.OriginalRequest, body, line, &param)
 			for i := range chunks {
 				select {
 				case out <- cliproxyexecutor.StreamChunk{Payload: chunks[i]}:
