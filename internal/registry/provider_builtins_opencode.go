@@ -6,24 +6,20 @@ package registry
 
 import "strings"
 
-// Note on the responses set: routing on the Responses protocol is model-driven
-// — only these lanes accept /v1/responses natively. Live-probed 2026-09-26:
-// the Zen gateway rejects /responses for chat-route models with
-// ModelProtocolUnsupported (e.g. mimo-v2.6-flash), so Responses input on those
-// translates to /chat/completions. Earlier probing (2026-09-13) had verified
-// the mirror case — /chat/completions serves the Responses-native lanes after
-// auth — but not this one. The map stays as forward-looking data and documents
-// each lane's native protocol.
-
 // modelsdev:routes:begin
-// Generated from models.dev per-model provider.npm (the field opencode's
-// own client routes on) plus gateway-verified pins. Regen with:
-// go run ./cmd/fetch_modelsdev_models
+// Generated from models.dev per-model provider.npm, overridden by the
+// gateway-verified pins in cmd/fetch_modelsdev_models (opencodePinnedLanes).
+// Regenerate with: go run ./cmd/fetch_modelsdev_models
+//
+// opencodeAnthropicRouteModels serve /messages and opencodeResponsesRouteModels
+// serve /responses; callers already speaking that wire ride it untranslated.
 var opencodeAnthropicRouteModels = map[string]bool{
 	"minimax-m2.5":  true,
 	"minimax-m2.7":  true,
 	"minimax-m3":    true,
+	"qwen3.7-plus":  true,
 	"qwen3.8-flash": true,
+	"qwen3.8-max":   true,
 }
 
 var opencodeResponsesRouteModels = map[string]bool{
@@ -37,23 +33,72 @@ var opencodeResponsesRouteModels = map[string]bool{
 	"muse-spark-1.3-contributor": true,
 }
 
+// opencodeChatUnsupportedModels are lanes the gateway refuses at
+// /chat/completions (ModelProtocolUnsupported); every caller is translated to
+// the lane's route instead.
+var opencodeChatUnsupportedModels = map[string]bool{
+	"gpt-5.6-luna":               true,
+	"gpt-6-luna":                 true,
+	"grok-4.5":                   true,
+	"grok-4.6":                   true,
+	"grok-4.7":                   true,
+	"minimax-m2.7":               true,
+	"muse-spark-1.2-contributor": true,
+	"muse-spark-1.3-contributor": true,
+}
+
+// opencodeResponsesOnlyPrefixes lists id prefixes whose whole family is
+// served only at /responses. Exact entries stay in the maps above; the prefix
+// covers ids the gateway ships before models.dev publishes them.
+var opencodeResponsesOnlyPrefixes = []string{
+	"muse-spark-",
+}
+
 // modelsdev:routes:end
 
-// OpencodeUpstreamRoute reports the gateway wire protocol for a model:
-// "anthropic" for the Claude-protocol lanes, "responses" for Responses-native
-// lanes, "chat" for everything else.
+// OpencodeUpstreamRoute reports a model's native non-chat wire on the gateway:
+// "anthropic" for lanes served at /messages, "responses" for lanes served at
+// /responses, "chat" for plain chat lanes. Pass the result together with
+// OpencodeServesChat to decide where a given caller's request should go.
 func OpencodeUpstreamRoute(model string) string {
-	key := strings.ToLower(strings.TrimSpace(model))
-	if openParen := strings.LastIndex(key, "("); openParen >= 0 && strings.HasSuffix(key, ")") {
-		key = strings.TrimSpace(key[:openParen])
-	}
+	key := opencodeRouteKey(model)
 	if opencodeAnthropicRouteModels[key] {
 		return "anthropic"
 	}
 	if opencodeResponsesRouteModels[key] {
 		return "responses"
 	}
+	if opencodeHasResponsesOnlyPrefix(key) {
+		return "responses"
+	}
 	return "chat"
+}
+
+// OpencodeServesChat reports whether the gateway serves the model at
+// /chat/completions. It is false only for lanes the gateway refuses there with
+// ModelProtocolUnsupported, which must be reached through their route.
+func OpencodeServesChat(model string) bool {
+	key := opencodeRouteKey(model)
+	return !opencodeChatUnsupportedModels[key] && !opencodeHasResponsesOnlyPrefix(key)
+}
+
+// opencodeRouteKey normalizes a model id for route lookup, dropping a trailing
+// "(...)" thinking suffix.
+func opencodeRouteKey(model string) string {
+	key := strings.ToLower(strings.TrimSpace(model))
+	if openParen := strings.LastIndex(key, "("); openParen >= 0 && strings.HasSuffix(key, ")") {
+		key = strings.TrimSpace(key[:openParen])
+	}
+	return key
+}
+
+func opencodeHasResponsesOnlyPrefix(key string) bool {
+	for _, prefix := range opencodeResponsesOnlyPrefixes {
+		if strings.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // OpencodeBuiltinModelInfos placeholder
