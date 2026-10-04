@@ -34,9 +34,9 @@ func StartModelsDevUpdater(ctx context.Context) {
 func runModelsDevUpdater(ctx context.Context) {
 	tryRefreshModelsDev(ctx, "startup models.dev refresh")
 
-	ticker := time.NewTicker(modelsRefreshInterval)
+	ticker := time.NewTicker(ModelsRefreshInterval)
 	defer ticker.Stop()
-	log.Infof("periodic models.dev refresh started (interval=%s)", modelsRefreshInterval)
+	log.Infof("periodic models.dev refresh started (interval=%s)", ModelsRefreshInterval)
 	for {
 		select {
 		case <-ctx.Done():
@@ -83,9 +83,9 @@ func refreshModelsDev(ctx context.Context, label string) ([]string, error) {
 }
 
 func fetchModelsDevFromRemote(ctx context.Context) ([]byte, string) {
-	client := &http.Client{Timeout: modelsFetchTimeout}
+	client := &http.Client{Timeout: 30 * time.Second}
 	for _, sourceURL := range modelsdevURLs {
-		reqCtx, cancel := context.WithTimeout(ctx, modelsFetchTimeout)
+		reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, sourceURL, nil)
 		if err != nil {
 			cancel()
