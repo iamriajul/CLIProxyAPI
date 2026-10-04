@@ -56,17 +56,24 @@ func opencodeUpstreamRoute(model string) string {
 }
 
 // RequestToFormat reports the upstream request format used after auth selection.
+//
+// The lane's wire protocol is authoritative, not the caller's: a Responses-native
+// model is served at /responses whatever the source format was, and the request is
+// translated up to it. Gating on the source format instead (the old behavior) left a
+// chat-completions caller on /chat/completions for a Responses-only lane, which the
+// gateway rejects with ModelProtocolUnsupported. MetaExecutor has always worked this
+// way: it pins the wire and translates the caller.
 func (e *OpenCodeExecutor) RequestToFormat(req cliproxyexecutor.Request, opts cliproxyexecutor.Options) sdktranslator.Format {
-	// Only Responses-native lanes accept Responses wire format natively; chat
-	// lanes translate Responses input to chat completions (the Zen gateway
-	// rejects /responses for chat-route models with ModelProtocolUnsupported).
-	if opts.SourceFormat == sdktranslator.FormatOpenAIResponse && opencodeUpstreamRoute(req.Model) == "responses" {
-		return sdktranslator.FormatOpenAIResponse
-	}
-	if opts.SourceFormat == sdktranslator.FormatClaude && opencodeUpstreamRoute(req.Model) == "anthropic" {
+	switch opencodeUpstreamRoute(req.Model) {
+	case "responses":
+		// Codex format, matching executeResponses: it is the Responses wire and
+		// the only target every source format has a registered transform for.
+		return sdktranslator.FormatCodex
+	case "anthropic":
 		return sdktranslator.FormatClaude
+	default:
+		return sdktranslator.FormatOpenAI
 	}
-	return sdktranslator.FormatOpenAI
 }
 
 // PrepareRequest injects OpenCode credentials into the outgoing HTTP request.
@@ -111,10 +118,11 @@ func (e *OpenCodeExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth,
 		ensureOpencodeSessionHeader(&opts, sessionPayloadForOptions(req, opts))
 		return e.ClaudeExecutor.Execute(ctx, auth, req, opts)
 	}
-	// Responses input rides /responses only on Responses-native lanes; the
-	// gateway rejects /responses for chat-route models with
-	// ModelProtocolUnsupported, so those translate to the chat lane instead.
-	if from == sdktranslator.FormatOpenAIResponse && opencodeUpstreamRoute(req.Model) == "responses" {
+	// The lane decides the wire, not the caller: a Responses-native model always
+	// rides /responses, and executeResponses translates the request up from
+	// whatever source format arrived. Chat-route models keep the chat lane,
+	// which the gateway serves most broadly.
+	if opencodeUpstreamRoute(req.Model) == "responses" {
 		return e.executeResponses(ctx, auth, req, opts)
 	}
 	responseFormat := cliproxyexecutor.ResponseFormatOrSource(opts)
@@ -222,15 +230,9 @@ func (e *OpenCodeExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth,
 // ExecuteStream performs a streaming request to the Zen Go gateway.
 func (e *OpenCodeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (_ *cliproxyexecutor.StreamResult, err error) {
 	from := opts.SourceFormat
-	if from.String() == "claude" && opencodeUpstreamRoute(req.Model) == "anthropic" {
-		e.ensureAttributes(auth)
-		auth.Attributes["base_url"] = opencodeAnthropicBaseURL(auth)
-		ensureOpencodeSessionHeader(&opts, sessionPayloadForOptions(req, opts))
-		return e.ClaudeExecutor.ExecuteStream(ctx, auth, req, opts)
-	}
-	// Responses input rides /responses only on Responses-native lanes (see
-	// Execute); chat-route models translate to the chat lane instead.
-	if from == sdktranslator.FormatOpenAIResponse && opencodeUpstreamRoute(req.Model) == "responses" {
+	// Lane-authoritative, matching Execute: a Responses-native model always
+	// streams from /responses, whatever the caller's source format was.
+	if opencodeUpstreamRoute(req.Model) == "responses" {
 		return e.executeResponsesStream(ctx, auth, req, opts)
 	}
 	responseFormat := cliproxyexecutor.ResponseFormatOrSource(opts)
@@ -612,7 +614,22 @@ func (e *OpenCodeExecutor) executeResponses(ctx context.Context, auth *cliproxya
 	reporter := helps.NewExecutorUsageReporter(ctx, e, baseModel, auth)
 	defer reporter.TrackFailure(ctx, &err)
 
-	body := bytes.Clone(req.Payload)
+	// Translate up when the caller did not already speak Responses. The lane's
+	// protocol is authoritative, so a chat-completions or Claude payload is
+	// converted here rather than being sent down a wire the gateway refuses.
+	// This mirrors MetaExecutor, which always pins the Codex/Responses wire and
+	// lets the translator handle every source format.
+	//
+	// The target is the Codex format, not "openai-response": only openai -> codex
+	// has a registered transform, so a chat or Claude caller would otherwise be
+	// forwarded untranslated. Codex output is the Responses shape this endpoint
+	// expects, and codex -> openai-response is registered for the way back.
+	sourcePayload := bytes.Clone(req.Payload)
+	body := sourcePayload
+	if opts.SourceFormat != sdktranslator.FormatOpenAIResponse {
+		body = helps.TranslateRequestWithCodexMultiAgentV2(ctx, opts.Headers, e.cfg, opts.SourceFormat,
+			sdktranslator.FormatCodex, baseModel, bytes.Clone(req.Payload), false)
+	}
 	var errSet error
 	body, errSet = sjson.SetBytes(body, "model", baseModel)
 	if errSet != nil {
@@ -629,8 +646,13 @@ func (e *OpenCodeExecutor) executeResponses(ctx context.Context, auth *cliproxya
 
 	requestedModel := helps.PayloadRequestedModel(opts, req.Model)
 	requestPath := helps.PayloadRequestPath(opts)
-	body = helps.ApplyPayloadConfigWithRequest(e.cfg, baseModel, "openai-response", opts.SourceFormat.String(), "", body, req.Payload, requestedModel, requestPath, opts.Headers)
+	body = helps.ApplyPayloadConfigWithRequest(e.cfg, baseModel, "openai-response", opts.SourceFormat.String(), "", body, sourcePayload, requestedModel, requestPath, opts.Headers)
 	body = normalizeOpencodeTools(body, baseModel)
+	// The gateway issues encrypted_content bound to its own caller, so replaying
+	// it on a later turn is rejected upstream (omp #11928). Strip it the same way
+	// the Meta lane does, or multi-step tool-call turns start failing after this
+	// change moves chat callers onto /responses.
+	body = sanitizeOpenAIResponsesReasoningEncryptedContent(ctx, "opencode executor", body)
 	reporter.SetTranslatedReasoningEffort(body, e.Identifier())
 
 	url := opencodeBaseURL(auth) + "/responses"
@@ -719,7 +741,15 @@ func (e *OpenCodeExecutor) executeResponsesStream(ctx context.Context, auth *cli
 	reporter := helps.NewExecutorUsageReporter(ctx, e, baseModel, auth)
 	defer reporter.TrackFailure(ctx, &err)
 
-	body := bytes.Clone(req.Payload)
+	// Same lane-authoritative translation as executeResponses: a non-Responses
+	// caller is converted up to the /responses wire instead of being sent to a
+	// chat endpoint the gateway refuses for this model.
+	sourcePayload := bytes.Clone(req.Payload)
+	body := sourcePayload
+	if opts.SourceFormat != sdktranslator.FormatOpenAIResponse {
+		body = helps.TranslateRequestWithCodexMultiAgentV2(ctx, opts.Headers, e.cfg, opts.SourceFormat,
+			sdktranslator.FormatCodex, baseModel, bytes.Clone(req.Payload), true)
+	}
 	var errSet error
 	body, errSet = sjson.SetBytes(body, "model", baseModel)
 	if errSet != nil {
@@ -727,7 +757,6 @@ func (e *OpenCodeExecutor) executeResponsesStream(ctx context.Context, auth *cli
 	}
 
 	body = helps.SetBoolIfDifferent(body, "stream", true)
-
 	var errThinking error
 	body, errThinking = helps.ApplyRequestThinking(body, req, opts, opts.SourceFormat.String(), sdktranslator.FormatCodex.String(), e.Identifier())
 	if errThinking != nil {
@@ -736,8 +765,11 @@ func (e *OpenCodeExecutor) executeResponsesStream(ctx context.Context, auth *cli
 
 	requestedModel := helps.PayloadRequestedModel(opts, req.Model)
 	requestPath := helps.PayloadRequestPath(opts)
-	body = helps.ApplyPayloadConfigWithRequest(e.cfg, baseModel, "openai-response", opts.SourceFormat.String(), "", body, req.Payload, requestedModel, requestPath, opts.Headers)
+	body = helps.ApplyPayloadConfigWithRequest(e.cfg, baseModel, "openai-response", opts.SourceFormat.String(), "", body, sourcePayload, requestedModel, requestPath, opts.Headers)
 	body = normalizeOpencodeTools(body, baseModel)
+	// See executeResponses: the gateway binds encrypted_content to its own
+	// caller, so replayed reasoning items must be stripped (omp #11928).
+	body = sanitizeOpenAIResponsesReasoningEncryptedContent(ctx, "opencode executor", body)
 	reporter.SetTranslatedReasoningEffort(body, e.Identifier())
 
 	url := opencodeBaseURL(auth) + "/responses"

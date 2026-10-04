@@ -16,14 +16,24 @@ import "strings"
 // each lane's native protocol.
 
 // modelsdev:routes:begin
-// Generated from models.dev per-model provider.npm (the field opencode's
-// own client routes on) plus gateway-verified pins. Regen with:
-// go run ./cmd/fetch_modelsdev_models
+// Precedence: explicit gateway-verified pins > npm hints > chat default.
+//
+// These routes are not derived from models.dev's per-model provider.npm alone.
+// omp's behavior.kdl records that "models.dev's npm hints misroute these
+// (#887, #1617)", and the live gateway disagrees with npm on several lanes,
+// so the pins below are authoritative and the regen CLI must preserve them:
+//
+//   - muse-spark-*: gateway-served at /responses only (opencode.ai/docs/go
+//     #endpoints, #8957, #10610). A prefix rule so new revisions are covered.
+//   - minimax-m2.7 / minimax-m3: npm claims @ai-sdk/anthropic but the gateway
+//     serves them only at /chat/completions (#1617).
+//   - union-alpha: anthropic lane.
+//
+// Regenerate model lists with: go run ./cmd/fetch_modelsdev_models
 var opencodeAnthropicRouteModels = map[string]bool{
 	"minimax-m2.5":  true,
-	"minimax-m2.7":  true,
-	"minimax-m3":    true,
 	"qwen3.8-flash": true,
+	"union-alpha":   true,
 }
 
 var opencodeResponsesRouteModels = map[string]bool{
@@ -37,11 +47,22 @@ var opencodeResponsesRouteModels = map[string]bool{
 	"muse-spark-1.3-contributor": true,
 }
 
+// opencodeResponsesRoutePrefixes lists id prefixes whose whole family is served
+// at /responses. Exact entries stay in the map above; the prefix covers ids the
+// gateway ships before models.dev publishes them.
+var opencodeResponsesRoutePrefixes = []string{
+	"muse-spark-",
+}
+
 // modelsdev:routes:end
 
 // OpencodeUpstreamRoute reports the gateway wire protocol for a model:
 // "anthropic" for the Claude-protocol lanes, "responses" for Responses-native
 // lanes, "chat" for everything else.
+//
+// The route is a property of the lane, not of the caller: an exact pin wins,
+// then a family prefix (muse-spark-* covers revisions the gateway ships before
+// models.dev publishes them), and chat is the broadly-served default.
 func OpencodeUpstreamRoute(model string) string {
 	key := strings.ToLower(strings.TrimSpace(model))
 	if openParen := strings.LastIndex(key, "("); openParen >= 0 && strings.HasSuffix(key, ")") {
@@ -52,6 +73,11 @@ func OpencodeUpstreamRoute(model string) string {
 	}
 	if opencodeResponsesRouteModels[key] {
 		return "responses"
+	}
+	for _, prefix := range opencodeResponsesRoutePrefixes {
+		if strings.HasPrefix(key, prefix) {
+			return "responses"
+		}
 	}
 	return "chat"
 }
