@@ -67,9 +67,10 @@ func TestSmokeReportedFailureNowRoutesToResponses(t *testing.T) {
 	if got := gjson.GetBytes(gotBody, "model").String(); got != "muse-spark-1.3-contributor" {
 		t.Fatalf("wire model = %q", got)
 	}
-	// 5. Session header still set (prompt-cache alignment preserved).
+	// 5. Session header set: prompt-cache alignment depends on it, so this is
+	// asserted rather than logged.
 	if gotSession == "" {
-		t.Log("note: no x-opencode-session header on this request (affinity fallback)")
+		t.Fatal("x-opencode-session header missing; prompt-cache alignment would break")
 	}
 	// 6. Response reaches the caller.
 	if !gjson.GetBytes(resp.Payload, "output").Exists() {

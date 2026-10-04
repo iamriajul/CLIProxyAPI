@@ -95,6 +95,72 @@ func TestOpencodeChatSourceOnResponsesLaneStreamsFromResponses(t *testing.T) {
 	}
 }
 
+// Regression: ExecuteStream lost its anthropic delegation when the Responses
+// gate was made lane-authoritative, so an anthropic lane driven by a Claude
+// caller would silently stream over /chat/completions instead of /messages.
+// The anthropic branch must stay ahead of the Responses check, in streaming as
+// in the non-streaming path, or the two drift apart.
+func TestOpencodeAnthropicLaneKeepsClaudeWire(t *testing.T) {
+	for _, model := range []string{"qwen3.8-flash", "minimax-m2.5", "union-alpha"} {
+		streamURL, streamErr := anthropicWireURL(model, true)
+		if streamErr != nil {
+			t.Fatalf("%s: ExecuteStream() error = %v", model, streamErr)
+		}
+		if !strings.Contains(streamURL, "/messages") {
+			t.Fatalf("%s: streaming anthropic lane used %q, want /messages", model, streamURL)
+		}
+		nonStreamURL, nonStreamErr := anthropicWireURL(model, false)
+		if nonStreamErr != nil {
+			t.Fatalf("%s: Execute() error = %v", model, nonStreamErr)
+		}
+		if !strings.Contains(nonStreamURL, "/messages") {
+			t.Fatalf("%s: non-streaming anthropic lane used %q, want /messages", model, nonStreamURL)
+		}
+		if streamURL != nonStreamURL {
+			t.Fatalf("%s: streaming used %q but non-streaming used %q; the paths must agree", model, streamURL, nonStreamURL)
+		}
+	}
+}
+
+// anthropicWireURL runs one anthropic-lane request and reports the upstream
+// wire it selected.
+func anthropicWireURL(model string, stream bool) (string, error) {
+	var gotURL string
+	ctx := context.WithValue(context.Background(), "cliproxy.roundtripper", opencodeRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		gotURL = req.URL.String()
+		if stream {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": {"text/event-stream"}},
+				Body:       io.NopCloser(strings.NewReader("event: message_start\ndata: {}\n\n")),
+			}, nil
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": {"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"hi"}]}`)),
+		}, nil
+	}))
+	executor := NewOpenCodeExecutor(&config.Config{})
+	req := cliproxyexecutor.Request{
+		Model:   model,
+		Payload: []byte(`{"model":"` + model + `","messages":[{"role":"user","content":"hi"}]}`),
+	}
+	opts := cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatClaude}
+	var err error
+	if stream {
+		var result *cliproxyexecutor.StreamResult
+		result, err = executor.ExecuteStream(ctx, opencodeTestAuth(), req, opts)
+		if err == nil {
+			for range result.Chunks {
+			}
+		}
+	} else {
+		_, err = executor.Execute(ctx, opencodeTestAuth(), req, opts)
+	}
+	return gotURL, err
+}
+
 // No regression: chat-route lanes keep /chat/completions for every source.
 func TestOpencodeChatRouteLaneStillRidesChat(t *testing.T) {
 	for _, source := range []sdktranslator.Format{sdktranslator.FormatOpenAI, sdktranslator.FormatOpenAIResponse} {

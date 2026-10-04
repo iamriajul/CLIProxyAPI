@@ -230,6 +230,17 @@ func (e *OpenCodeExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth,
 // ExecuteStream performs a streaming request to the Zen Go gateway.
 func (e *OpenCodeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (_ *cliproxyexecutor.StreamResult, err error) {
 	from := opts.SourceFormat
+	// Anthropic lanes keep delegating to the embedded ClaudeExecutor, exactly as
+	// Execute does. This branch must stay ahead of the Responses check: a lane is
+	// only ever one of anthropic/responses/chat, but keeping the same order in
+	// both methods is what guarantees the streaming and non-streaming paths
+	// cannot drift apart again.
+	if from.String() == "claude" && opencodeUpstreamRoute(req.Model) == "anthropic" {
+		e.ensureAttributes(auth)
+		auth.Attributes["base_url"] = opencodeAnthropicBaseURL(auth)
+		ensureOpencodeSessionHeader(&opts, sessionPayloadForOptions(req, opts))
+		return e.ClaudeExecutor.ExecuteStream(ctx, auth, req, opts)
+	}
 	// Lane-authoritative, matching Execute: a Responses-native model always
 	// streams from /responses, whatever the caller's source format was.
 	if opencodeUpstreamRoute(req.Model) == "responses" {
