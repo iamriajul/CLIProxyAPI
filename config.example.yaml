@@ -176,6 +176,19 @@ routing:
     # Retry rounds that need no wait remain controlled by request-retry.
     max-retry-interval: 30
 
+  cooldown:
+    # When true, disable auth/model cooldown scheduling globally (prevents blackout windows after failure states).
+    # A credential/provider disable-cooling value, when present, overrides this global value.
+    disable-cooling: false
+
+    # When true, persist per-auth cooldown status as .cds files next to auth files.
+    # Default is false; when false, cooldown status is kept in memory only.
+    save-cooldown-status: false
+
+    # Cooldown duration in seconds for transient upstream errors (408/500/502/503/504/520-526).
+    # Set to 0 to keep the legacy 60-second cooldown; set to -1 to disable transient error cooldowns.
+    transient-error-cooldown-seconds: 0
+
 # Proxy-side web search (OMP-inspired provider chain). When enabled, models
 # whose upstream has no native search support still get a working web_search
 # tool: the proxy rewrites the server tool to a function call, runs the
@@ -257,20 +270,6 @@ web-search:
   # Proxy for search transports; empty honors ProxyFromEnvironment.
   # proxy-url: ""
 
-  cooldown:
-    # When true, disable auth/model cooldown scheduling globally (prevents blackout windows after failure states).
-    # A credential/provider disable-cooling value, when present, overrides this global value.
-    disable-cooling: false
-
-    # When true, persist per-auth cooldown status as .cds files next to auth files.
-    # Default is false; when false, cooldown status is kept in memory only.
-    save-cooldown-status: false
-
-    # Cooldown duration in seconds for transient upstream errors (408/500/502/503/504/520-526).
-    # Set to 0 to keep the legacy 60-second cooldown; set to -1 to disable transient error cooldowns.
-    transient-error-cooldown-seconds: 0
-
-# Shared request/response behavior.
 requests:
   # Proxy URL. Supports socks5/http/https protocols. Example: socks5://user:pass@192.168.1.1:1080/
   # Per-entry proxy-url also supports "direct" or "none" to bypass both the global proxy-url and environment proxies explicitly.
