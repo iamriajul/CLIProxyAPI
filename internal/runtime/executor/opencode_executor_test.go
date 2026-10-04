@@ -31,18 +31,51 @@ func opencodeTestAuth() *cliproxyauth.Auth {
 	}
 }
 
-func TestOpencodeUpstreamRoute(t *testing.T) {
-	if got := opencodeUpstreamRoute("minimax-m2.5"); got != "anthropic" {
-		t.Fatalf("minimax route = %q", got)
+// The wire decision keeps a caller on its own wire when the lane serves it,
+// otherwise chat, and only for lanes the gateway refuses at chat the lane's own
+// route. Each row is backed by the live gateway matrix in
+// internal/registry/provider_builtins_opencode_routes_test.go.
+func TestOpencodeUpstreamWire(t *testing.T) {
+	const (
+		chat      = sdktranslator.FormatOpenAI
+		responses = sdktranslator.FormatOpenAIResponse
+		claude    = sdktranslator.FormatClaude
+	)
+	cases := []struct {
+		model string
+		from  sdktranslator.Format
+		want  string
+	}{
+		// Plain chat lane: everyone rides chat.
+		{"glm-5.2", chat, "chat"},
+		{"glm-5.2", responses, "chat"},
+		{"glm-5.2", claude, "chat"},
+		{"glm-5.2(high)", claude, "chat"},
+		// Responses-only lanes: every caller is translated to /responses.
+		{"muse-spark-1.3-contributor", chat, "responses"},
+		{"muse-spark-1.3-contributor", claude, "responses"},
+		{"muse-spark-1.3-contributor", responses, "responses"},
+		{"muse-spark-1.4", chat, "responses"},
+		{"gpt-6-luna", chat, "responses"},
+		{"grok-4.7", claude, "responses"},
+		// Responses lane that also serves chat: chat and Claude callers stay on chat.
+		{"deepseek-v4-flash", responses, "responses"},
+		{"deepseek-v4-flash", chat, "chat"},
+		{"deepseek-v4-flash", claude, "chat"},
+		// /messages lane that also serves chat.
+		{"minimax-m2.5", claude, "anthropic"},
+		{"minimax-m2.5", chat, "chat"},
+		{"qwen3.8-flash", claude, "anthropic"},
+		{"qwen3.8-flash", responses, "chat"},
+		// /messages-only lane: every caller is translated to /messages.
+		{"minimax-m2.7", claude, "anthropic"},
+		{"minimax-m2.7", chat, "anthropic"},
+		{"minimax-m2.7", responses, "anthropic"},
 	}
-	if got := opencodeUpstreamRoute("qwen3.8-flash"); got != "anthropic" {
-		t.Fatalf("qwen flash route = %q", got)
-	}
-	if got := opencodeUpstreamRoute("gpt-5.6-luna"); got != "responses" {
-		t.Fatalf("luna route = %q", got)
-	}
-	if got := opencodeUpstreamRoute("glm-5.2"); got != "chat" {
-		t.Fatalf("glm route = %q", got)
+	for _, c := range cases {
+		if got := opencodeUpstreamWire(c.model, c.from); got != c.want {
+			t.Errorf("opencodeUpstreamWire(%q, %s) = %q, want %q", c.model, c.from, got, c.want)
+		}
 	}
 	if got := registry.OpencodeUpstreamRoute("glm-5.2(high)"); got != "chat" {
 		t.Fatalf("suffixed route = %q", got)
@@ -121,7 +154,10 @@ func TestOpencodeClaudeSourceTranslates(t *testing.T) {
 	}
 }
 
-func TestOpencodeNoToolChoiceOnDeepseek(t *testing.T) {
+// tool_choice "auto" is accepted on every lane (live 2026-10-04), so it is
+// forwarded untouched, including on the DeepSeek lanes that used to have it
+// stripped.
+func TestOpencodeAutoToolChoiceKeptOnDeepseek(t *testing.T) {
 	var upstreamBody []byte
 	ctx := context.WithValue(context.Background(), "cliproxy.roundtripper", opencodeRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		var err error
@@ -144,8 +180,8 @@ func TestOpencodeNoToolChoiceOnDeepseek(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if gjson.GetBytes(upstreamBody, "tool_choice").Exists() {
-		t.Fatalf("tool_choice should be stripped for deepseek lanes")
+	if got := gjson.GetBytes(upstreamBody, "tool_choice").String(); got != "auto" {
+		t.Fatalf("tool_choice = %q, want auto forwarded", got)
 	}
 	if got := gjson.GetBytes(upstreamBody, "tools.0.type").String(); got != "function" {
 		t.Fatalf("tools type = %q", got)
@@ -153,8 +189,6 @@ func TestOpencodeNoToolChoiceOnDeepseek(t *testing.T) {
 }
 
 func TestOpencodeToolChoiceKeptOnVisionExp(t *testing.T) {
-	// The vision-exp lane explicitly keeps tool_choice: the explicit lane set
-	// must not over-strip the way substring matching would.
 	var upstreamBody []byte
 	ctx := context.WithValue(context.Background(), "cliproxy.roundtripper", opencodeRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		var err error

@@ -255,6 +255,7 @@ func (e *ClaudeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.A
 		return nil, errMidSystem
 	}
 	bodyForUpstream = stripAnthropicOnlyClassifierFields(bodyForUpstream, isAnthropicBase)
+	bodyForUpstream = e.normalizeUpstreamBody(bodyForUpstream)
 	reporter.SetTranslatedReasoningEffort(bodyForUpstream, to.String())
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyForUpstream))
 	if err != nil {
