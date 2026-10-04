@@ -469,3 +469,31 @@ func TestOpencodeTranslatedCallerReasoningNotReplayed(t *testing.T) {
 		t.Errorf("native Responses caller: %d reasoning of %d items, want 1 of 4", r, n)
 	}
 }
+
+// Token counts never reach the gateway (it has no count_tokens endpoint) and
+// come back in the caller's own shape: a chat caller on the /messages-only
+// minimax-m2.7 lane gets OpenAI usage, a Claude caller gets input_tokens.
+func TestOpencodeCountTokensStaysLocalInCallerShape(t *testing.T) {
+	ctx := context.WithValue(context.Background(), "cliproxy.roundtripper", opencodeRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		t.Fatalf("token counting must not call the gateway (got %s)", req.URL)
+		return nil, nil
+	}))
+	for _, tc := range []struct {
+		source sdktranslator.Format
+		path   string
+	}{
+		{sdktranslator.FormatOpenAI, "usage.prompt_tokens"},
+		{sdktranslator.FormatClaude, "input_tokens"},
+	} {
+		payload := []byte(`{"model":"minimax-m2.7","max_tokens":64,"messages":[{"role":"user","content":"Hello there, how are you today?"}]}`)
+		resp, err := NewOpenCodeExecutor(&config.Config{}).CountTokens(ctx, opencodeTestAuth(),
+			cliproxyexecutor.Request{Model: "minimax-m2.7", Payload: payload},
+			cliproxyexecutor.Options{SourceFormat: tc.source, OriginalRequest: payload})
+		if err != nil {
+			t.Fatalf("%s: CountTokens() error = %v", tc.source, err)
+		}
+		if gjson.GetBytes(resp.Payload, tc.path).Int() <= 0 {
+			t.Errorf("%s: count missing at %s: %s", tc.source, tc.path, resp.Payload)
+		}
+	}
+}

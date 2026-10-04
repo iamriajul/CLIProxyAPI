@@ -388,6 +388,11 @@ func (e *OpenCodeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth
 
 // CountTokens estimates token count for OpenCode requests.
 func (e *OpenCodeExecutor) CountTokens(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
+	// Counts are local estimates on every lane: the gateway has no count_tokens
+	// endpoint (404), and the ClaudeExecutor estimates locally for any
+	// non-Anthropic base. Only Claude callers are delegated, because the
+	// ClaudeExecutor returns its count in Claude's shape; other callers on a
+	// /messages lane are counted below so the reply keeps their own shape.
 	if opts.SourceFormat == sdktranslator.FormatClaude && opencodeUpstreamWire(req.Model, opts.SourceFormat) == "anthropic" {
 		e.ensureAttributes(auth)
 		auth.Attributes["base_url"] = opencodeAnthropicBaseURL(auth)
@@ -724,11 +729,11 @@ func dropOpencodeEncryptedReasoningInclude(body []byte) []byte {
 // reads only that or metadata["access_token"], while auth files written by the
 // OpenCode login flow store it as metadata["api_key"].
 func (e *OpenCodeExecutor) prepareAnthropicDelegation(auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts *cliproxyexecutor.Options) {
-	ensureOpencodeSessionHeader(opts, sessionPayloadForOptions(req, *opts))
-	e.ensureAttributes(auth)
-	if auth == nil {
+	if opts == nil || auth == nil {
 		return
 	}
+	ensureOpencodeSessionHeader(opts, sessionPayloadForOptions(req, *opts))
+	e.ensureAttributes(auth)
 	auth.Attributes["base_url"] = opencodeAnthropicBaseURL(auth)
 	auth.Attributes["header:User-Agent"] = "CLIProxyAPI/" + buildinfo.Version
 	if token := strings.TrimSpace(opencodeCreds(auth)); token != "" {
