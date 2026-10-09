@@ -22,6 +22,16 @@ var modelsdevURLs = []string{
 
 var modelsdevUpdaterOnce sync.Once
 
+// ModelsDevRefreshEnabled reports whether the periodic models.dev refresh may
+// run. It is skipped under --local-model (embedded catalogs pinned) and runs
+// under Home mode. The CLI records the flag via SetLocalModelCatalogs before
+// the service starts; read here so SDK and CLI users share one policy.
+func ModelsDevRefreshEnabled() bool {
+	catalogRuntime.Lock()
+	defer catalogRuntime.Unlock()
+	return !catalogRuntime.local
+}
+
 // StartModelsDevUpdater starts a background updater that fetches the
 // models.dev catalog immediately and refreshes it every 3 hours.
 // Safe to call multiple times; only one updater runs.
@@ -30,7 +40,6 @@ func StartModelsDevUpdater(ctx context.Context) {
 		go runModelsDevUpdater(ctx)
 	})
 }
-
 func runModelsDevUpdater(ctx context.Context) {
 	tryRefreshModelsDev(ctx, "startup models.dev refresh")
 
