@@ -287,11 +287,19 @@ compared like-for-like, since it is per-credential rather than one catalogue
 section. A Z.AI discovery fault surfaces as a degraded lane, not as a
 freshness row.
 
+Upstream's catalog-sources switchboard removed the `cmd/server` helper that
+used to start the ticker, so the ticker now starts from `Service.Run` next to
+`StartModelCatalogUpdaters`, gated by `ModelsDevRefreshEnabled` (same policy:
+skipped under `--local-model`, runs under Home mode). It lives in `Run`
+rather than in `startModelCatalogUpdaters` so unit tests exercising that
+helper never perform a live catalog fetch.
+
 ```bash
 go test ./internal/registry/ -run 'TestConvertModelsDevCatalog|TestModelsDevLive|TestTryRefreshModelsDev|TestGetOpencodeModelsCoverGatewayLanes|TestGetModelsDevStatus'
 go test ./internal/registry/ -run 'TestGetZaiModelsCoverCodingPlan'
 go test ./cmd/fetch_modelsdev_models/
-go test ./cmd/server/ -run 'TestModelCatalogUpdaterPlan'
+go test ./internal/registry/ -run 'TestModelsDevRefreshEnabledHonorsLocalMode'
+grep -q "StartModelsDevUpdater(ctx)" sdk/cliproxy/service_lifecycle.go
 go test ./internal/api/handlers/management/ -run TestGetModelsDevStatus_Shape
 go test ./internal/tui/ -run 'TestCatalogAge|TestRenderCatalogSectionStates'
 ! grep -rq 'ZaiLiveModelsStatus' internal/api/handlers/management/
