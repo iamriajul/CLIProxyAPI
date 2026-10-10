@@ -299,6 +299,7 @@ go test ./internal/registry/ -run 'TestConvertModelsDevCatalog|TestModelsDevLive
 go test ./internal/registry/ -run 'TestGetZaiModelsCoverCodingPlan'
 go test ./cmd/fetch_modelsdev_models/
 go test ./internal/registry/ -run 'TestModelsDevRefreshEnabledHonorsLocalMode'
+grep -q "s.startModelCatalogUpdaters(ctx)" sdk/cliproxy/service_lifecycle.go
 grep -q "StartModelsDevUpdater(ctx)" sdk/cliproxy/service_lifecycle.go
 go test ./internal/api/handlers/management/ -run TestGetModelsDevStatus_Shape
 go test ./internal/tui/ -run 'TestCatalogAge|TestRenderCatalogSectionStates'
