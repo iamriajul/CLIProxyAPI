@@ -53,6 +53,8 @@ func (s *Service) Run(ctx context.Context) error {
 		s.homeMu.Unlock()
 	}()
 
+	s.startModelCatalogUpdaters(ctx)
+
 	// Periodic models.dev refresh (opencode-go lanes). Started here rather
 	// than in startModelCatalogUpdaters so unit tests exercising that helper
 	// never perform a live catalog fetch; Run is the production entry point.
