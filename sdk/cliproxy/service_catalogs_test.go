@@ -2,6 +2,9 @@ package cliproxy
 
 import (
 	"context"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"testing"
@@ -100,4 +103,42 @@ func TestServiceCatalogStartupAndConfigReload(t *testing.T) {
 	defer restartCancel()
 	s.startModelCatalogUpdaters(restartCtx)
 	awaitCatalog(first)
+}
+
+func TestServiceRunIncludesCatalogUpdaters(t *testing.T) {
+	fset := token.NewFileSet()
+	node, err := parser.ParseFile(fset, "service_lifecycle.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var foundGeneral, foundModelsDev bool
+	ast.Inspect(node, func(n ast.Node) bool {
+		fn, ok := n.(*ast.FuncDecl)
+		if !ok || fn.Name.Name != "Run" {
+			return true
+		}
+		ast.Inspect(fn.Body, func(b ast.Node) bool {
+			call, ok := b.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			switch sel := call.Fun.(type) {
+			case *ast.SelectorExpr:
+				if sel.Sel.Name == "startModelCatalogUpdaters" {
+					foundGeneral = true
+				}
+				if sel.Sel.Name == "StartModelsDevUpdater" {
+					foundModelsDev = true
+				}
+			}
+			return true
+		})
+		return false
+	})
+	if !foundGeneral {
+		t.Fatal("Service.Run does not call s.startModelCatalogUpdaters(ctx); general model catalogs (Claude, Antigravity, Codex) will not be refreshed")
+	}
+	if !foundModelsDev {
+		t.Fatal("Service.Run does not call registry.StartModelsDevUpdater(ctx); models.dev catalog will not be refreshed")
+	}
 }
