@@ -1920,3 +1920,32 @@ func TestConvertClaudeRequestToOpenAI_MidConversationToolAdditionAppendsToTools(
 		t.Fatalf("ConvertOpenAIResponseToClaudeNonStream tool name = %q, want SubagentHandback; resp=%s", got, claudeResp)
 	}
 }
+
+// A padded choice name must still hit the downgrade: dropped names are
+// stored trimmed, so looking the raw name up misses and forwards a choice
+// for a function that was never emitted.
+func TestDroppedSearchChoiceLookupTrimsPadding(t *testing.T) {
+	in := []byte(`{"model":"gpt-5","messages":[{"role":"user","content":"hi"}],
+		"tools":[{"type":"web_search_20250305","name":"web_search"},{"name":"calc","description":"d","input_schema":{"type":"object"}}],
+		"tool_choice":{"type":"tool","name":"  web_search  "}}`)
+	out, _ := ConvertClaudeRequestToOpenAI("gpt-5", in, false)
+	if got := gjson.GetBytes(out, "tool_choice").String(); got != "auto" {
+		t.Fatalf("tool_choice = %q, want auto: %s", got, out)
+	}
+}
+
+// A nameless typed search tool is still the server tool by convention, so
+// a choice naming web_search refers to the dropped tool rather than to a
+// real function that was never emitted.
+func TestNamelessSearchToolDowngradesForcedChoice(t *testing.T) {
+	in := []byte(`{"model":"gpt-5","messages":[{"role":"user","content":"hi"}],
+		"tools":[{"type":"web_search_20250305"},{"name":"calc","description":"d","input_schema":{"type":"object"}}],
+		"tool_choice":{"type":"tool","name":"web_search"}}`)
+	out, _ := ConvertClaudeRequestToOpenAI("gpt-5", in, false)
+	if got := gjson.GetBytes(out, "tool_choice").String(); got != "auto" {
+		t.Fatalf("tool_choice = %q, want auto: %s", got, out)
+	}
+	if got := gjson.GetBytes(out, "tools.#").Int(); got != 1 {
+		t.Fatalf("calc must survive the drop: %s", out)
+	}
+}

@@ -936,3 +936,42 @@ func TestConvertClaudeRequestToGemini_TypedWebSearchInjectsGoogleSearch(t *testi
 		t.Fatalf("mixed tools should keep functionDeclarations: %s", mixedOut)
 	}
 }
+
+// A forced choice naming the typed search tool must not constrain Gemini
+// to a function that was never declared: the tool becomes a grounding
+// block, so emitting allowedFunctionNames would point at nothing. A forced
+// choice naming a real function must still constrain normally.
+func TestConvertClaudeRequestToGemini_ForcedSearchLeavesNoDanglingConstraint(t *testing.T) {
+	registry.GetGlobalRegistry().RegisterClient("test-gemini-claude-forced", "gemini", []*registry.ModelInfo{
+		{ID: "gemini-search-capable", SupportsWebSearch: true},
+	})
+	t.Cleanup(func() { registry.GetGlobalRegistry().UnregisterClient("test-gemini-claude-forced") })
+
+	forced := []byte(`{
+		"model": "gemini-search-capable",
+		"messages": [{"role": "user", "content": "hi"}],
+		"tools": [{"type": "web_search_20250305", "name": "web_search"}],
+		"tool_choice": {"type": "tool", "name": "web_search"}
+	}`)
+	out, _ := ConvertClaudeRequestToGemini("gemini-search-capable", forced, false)
+	if !gjson.GetBytes(out, "tools.0.googleSearch").Exists() {
+		t.Fatalf("grounding block missing: %s", out)
+	}
+	if cfg := gjson.GetBytes(out, "toolConfig"); cfg.Exists() {
+		t.Fatalf("forced search must leave no calling constraint, got %s: %s", cfg.Raw, out)
+	}
+
+	mixed := []byte(`{
+		"model": "gemini-search-capable",
+		"messages": [{"role": "user", "content": "hi"}],
+		"tools": [
+			{"type": "web_search_20250305", "name": "web_search"},
+			{"name": "lookup", "input_schema": {"type": "object"}}
+		],
+		"tool_choice": {"type": "tool", "name": "lookup"}
+	}`)
+	mixedOut, _ := ConvertClaudeRequestToGemini("gemini-search-capable", mixed, false)
+	if got := gjson.GetBytes(mixedOut, "toolConfig.functionCallingConfig.allowedFunctionNames.0").String(); got != "lookup" {
+		t.Fatalf("forced function must still constrain, got %s: %s", gjson.GetBytes(mixedOut, "toolConfig").Raw, mixedOut)
+	}
+}
