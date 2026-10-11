@@ -403,11 +403,14 @@ func convertClaudeRequestToOpenAI(modelName string, inputRawJSON []byte, stream 
 	if len(midConversationToolDefs) > 0 {
 		toolIndexByName = make(map[string]int)
 	}
+	droppedUnnamedSearchTool := false
 	if tools := root.Get("tools"); tools.Exists() && tools.IsArray() {
 		tools.ForEach(func(_, tool ojson.Result) bool {
 			if translatorcommon.IsClaudeWebSearchToolType(tool.Get("type").String()) {
 				if name := strings.TrimSpace(tool.Get("name").String()); name != "" {
 					droppedSearchToolNames[name] = true
+				} else {
+					droppedUnnamedSearchTool = true
 				}
 				return true
 			}
@@ -425,6 +428,8 @@ func convertClaudeRequestToOpenAI(modelName string, inputRawJSON []byte, stream 
 		if translatorcommon.IsClaudeWebSearchToolType(def.Get("type").String()) {
 			if name := strings.TrimSpace(def.Get("name").String()); name != "" {
 				droppedSearchToolNames[name] = true
+			} else {
+				droppedUnnamedSearchTool = true
 			}
 			continue
 		}
@@ -459,9 +464,15 @@ func convertClaudeRequestToOpenAI(modelName string, inputRawJSON []byte, stream 
 		case "none":
 			_ = outDoc.Set("tool_choice", "none")
 		case "tool":
-			// Specific tool choice
-			toolName := toolChoice.Get("name").String()
-			if droppedSearchToolNames[toolName] {
+			// Specific tool choice. The lookup name is trimmed to match how
+			// dropped names are stored; without this a padded name misses
+			// the downgrade and is forwarded as a choice for a function
+			// that was never emitted.
+			toolName := strings.TrimSpace(toolChoice.Get("name").String())
+			// A nameless dropped search tool is still the server tool by
+			// convention ("web_search"), so a choice naming it refers to
+			// the dropped tool rather than to a real function.
+			if droppedSearchToolNames[toolName] || (droppedUnnamedSearchTool && toolName == "web_search") {
 				// The forced search tool was dropped; let the model use
 				// remaining tools, or omit the choice when none remain.
 				if hasTranslatedTools(outDoc) {
