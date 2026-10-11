@@ -6,40 +6,38 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 )
 
-func TestIsClaudeWebSearchToolTypeAcceptsFutureVersions(t *testing.T) {
+// The match is a closed list of the versions Anthropic has actually
+// shipped. A future dated version is deliberately NOT recognized: it may
+// carry different semantics, and mistranslating it as the current tool is
+// worse than leaving it to normal custom-tool handling (which routes to
+// the proxy-side search fallback).
+func TestIsClaudeWebSearchToolTypeMatchesKnownVersions(t *testing.T) {
 	for _, toolType := range []string{
 		"web_search_20250305",
 		"web_search_20260209",
-		"web_search_20990101",
-		"WEB_SEARCH_20250305",
 	} {
 		if !IsClaudeWebSearchToolType(toolType) {
 			t.Fatalf("%q should match", toolType)
 		}
 	}
-	for _, toolType := range []string{"", "custom", "web_search", "web_fetch_20250305", "my_web_search_x"} {
-		if IsClaudeWebSearchToolType(toolType) {
-			t.Fatalf("%q should not match", toolType)
-		}
-	}
-}
-
-// A version segment must be a real date. A bare "web_search_" or an
-// unversioned "web_search_custom" is a client-defined tool, and treating it
-// as Anthropic's server tool would strip a tool the client actually
-// implemented.
-func TestIsClaudeWebSearchToolTypeRequiresDatedVersion(t *testing.T) {
 	for _, toolType := range []string{
+		"",
+		"custom",
+		"web_search",
 		"web_search_",
 		"web_search_custom",
 		"web_search_2025030",
 		"web_search_202503051",
 		"web_search_2025030a",
+		"web_search_20990101",
+		"WEB_SEARCH_20250305",
+		"web_fetch_20250305",
+		"my_web_search_x",
 		"not_web_search_20250305",
 		"web_search-20250305",
 	} {
 		if IsClaudeWebSearchToolType(toolType) {
-			t.Fatalf("%q should not match: only a dated version is a server tool", toolType)
+			t.Fatalf("%q should not match", toolType)
 		}
 	}
 }
