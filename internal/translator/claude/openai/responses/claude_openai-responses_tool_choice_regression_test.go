@@ -39,26 +39,25 @@ func TestNamespaceForcedToolChoiceSurvivesConversion(t *testing.T) {
 	}
 }
 
-// A plain client function tool named `web_search` must not shadow a declared
-// typed search tool when the client forces the search.
-func TestClientFunctionNamedWebSearchDoesNotShadowForcedSearch(t *testing.T) {
+// A client function literally named `web_search` must not shadow a declared
+// typed search tool: the server tool wins the name, so a choice naming the
+// search cannot become a forced call to the dropped client function.
+func TestClientFunctionNamedWebSearchDoesNotShadowServerSearch(t *testing.T) {
 	raw := []byte(`{
 		"model":"claude-test",
 		"input":[{"role":"user","content":"search"}],
-		"tools":[{"type":"web_search"},{"type":"function","name":"local_search","parameters":{"type":"object","properties":{}}}],
+		"tools":[{"type":"web_search"},{"type":"function","name":"web_search","parameters":{"type":"object","properties":{}}}],
 		"tool_choice":{"type":"web_search"}
 	}`)
 	out, _ := ConvertOpenAIResponsesRequestToClaude("claude-test", raw, false)
-	choice := gjson.GetBytes(out, "tool_choice")
-	if got := choice.Get("type").String(); got != "tool" {
-		t.Fatalf("tool_choice.type = %q, want tool: %s", got, out)
+	tools := gjson.GetBytes(out, "tools").Array()
+	if len(tools) != 1 {
+		t.Fatalf("expected the server tool to win the name outright, got %d tools: %s", len(tools), out)
 	}
-	declared := map[string]bool{}
-	gjson.GetBytes(out, "tools").ForEach(func(_, tool gjson.Result) bool {
-		declared[tool.Get("name").String()] = true
-		return true
-	})
-	if !declared[choice.Get("name").String()] {
-		t.Fatalf("tool_choice.name %q is not a declared tool %v: %s", choice.Get("name").String(), declared, out)
+	if got := tools[0].Get("type").String(); got != "web_search_20250305" {
+		t.Fatalf("surviving tool type = %q, want the server tool: %s", got, out)
+	}
+	if choice := gjson.GetBytes(out, "tool_choice"); choice.Get("type").String() == "tool" {
+		t.Fatalf("tool_choice = %s, want no forced tool: %s", choice.Raw, out)
 	}
 }
