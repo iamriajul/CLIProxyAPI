@@ -79,7 +79,7 @@ func convertOpenAIResponsesRequestToGemini(modelName string, inputRawJSON []byte
 		if len(functionDeclarations) > 0 || !hasGoogleSearch {
 			_ = outDoc.SetRawBytes("toolConfig.functionCallingConfig", allowedToolsConfig)
 		}
-	} else if len(functionDeclarations) > 0 && toolChoice.Exists() {
+	} else if len(functionDeclarations) > 0 && toolChoice.Exists() && !forcesResponsesSearchTool(toolChoice, root) {
 		if toolConfig, ok := util.ConvertResponsesToolChoiceToGemini(toolChoice, forwardMap); ok {
 			_ = outDoc.SetRawBytes("toolConfig.functionCallingConfig", toolConfig)
 		}
