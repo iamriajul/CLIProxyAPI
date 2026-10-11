@@ -368,10 +368,23 @@ func convertClaudeRequestToOpenAI(modelName string, inputRawJSON []byte, stream 
 		out = translatorcommon.SetRawArrayItems(out, "messages", messageItems)
 	}
 
-	// Process tools - convert Anthropic tools to OpenAI functions
+	// Process tools - convert Anthropic tools to OpenAI functions.
+	// Typed server web_search tools have no Chat Completions equivalent and
+	// are skipped instead of coerced into inert fake functions; the
+	// proxy-side websearch fallback serves those requests.
+	droppedSearchToolNames := map[string]bool{}
+	droppedUnnamedSearchTool := false
 	if tools := root.Get("tools"); tools.Exists() && tools.IsArray() {
 		var toolItems [][]byte
 		tools.ForEach(func(_, tool gjson.Result) bool {
+			if translatorcommon.IsClaudeWebSearchToolType(tool.Get("type").String()) {
+				if name := strings.TrimSpace(tool.Get("name").String()); name != "" {
+					droppedSearchToolNames[name] = true
+				} else {
+					droppedUnnamedSearchTool = true
+				}
+				return true
+			}
 			openAIToolJSON := []byte(`{"type":"function","function":{"name":"","description":""}}`)
 			openAIToolJSON, _ = sjson.SetBytes(openAIToolJSON, "function.name", tool.Get("name").String())
 			openAIToolJSON, _ = sjson.SetBytes(openAIToolJSON, "function.description", tool.Get("description").String())
@@ -400,15 +413,31 @@ func convertClaudeRequestToOpenAI(modelName string, inputRawJSON []byte, stream 
 		}
 		switch choiceType {
 		case "auto":
-			out, _ = sjson.SetBytes(out, "tool_choice", "auto")
+			if hasTranslatedTools(out) {
+				out, _ = sjson.SetBytes(out, "tool_choice", "auto")
+			}
 		case "any":
-			out, _ = sjson.SetBytes(out, "tool_choice", "required")
+			if hasTranslatedTools(out) {
+				out, _ = sjson.SetBytes(out, "tool_choice", "required")
+			}
 		case "none":
 			out, _ = sjson.SetBytes(out, "tool_choice", "none")
 		case "tool":
-			// Specific tool choice
-			toolName := toolChoice.Get("name").String()
-			if toolName != "" {
+			// Specific tool choice. The lookup name is trimmed to match how
+			// dropped names are stored; without this a padded name misses
+			// the downgrade and is forwarded as a choice for a function
+			// that was never emitted.
+			toolName := strings.TrimSpace(toolChoice.Get("name").String())
+			// A nameless dropped search tool is still the server tool by
+			// convention ("web_search"), so a choice naming it refers to
+			// the dropped tool rather than to a real function.
+			if droppedSearchToolNames[toolName] || (droppedUnnamedSearchTool && toolName == "web_search") {
+				// The forced search tool was dropped; let the model use
+				// remaining tools, or omit the choice when none remain.
+				if tools := gjson.GetBytes(out, "tools"); tools.IsArray() && len(tools.Array()) > 0 {
+					out, _ = sjson.SetBytes(out, "tool_choice", "auto")
+				}
+			} else if toolName != "" {
 				toolChoiceJSON := []byte(`{"type":"function","function":{"name":""}}`)
 				toolChoiceJSON, _ = sjson.SetBytes(toolChoiceJSON, "function.name", toolName)
 				out, _ = sjson.SetRawBytes(out, "tool_choice", toolChoiceJSON)
@@ -431,6 +460,11 @@ func convertClaudeRequestToOpenAI(modelName string, inputRawJSON []byte, stream 
 	}
 
 	return out, drops.Err()
+}
+
+func hasTranslatedTools(out []byte) bool {
+	tools := gjson.GetBytes(out, "tools")
+	return tools.IsArray() && len(tools.Array()) > 0
 }
 
 func normalizeObjectSchemaProperties(schema any) any {

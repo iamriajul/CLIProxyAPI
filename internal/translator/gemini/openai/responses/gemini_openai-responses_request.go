@@ -56,9 +56,9 @@ func convertOpenAIResponsesRequestToGemini(modelName string, inputRawJSON []byte
 		out, _ = sjson.SetRawBytes(out, "tools", translatorcommon.JoinRawArray(toolBlocks))
 	}
 
-	// Handle tool_choice if present (only configure function calling when function declarations exist)
+	// Handle tool_choice if present (only configure function calling when function declarations exist).
 	if len(functionDeclarations) > 0 {
-		if toolChoice := root.Get("tool_choice"); toolChoice.Exists() {
+		if toolChoice := root.Get("tool_choice"); toolChoice.Exists() && !forcesResponsesSearchTool(toolChoice, root) {
 			if toolConfig, ok := util.ConvertResponsesToolChoiceToGemini(toolChoice, forwardMap); ok {
 				out, _ = sjson.SetRawBytes(out, "toolConfig.functionCallingConfig", toolConfig)
 			}

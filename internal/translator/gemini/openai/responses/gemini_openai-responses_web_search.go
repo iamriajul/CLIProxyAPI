@@ -7,7 +7,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 	translatorcommon "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/common"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -17,45 +16,14 @@ import (
 // checking both dynamic registry capability (SupportsWebSearch) and models.json
 // static definitions (native_capabilities.web_search). Explicit false wins as a veto.
 func ModelSupportsWebSearch(modelID string) bool {
-	info := registry.LookupModelInfo(modelID)
-	infoAG := registry.LookupModelInfo(modelID, "antigravity")
-
-	// 1. Explicit false in static definitions acts as an absolute veto.
-	if info != nil && info.NativeCapabilities != nil && info.NativeCapabilities.WebSearch != nil && !*info.NativeCapabilities.WebSearch {
-		return false
-	}
-	if infoAG != nil && infoAG.NativeCapabilities != nil && infoAG.NativeCapabilities.WebSearch != nil && !*infoAG.NativeCapabilities.WebSearch {
-		return false
-	}
-
-	// 2. Explicit true in static definitions.
-	if info != nil && info.NativeCapabilities != nil && info.NativeCapabilities.WebSearch != nil && *info.NativeCapabilities.WebSearch {
-		return true
-	}
-	if infoAG != nil && infoAG.NativeCapabilities != nil && infoAG.NativeCapabilities.WebSearch != nil && *infoAG.NativeCapabilities.WebSearch {
-		return true
-	}
-
-	// 3. Dynamic capability checks via Antigravity probes and registry flags.
-	if registry.AntigravityWebSearchModelFor(modelID) != "" {
-		return true
-	}
-	if (info != nil && info.SupportsWebSearch) || (infoAG != nil && infoAG.SupportsWebSearch) {
-		return true
-	}
-	return false
+	return translatorcommon.GeminiModelSupportsWebSearch(modelID)
 }
 
 // isResponsesWebSearchToolType checks whether a tool type matches OpenAI Responses web search tool.
 // Official OpenAI documentation supports "web_search", "web_search_2025_08_26", and legacy
 // "web_search_preview" / "web_search_preview_2025_03_11".
 func isResponsesWebSearchToolType(toolType string) bool {
-	switch toolType {
-	case "web_search", "web_search_2025_08_26", "web_search_preview", "web_search_preview_2025_03_11":
-		return true
-	default:
-		return false
-	}
+	return translatorcommon.IsResponsesWebSearchToolType(toolType)
 }
 
 // HasResponsesWebSearchTool checks if the request tools array contains an OpenAI web search tool.
@@ -111,6 +79,14 @@ func AllowsResponsesWebSearchToolChoice(root gjson.Result) bool {
 			return true
 		case "web_search", "web_search_2025_08_26", "web_search_preview", "web_search_preview_2025_03_11":
 			return true
+		case "tool", "function", "custom":
+			// A choice forcing the search tool by name still permits
+			// grounding: the name refers to the typed tool, which becomes
+			// a grounding block rather than a function declaration.
+			if ResponsesSearchToolNames(root)[choiceToolName(toolChoice)] {
+				return true
+			}
+			return false
 		case "allowed_tools":
 			tools := toolChoice.Get("tools")
 			if tools.IsArray() {
@@ -126,6 +102,51 @@ func AllowsResponsesWebSearchToolChoice(root gjson.Result) bool {
 		}
 	}
 	return false
+}
+
+// ResponsesSearchToolNames returns the names of declared typed search
+// tools. A nameless one defaults to "web_search", the name the translator
+// assigns it, so a choice naming it still resolves.
+func ResponsesSearchToolNames(root gjson.Result) map[string]bool {
+	names := map[string]bool{}
+	for _, tool := range root.Get("tools").Array() {
+		if !isResponsesWebSearchToolType(tool.Get("type").String()) {
+			continue
+		}
+		name := strings.TrimSpace(tool.Get("name").String())
+		if name == "" {
+			name = "web_search"
+		}
+		names[name] = true
+	}
+	return names
+}
+
+// choiceToolName reads the forced tool name from the choice shapes the
+// Responses API accepts.
+func choiceToolName(choice gjson.Result) string {
+	for _, path := range []string{"name", "function.name", "custom.name"} {
+		if name := strings.TrimSpace(choice.Get(path).String()); name != "" {
+			return name
+		}
+	}
+	return ""
+}
+
+// forcesResponsesSearchTool reports whether a tool_choice forces the typed
+// search tool by name. Such a choice must not become a function-calling
+// constraint: the tool is translated to a grounding block, so the named
+// function was never declared.
+func forcesResponsesSearchTool(choice, root gjson.Result) bool {
+	if !choice.IsObject() {
+		return false
+	}
+	switch strings.TrimSpace(choice.Get("type").String()) {
+	case "tool", "function", "custom":
+		return ResponsesSearchToolNames(root)[choiceToolName(choice)]
+	default:
+		return false
+	}
 }
 
 // ExtractResponsesWebSearchQuery extracts the search query from OpenAI Responses input.
