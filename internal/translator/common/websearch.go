@@ -1,23 +1,25 @@
 package common
 
 import (
-	"regexp"
 	"strings"
 
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 )
 
-// claudeWebSearchTypePattern matches a versioned Claude web_search tool
-// type. Anthropic dates the version (web_search_20250305,
-// web_search_20260209), so the date segment is matched rather than listed:
-// a bare `web_search_` or an unversioned custom type is not a server tool
-// declaration and must keep falling through to normal tool translation.
-var claudeWebSearchTypePattern = regexp.MustCompile(`^web_search_\d{8}$`)
-
-// IsClaudeWebSearchToolType reports whether a Claude tool type is a
-// versioned server web_search declaration.
+// IsClaudeWebSearchToolType reports whether a Claude tool type is one of
+// Anthropic's known server web_search declarations. Matching is deliberately
+// a closed list, not a version pattern: a future dated version may carry
+// different semantics, and mistranslating it as the current tool is worse
+// than leaving it alone. An unrecognized version falls through to normal
+// custom-tool translation, which routes the request to the proxy-side
+// search fallback instead of sending a tool the target cannot run.
 func IsClaudeWebSearchToolType(toolType string) bool {
-	return claudeWebSearchTypePattern.MatchString(strings.ToLower(strings.TrimSpace(toolType)))
+	switch strings.TrimSpace(toolType) {
+	case "web_search_20250305", "web_search_20260209":
+		return true
+	default:
+		return false
+	}
 }
 
 // IsResponsesWebSearchToolType reports whether an OpenAI Responses tool
