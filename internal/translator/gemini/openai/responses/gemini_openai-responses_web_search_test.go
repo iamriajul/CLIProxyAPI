@@ -5263,3 +5263,30 @@ func TestConvertGeminiResponseToOpenAIResponsesStream_CitationAnnotationAddedTim
 		assertAnnotationMatches(t, eventTypes, byType, "https://weather.example.com/paris", "Paris Weather", 0, 5, true)
 	})
 }
+
+// A choice forcing the typed search tool by name must ground without
+// constraining: the tool becomes a grounding block, so a function-calling
+// constraint naming it would point at a declaration that does not exist.
+// Forcing any other function constrains normally.
+func TestResponsesForcedSearchToolGroundsWithoutConstraint(t *testing.T) {
+	registerTestWebSearchModel(t, "forced-search-cap", "antigravity", "forced-search-model", true)
+
+	forced := []byte(`{"model":"forced-search-model","input":[{"role":"user","content":"hi"}],
+		"tools":[{"type":"web_search"},{"type":"function","name":"lookup"}],
+		"tool_choice":{"type":"tool","name":"web_search"}}`)
+	out, _ := ConvertOpenAIResponsesRequestToGemini("forced-search-model", forced, false)
+	if !gjson.GetBytes(out, "tools.0.googleSearch").Exists() {
+		t.Fatalf("grounding block missing: %s", out)
+	}
+	if cfg := gjson.GetBytes(out, "toolConfig"); cfg.Exists() {
+		t.Fatalf("forced search must leave no calling constraint, got %s: %s", cfg.Raw, out)
+	}
+
+	other := []byte(`{"model":"forced-search-model","input":[{"role":"user","content":"hi"}],
+		"tools":[{"type":"web_search"},{"type":"function","name":"lookup"}],
+		"tool_choice":{"type":"tool","name":"lookup"}}`)
+	otherOut, _ := ConvertOpenAIResponsesRequestToGemini("forced-search-model", other, false)
+	if got := gjson.GetBytes(otherOut, "toolConfig.functionCallingConfig.allowedFunctionNames.0").String(); got != "lookup" {
+		t.Fatalf("forced function must still constrain, got %s: %s", gjson.GetBytes(otherOut, "toolConfig").Raw, otherOut)
+	}
+}
