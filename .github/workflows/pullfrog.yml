@@ -185,6 +185,7 @@ jobs:
           progress_comments: enabled
         env:
           GH_TOKEN: ${{ github.token }}
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
           OPENCODE_ENABLE_EXA: "1"
           PULLFROG_AGENT: opencode
           PULLFROG_MODEL: ${{ vars.PULLFROG_MODEL || 'opencode/muse-spark-1.3-contributor-free' }}
