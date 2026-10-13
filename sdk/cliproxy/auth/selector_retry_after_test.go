@@ -2,6 +2,7 @@ package auth
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -61,5 +62,25 @@ func TestModelCooldownError_NoRetryAfterWhenUnknown(t *testing.T) {
 	message, _ := rawErr["message"].(string)
 	if strings.Contains(message, "RETRY_AFTER") {
 		t.Fatalf("message = %q should not contain RETRY_AFTER", message)
+	}
+}
+
+func TestWithErrorRecoveryTime_JSONErrorPreservesValidity(t *testing.T) {
+	t.Parallel()
+
+	recoverAt := time.Date(2026, 10, 13, 17, 30, 0, 0, time.UTC)
+	rawJSON := `{"error":{"message":"upstream rate limited","type":"rate_limit_error"}}`
+	wrapped := WithErrorRecoveryTime(errors.New(rawJSON), recoverAt)
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(wrapped.Error()), &payload); err != nil {
+		t.Fatalf("wrapped.Error() produced invalid JSON: %v, string: %s", err, wrapped.Error())
+	}
+
+	rawErr := payload["error"].(map[string]any)
+	msg := rawErr["message"].(string)
+	wantSuffix := "RETRY_AFTER:2026-10-13T17:30:00Z"
+	if !strings.HasSuffix(msg, wantSuffix) {
+		t.Fatalf("message = %q, want suffix %q", msg, wantSuffix)
 	}
 }

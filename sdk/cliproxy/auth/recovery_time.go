@@ -1,10 +1,14 @@
 package auth
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 // RecoveryTimeProvider represents an error that reports an earliest recovery timestamp.
@@ -91,6 +95,20 @@ func (e *recoveryTimeCarrierError) Error() string {
 	if !e.recoverAt.IsZero() && !strings.Contains(text, "RETRY_AFTER:") {
 		suffix := FormatRetryAfterSuffix(e.recoverAt)
 		if suffix != "" {
+			trimmed := strings.TrimSpace(text)
+			if trimmed != "" && json.Valid([]byte(trimmed)) {
+				if gjson.GetBytes([]byte(trimmed), "error.message").Exists() {
+					msgVal := gjson.GetBytes([]byte(trimmed), "error.message").String()
+					if updated, errSet := sjson.SetBytes([]byte(trimmed), "error.message", fmt.Sprintf("%s %s", msgVal, suffix)); errSet == nil {
+						return string(updated)
+					}
+				} else if gjson.GetBytes([]byte(trimmed), "message").Exists() {
+					msgVal := gjson.GetBytes([]byte(trimmed), "message").String()
+					if updated, errSet := sjson.SetBytes([]byte(trimmed), "message", fmt.Sprintf("%s %s", msgVal, suffix)); errSet == nil {
+						return string(updated)
+					}
+				}
+			}
 			text = fmt.Sprintf("%s %s", text, suffix)
 		}
 	}
