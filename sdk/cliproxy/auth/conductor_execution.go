@@ -1282,7 +1282,11 @@ func (m *Manager) executeMixedOnce(ctx context.Context, providers []string, req 
 		}
 		if errPick != nil {
 			if shouldReturnLastErrorOnPickFailure(homeMode, lastErr, errPick) {
-				return cliproxyexecutor.Response{}, roundPickFailureError(lastErr, upstreamErr, errPick)
+				pickErr := roundPickFailureError(lastErr, upstreamErr, errPick)
+				if rec, ok := EarliestRecoveryTime(errPick); ok && !rec.IsZero() {
+					pickErr = WithErrorRecoveryTime(pickErr, rec)
+				}
+				return cliproxyexecutor.Response{}, pickErr
 			}
 			return cliproxyexecutor.Response{}, errPick
 		}
@@ -1584,7 +1588,11 @@ func (m *Manager) executeCountMixedOnce(ctx context.Context, providers []string,
 		}
 		if errPick != nil {
 			if shouldReturnLastErrorOnPickFailure(homeMode, lastErr, errPick) {
-				return cliproxyexecutor.Response{}, roundPickFailureError(lastErr, upstreamErr, errPick)
+				pickErr := roundPickFailureError(lastErr, upstreamErr, errPick)
+				if rec, ok := EarliestRecoveryTime(errPick); ok && !rec.IsZero() {
+					pickErr = WithErrorRecoveryTime(pickErr, rec)
+				}
+				return cliproxyexecutor.Response{}, pickErr
 			}
 			return cliproxyexecutor.Response{}, errPick
 		}
@@ -1940,7 +1948,11 @@ func (m *Manager) executeStreamMixedOnce(ctx context.Context, providers []string
 					}
 					return nil, markHomeRetryRoundExhausted(preferredErr, roundTiming.RetryAfter(), isHomeNextRoundImmediatelyAvailable(errPick))
 				}
-				return nil, roundPickFailureError(lastErr, upstreamErr, errPick)
+				pickErr := roundPickFailureError(lastErr, upstreamErr, errPick)
+				if rec, ok := EarliestRecoveryTime(errPick); ok && !rec.IsZero() {
+					pickErr = WithErrorRecoveryTime(pickErr, rec)
+				}
+				return nil, pickErr
 			}
 			return nil, errPick
 		}
