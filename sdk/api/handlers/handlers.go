@@ -27,6 +27,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/httptransport"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 	"golang.org/x/net/context"
 )
 
@@ -82,6 +83,12 @@ func BuildErrorResponseBodyWithError(status int, errText string, err error) []by
 	}
 
 	trimmed := strings.TrimSpace(errText)
+	var retrySuffix string
+	if err != nil {
+		if rec, ok := coreauth.EarliestRecoveryTime(err); ok && !rec.IsZero() {
+			retrySuffix = coreauth.FormatRetryAfterSuffix(rec)
+		}
+	}
 
 	if coreauth.IsTerminalAuthError(err) {
 		message := errText
@@ -96,6 +103,9 @@ func BuildErrorResponseBodyWithError(status int, errText string, err error) []by
 					}
 				}
 			}
+		}
+		if retrySuffix != "" && !strings.Contains(message, "RETRY_AFTER:") {
+			message = fmt.Sprintf("%s %s", message, retrySuffix)
 		}
 		r := false
 		payload, errMarshal := json.Marshal(ErrorResponse{
@@ -113,11 +123,28 @@ func BuildErrorResponseBodyWithError(status int, errText string, err error) []by
 	}
 
 	if trimmed != "" && json.Valid([]byte(trimmed)) {
+		if retrySuffix != "" && !strings.Contains(trimmed, "RETRY_AFTER:") {
+			if msgNode := gjson.GetBytes([]byte(trimmed), "error.message"); msgNode.Exists() {
+				newMsg := fmt.Sprintf("%s %s", msgNode.String(), retrySuffix)
+				if updated, errSet := sjson.SetBytes([]byte(trimmed), "error.message", newMsg); errSet == nil {
+					trimmed = string(updated)
+				}
+			} else if msgNode := gjson.GetBytes([]byte(trimmed), "message"); msgNode.Exists() {
+				newMsg := fmt.Sprintf("%s %s", msgNode.String(), retrySuffix)
+				if updated, errSet := sjson.SetBytes([]byte(trimmed), "message", newMsg); errSet == nil {
+					trimmed = string(updated)
+				}
+			}
+		}
 		var compact bytes.Buffer
 		if errCompact := json.Compact(&compact, []byte(trimmed)); errCompact == nil {
 			return compact.Bytes()
 		}
 		return []byte(trimmed)
+	}
+
+	if retrySuffix != "" && !strings.Contains(errText, "RETRY_AFTER:") {
+		errText = fmt.Sprintf("%s %s", errText, retrySuffix)
 	}
 
 	errType := "invalid_request_error"
