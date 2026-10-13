@@ -3982,3 +3982,62 @@ func TestServerResponsesWebsocketReauthorizesEachTurn(t *testing.T) {
 		t.Fatalf("executor calls after revoked turn = %d, want 1", gotCalls)
 	}
 }
+
+func TestInferenceRequest_ModelCooldown_MessageEndsWithRetryAfter(t *testing.T) {
+	server := newTestServer(t)
+	server.handlers.AuthManager.RegisterExecutor(executor.NewOpenAICompatExecutor("openai", &proxyconfig.Config{}))
+	recoverAt := time.Now().Add(120 * time.Second).UTC()
+	credential := &auth.Auth{
+		ID:             "test-cooldown-auth",
+		Provider:       "openai",
+		Status:         auth.StatusError,
+		Unavailable:    true,
+		NextRetryAfter: recoverAt,
+		Quota: auth.QuotaState{
+			Exceeded:      true,
+			Reason:        "quota",
+			NextRecoverAt: recoverAt,
+		},
+		ModelStates: map[string]*auth.ModelState{
+			"gpt-4o": {
+				Status:         auth.StatusError,
+				Unavailable:    true,
+				NextRetryAfter: recoverAt,
+				Quota: auth.QuotaState{
+					Exceeded:      true,
+					Reason:        "quota",
+					NextRecoverAt: recoverAt,
+				},
+			},
+		},
+	}
+	registryRef := registry.GetGlobalRegistry()
+	registryRef.RegisterClient(credential.ID, "openai", []*registry.ModelInfo{{ID: "gpt-4o"}})
+	t.Cleanup(func() { registryRef.UnregisterClient(credential.ID) })
+	if _, err := server.handlers.AuthManager.Register(context.Background(), credential); err != nil {
+		t.Fatalf("Register error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o","messages":[{"role":"user","content":"hello"}]}`))
+	req.Header.Set("Authorization", "Bearer test-key")
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	server.engine.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want 429; body=%s", rr.Code, rr.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal error: %v", err)
+	}
+	rawErr, ok := payload["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing error object in body: %s", rr.Body.String())
+	}
+	message, _ := rawErr["message"].(string)
+	wantSuffix := auth.FormatRetryAfterSuffix(recoverAt)
+	if !strings.HasSuffix(message, wantSuffix) {
+		t.Fatalf("message = %q, want suffix %q", message, wantSuffix)
+	}
+}
