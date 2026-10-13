@@ -215,6 +215,7 @@ type authUnavailableError struct {
 	cause      error
 	base       *Error
 	retryAfter time.Duration
+	recoverAt  time.Time
 }
 
 func newAuthUnavailableError(next, now time.Time) error {
@@ -230,6 +231,7 @@ func newAuthUnavailableErrorWithCause(next, now time.Time, cause error) error {
 			cause:      cause,
 			base:       err,
 			retryAfter: next.Sub(now),
+			recoverAt:  next.UTC(),
 		}
 	}
 	if cause != nil {
@@ -238,17 +240,37 @@ func newAuthUnavailableErrorWithCause(next, now time.Time, cause error) error {
 	return err
 }
 
+func (e *authUnavailableError) EarliestRecoveryTime() (time.Time, bool) {
+	if e == nil {
+		return time.Time{}, false
+	}
+	if !e.recoverAt.IsZero() {
+		return e.recoverAt.UTC(), true
+	}
+	if e.retryAfter > 0 {
+		return time.Now().Add(e.retryAfter).UTC(), true
+	}
+	return time.Time{}, false
+}
+
 func (e *authUnavailableError) Error() string {
 	if e == nil || e.base == nil {
 		return ""
 	}
 	baseText := e.base.Error()
-	if e.cause == nil {
-		return baseText
+	if e.cause != nil {
+		summary := ExtractUpstreamErrorSummary(e.cause.Error())
+		if summary != "" && !strings.Contains(baseText, summary) {
+			baseText = fmt.Sprintf("%s (last upstream error: %s)", baseText, summary)
+		}
 	}
-	summary := ExtractUpstreamErrorSummary(e.cause.Error())
-	if summary != "" && !strings.Contains(baseText, summary) {
-		return fmt.Sprintf("%s (last upstream error: %s)", baseText, summary)
+	if rec, ok := e.EarliestRecoveryTime(); ok && !rec.IsZero() {
+		if !strings.Contains(baseText, "RETRY_AFTER:") {
+			suffix := FormatRetryAfterSuffix(rec)
+			if suffix != "" {
+				baseText = fmt.Sprintf("%s %s", baseText, suffix)
+			}
+		}
 	}
 	return baseText
 }
@@ -324,6 +346,7 @@ func (e *authUnavailableError) WithAuthError(cause *Error) error {
 		cause:      e.cause,
 		base:       cause,
 		retryAfter: e.retryAfter,
+		recoverAt:  e.recoverAt,
 	}
 }
 
