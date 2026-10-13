@@ -81,10 +81,11 @@ const (
 )
 
 type modelCooldownError struct {
-	model    string
-	resetIn  time.Duration
-	provider string
-	cause    error
+	model     string
+	resetIn   time.Duration
+	provider  string
+	cause     error
+	recoverAt time.Time
 }
 
 // NewModelCooldownError creates an error representing model-level cooldown.
@@ -97,15 +98,40 @@ func newModelCooldownError(model, provider string, resetIn time.Duration) *model
 }
 
 func newModelCooldownErrorWithCause(model, provider string, resetIn time.Duration, cause error) *modelCooldownError {
+	var recoverAt time.Time
+	if resetIn > 0 {
+		recoverAt = time.Now().Add(resetIn)
+	}
+	return newModelCooldownErrorWithRecoverAt(model, provider, resetIn, recoverAt, cause)
+}
+
+func newModelCooldownErrorWithRecoverAt(model, provider string, resetIn time.Duration, recoverAt time.Time, cause error) *modelCooldownError {
 	if resetIn < 0 {
 		resetIn = 0
 	}
-	return &modelCooldownError{
-		model:    model,
-		provider: provider,
-		resetIn:  resetIn,
-		cause:    cause,
+	if recoverAt.IsZero() && resetIn > 0 {
+		recoverAt = time.Now().Add(resetIn)
 	}
+	return &modelCooldownError{
+		model:     model,
+		provider:  provider,
+		resetIn:   resetIn,
+		cause:     cause,
+		recoverAt: recoverAt.UTC(),
+	}
+}
+
+func (e *modelCooldownError) EarliestRecoveryTime() (time.Time, bool) {
+	if e == nil {
+		return time.Time{}, false
+	}
+	if !e.recoverAt.IsZero() {
+		return e.recoverAt.UTC(), true
+	}
+	if e.resetIn > 0 {
+		return time.Now().Add(e.resetIn).UTC(), true
+	}
+	return time.Time{}, false
 }
 
 func (e *modelCooldownError) IsModelCooldown() bool {
@@ -153,6 +179,15 @@ func (e *modelCooldownError) Error() string {
 			errorBody["last_upstream_error"] = causeText
 			message += fmt.Sprintf(" (last error: %s)", causeText)
 			errorBody["message"] = message
+		}
+	}
+	if rec, ok := e.EarliestRecoveryTime(); ok && !rec.IsZero() {
+		if !strings.Contains(message, "RETRY_AFTER:") {
+			suffix := FormatRetryAfterSuffix(rec)
+			if suffix != "" {
+				message = fmt.Sprintf("%s %s", message, suffix)
+				errorBody["message"] = message
+			}
 		}
 	}
 	payload := map[string]any{"error": errorBody}
