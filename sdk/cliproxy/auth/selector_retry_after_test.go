@@ -83,4 +83,43 @@ func TestWithErrorRecoveryTime_JSONErrorPreservesValidity(t *testing.T) {
 	if !strings.HasSuffix(msg, wantSuffix) {
 		t.Fatalf("message = %q, want suffix %q", msg, wantSuffix)
 	}
+
+	t.Run("string error field", func(t *testing.T) {
+		t.Parallel()
+		raw := `{"error":"simple error string"}`
+		wrappedErr := WithErrorRecoveryTime(errors.New(raw), recoverAt)
+		var p map[string]any
+		if err := json.Unmarshal([]byte(wrappedErr.Error()), &p); err != nil {
+			t.Fatalf("invalid JSON: %v", err)
+		}
+		if !strings.HasSuffix(p["error"].(string), wantSuffix) {
+			t.Fatalf("error = %q, want suffix %q", p["error"], wantSuffix)
+		}
+	})
+
+	t.Run("detail field", func(t *testing.T) {
+		t.Parallel()
+		raw := `{"detail":"something failed"}`
+		wrappedErr := WithErrorRecoveryTime(errors.New(raw), recoverAt)
+		var p map[string]any
+		if err := json.Unmarshal([]byte(wrappedErr.Error()), &p); err != nil {
+			t.Fatalf("invalid JSON: %v", err)
+		}
+		if !strings.HasSuffix(p["detail"].(string), wantSuffix) {
+			t.Fatalf("detail = %q, want suffix %q", p["detail"], wantSuffix)
+		}
+	})
+
+	t.Run("no recognized message field adds message field", func(t *testing.T) {
+		t.Parallel()
+		raw := `{"code":429}`
+		wrappedErr := WithErrorRecoveryTime(errors.New(raw), recoverAt)
+		var p map[string]any
+		if err := json.Unmarshal([]byte(wrappedErr.Error()), &p); err != nil {
+			t.Fatalf("invalid JSON: %v", err)
+		}
+		if p["message"] != wantSuffix {
+			t.Fatalf("message = %q, want %q", p["message"], wantSuffix)
+		}
+	})
 }

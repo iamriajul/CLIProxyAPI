@@ -107,7 +107,22 @@ func (e *recoveryTimeCarrierError) Error() string {
 					if updated, errSet := sjson.SetBytes([]byte(trimmed), "message", fmt.Sprintf("%s %s", msgVal, suffix)); errSet == nil {
 						return string(updated)
 					}
+				} else if gjson.GetBytes([]byte(trimmed), "error").Type == gjson.String {
+					msgVal := gjson.GetBytes([]byte(trimmed), "error").String()
+					if updated, errSet := sjson.SetBytes([]byte(trimmed), "error", fmt.Sprintf("%s %s", msgVal, suffix)); errSet == nil {
+						return string(updated)
+					}
+				} else if gjson.GetBytes([]byte(trimmed), "detail").Exists() {
+					msgVal := gjson.GetBytes([]byte(trimmed), "detail").String()
+					if updated, errSet := sjson.SetBytes([]byte(trimmed), "detail", fmt.Sprintf("%s %s", msgVal, suffix)); errSet == nil {
+						return string(updated)
+					}
+				} else {
+					if updated, errSet := sjson.SetBytes([]byte(trimmed), "message", suffix); errSet == nil {
+						return string(updated)
+					}
 				}
+				return text
 			}
 			text = fmt.Sprintf("%s %s", text, suffix)
 		}
