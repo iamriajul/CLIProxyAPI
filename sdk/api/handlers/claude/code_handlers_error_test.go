@@ -284,6 +284,10 @@ func TestWriteClaudeErrorResponse_IncludesRetryAfterForModelCooldownDefaultSetti
 	if got := recorder.Header().Get("Retry-After"); got != "20" {
 		t.Fatalf("Retry-After = %q, want 20", got)
 	}
+	bodyStr := recorder.Body.String()
+	if !strings.Contains(bodyStr, "RETRY_AFTER:") {
+		t.Fatalf("body = %s, want RETRY_AFTER:", bodyStr)
+	}
 }
 
 func TestPendingClaudeStreamErrorUsesBufferedError(t *testing.T) {

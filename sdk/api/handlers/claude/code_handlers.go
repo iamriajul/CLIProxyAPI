@@ -411,6 +411,14 @@ func (h *ClaudeCodeAPIHandler) toClaudeError(msg *interfaces.ErrorMessage) claud
 		}
 	}
 	errType, message := claudeErrorDetailFromText(status, errText)
+	if msg != nil && msg.Error != nil {
+		if rec, ok := coreauth.EarliestRecoveryTime(msg.Error); ok && !rec.IsZero() {
+			suffix := coreauth.FormatRetryAfterSuffix(rec)
+			if suffix != "" && !strings.Contains(message, "RETRY_AFTER:") {
+				message = fmt.Sprintf("%s %s", message, suffix)
+			}
+		}
+	}
 	response := claudeErrorResponse{
 		Type: "error",
 		Error: claudeErrorDetail{
@@ -440,6 +448,24 @@ func (h *ClaudeCodeAPIHandler) WriteErrorResponse(c *gin.Context, msg *interface
 			}
 		}
 		body := bytes.Clone(msg.Body)
+		if msg != nil && msg.Error != nil {
+			if rec, ok := coreauth.EarliestRecoveryTime(msg.Error); ok && !rec.IsZero() {
+				suffix := coreauth.FormatRetryAfterSuffix(rec)
+				if suffix != "" && !bytes.Contains(body, []byte("RETRY_AFTER:")) {
+					if gjson.GetBytes(body, "error.message").Exists() {
+						msgVal := gjson.GetBytes(body, "error.message").String()
+						if updated, errSet := sjson.SetBytes(body, "error.message", fmt.Sprintf("%s %s", msgVal, suffix)); errSet == nil {
+							body = updated
+						}
+					} else if gjson.GetBytes(body, "message").Exists() {
+						msgVal := gjson.GetBytes(body, "message").String()
+						if updated, errSet := sjson.SetBytes(body, "message", fmt.Sprintf("%s %s", msgVal, suffix)); errSet == nil {
+							body = updated
+						}
+					}
+				}
+			}
+		}
 		if clienterror.IsClaudeThreadNotFound(status, errors.New(string(body))) {
 			if markedBody, errMarshal := json.Marshal(h.toClaudeError(&interfaces.ErrorMessage{
 				StatusCode: status,
