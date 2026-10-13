@@ -110,6 +110,7 @@ type modelCooldownError struct {
 	cause          error
 	claudeCooldown bool
 	claudeSignals  map[string]string
+	recoverAt      time.Time
 }
 
 // NewModelCooldownError creates an error representing model-level cooldown.
@@ -125,9 +126,22 @@ func newModelCooldownErrorWithCause(model, provider string, resetIn time.Duratio
 	return newModelCooldownErrorForCandidates(model, provider, resetIn, cause, isClaudeCooldownProvider(provider), nil)
 }
 
+func newModelCooldownErrorWithRecoverAt(model, provider string, resetIn time.Duration, recoverAt time.Time, cause error) *modelCooldownError {
+	return newModelCooldownErrorForCandidatesAt(model, provider, resetIn, recoverAt, cause, isClaudeCooldownProvider(provider), nil)
+}
+
 func newModelCooldownErrorForCandidates(model, provider string, resetIn time.Duration, cause error, claudeCooldown bool, claudeSignals map[string]string) *modelCooldownError {
+	return newModelCooldownErrorForCandidatesAt(model, provider, resetIn, time.Time{}, cause, claudeCooldown, claudeSignals)
+}
+
+// newModelCooldownErrorForCandidatesAt records the earliest known recovery
+// time; a zero recoverAt falls back to now+resetIn.
+func newModelCooldownErrorForCandidatesAt(model, provider string, resetIn time.Duration, recoverAt time.Time, cause error, claudeCooldown bool, claudeSignals map[string]string) *modelCooldownError {
 	if resetIn < 0 {
 		resetIn = 0
+	}
+	if recoverAt.IsZero() && resetIn > 0 {
+		recoverAt = time.Now().Add(resetIn)
 	}
 	return &modelCooldownError{
 		model:          model,
@@ -136,7 +150,21 @@ func newModelCooldownErrorForCandidates(model, provider string, resetIn time.Dur
 		cause:          cause,
 		claudeCooldown: claudeCooldown,
 		claudeSignals:  maps.Clone(claudeSignals),
+		recoverAt:      recoverAt.UTC(),
 	}
+}
+
+func (e *modelCooldownError) EarliestRecoveryTime() (time.Time, bool) {
+	if e == nil {
+		return time.Time{}, false
+	}
+	if !e.recoverAt.IsZero() {
+		return e.recoverAt.UTC(), true
+	}
+	if e.resetIn > 0 {
+		return time.Now().Add(e.resetIn).UTC(), true
+	}
+	return time.Time{}, false
 }
 
 func isClaudeCooldownProvider(provider string) bool {
@@ -188,6 +216,15 @@ func (e *modelCooldownError) Error() string {
 			errorBody["last_upstream_error"] = causeText
 			message += fmt.Sprintf(" (last error: %s)", causeText)
 			errorBody["message"] = message
+		}
+	}
+	if rec, ok := e.EarliestRecoveryTime(); ok && !rec.IsZero() {
+		if !strings.Contains(message, "RETRY_AFTER:") {
+			suffix := FormatRetryAfterSuffix(rec)
+			if suffix != "" {
+				message = fmt.Sprintf("%s %s", message, suffix)
+				errorBody["message"] = message
+			}
 		}
 	}
 	payload := map[string]any{"error": errorBody}
