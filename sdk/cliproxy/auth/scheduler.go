@@ -820,7 +820,7 @@ func (s *authScheduler) mixedUnavailableErrorLocked(providers []string, model st
 		if allClaude {
 			claudeSignals = earliestClaudeSignals
 		}
-		return newModelCooldownErrorForCandidates(model, "", resetIn, lastCandidateErr, allClaude, claudeSignals)
+		return newModelCooldownErrorForCandidatesAt(model, "", resetIn, earliest, lastCandidateErr, allClaude, claudeSignals)
 	}
 	if unauthorizedCount == total {
 		terminalCause := latestAuthErr
@@ -1569,7 +1569,7 @@ func (m *modelScheduler) unavailableErrorLocked(provider, model string, predicat
 			resetIn = 0
 		}
 		claudeCooldown, _, _, claudeSignals := m.claudeCooldownSummaryLocked(provider, model, now, predicate)
-		return newModelCooldownErrorForCandidates(model, providerForError, resetIn, lastCandidateErr, claudeCooldown, claudeSignals)
+		return newModelCooldownErrorForCandidatesAt(model, providerForError, resetIn, earliest, lastCandidateErr, claudeCooldown, claudeSignals)
 	}
 	if unauthorizedCount == total {
 		terminalCause := authErr
