@@ -687,7 +687,7 @@ func (s *authScheduler) mixedUnavailableErrorLocked(providers []string, model st
 		if resetIn < 0 {
 			resetIn = 0
 		}
-		return newModelCooldownErrorWithCause(model, "", resetIn, lastCandidateErr)
+		return newModelCooldownErrorWithRecoverAt(model, "", resetIn, earliest, lastCandidateErr)
 	}
 	if unauthorizedCount == total {
 		terminalCause := latestAuthErr
@@ -1432,7 +1432,7 @@ func (m *modelScheduler) unavailableErrorLocked(provider, model string, predicat
 		if resetIn < 0 {
 			resetIn = 0
 		}
-		return newModelCooldownErrorWithCause(model, providerForError, resetIn, lastCandidateErr)
+		return newModelCooldownErrorWithRecoverAt(model, providerForError, resetIn, earliest, lastCandidateErr)
 	}
 	if unauthorizedCount == total {
 		terminalCause := authErr
