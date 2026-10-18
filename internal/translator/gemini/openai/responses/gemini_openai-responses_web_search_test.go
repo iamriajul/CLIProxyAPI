@@ -115,12 +115,11 @@ func TestConvertOpenAIResponsesRequestToGemini_WebSearchAllowedDomains(t *testin
 	}`)
 
 	out, _ := ConvertOpenAIResponsesRequestToGemini(modelID, req, false)
-	domains := ojson.GetBytesNoCopy(out, "tools.0.googleSearch.includedDomains").Array()
-	if len(domains) != 2 {
-		t.Fatalf("expected 2 includedDomains, got %d: %s", len(domains), out)
+	if !ojson.GetBytesNoCopy(out, "tools.0.googleSearch").Exists() {
+		t.Fatalf("search tool missing: %s", out)
 	}
-	if domains[0].String() != "go.dev" || domains[1].String() != "github.com" {
-		t.Fatalf("unexpected domains: %v", domains)
+	if ojson.GetBytesNoCopy(out, "tools.0.googleSearch.includedDomains").Exists() {
+		t.Fatalf("public generateContent must not receive includedDomains: %s", out)
 	}
 }
 
@@ -5352,10 +5351,10 @@ func TestResponsesForcedSearchToolGroundsWithoutConstraint(t *testing.T) {
 		"tools":[{"type":"web_search"},{"type":"function","name":"lookup"}],
 		"tool_choice":{"type":"tool","name":"web_search"}}`)
 	out, _ := ConvertOpenAIResponsesRequestToGemini("forced-search-model", forced, false)
-	if !gjson.GetBytes(out, "tools.0.googleSearch").Exists() {
+	if !ojson.GetBytes(out, "tools.0.googleSearch").Exists() {
 		t.Fatalf("grounding block missing: %s", out)
 	}
-	if cfg := gjson.GetBytes(out, "toolConfig.functionCallingConfig"); cfg.Exists() {
+	if cfg := ojson.GetBytes(out, "toolConfig.functionCallingConfig"); cfg.Exists() {
 		t.Fatalf("forced search must leave no calling constraint, got %s: %s", cfg.Raw, out)
 	}
 
@@ -5363,7 +5362,7 @@ func TestResponsesForcedSearchToolGroundsWithoutConstraint(t *testing.T) {
 		"tools":[{"type":"web_search"},{"type":"function","name":"lookup"}],
 		"tool_choice":{"type":"tool","name":"lookup"}}`)
 	otherOut, _ := ConvertOpenAIResponsesRequestToGemini("forced-search-model", other, false)
-	if got := gjson.GetBytes(otherOut, "toolConfig.functionCallingConfig.allowedFunctionNames.0").String(); got != "lookup" {
-		t.Fatalf("forced function must still constrain, got %s: %s", gjson.GetBytes(otherOut, "toolConfig").Raw, otherOut)
+	if got := ojson.GetBytes(otherOut, "toolConfig.functionCallingConfig.allowedFunctionNames.0").String(); got != "lookup" {
+		t.Fatalf("forced function must still constrain, got %s: %s", ojson.GetBytes(otherOut, "toolConfig").Raw, otherOut)
 	}
 }
