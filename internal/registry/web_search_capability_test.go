@@ -26,7 +26,9 @@ func TestResolveResponsesWebSearchCapability(t *testing.T) {
 		{name: "supported claude", routes: []NativeCapabilityRoute{{Provider: "claude", NativeCapabilities: testNativeCapabilities(&trueValue)}}, want: true, present: true},
 		{name: "supported antigravity", routes: []NativeCapabilityRoute{{Provider: "antigravity", NativeCapabilities: testNativeCapabilities(&trueValue)}}, want: true, present: true},
 		{name: "explicit unsupported model", routes: []NativeCapabilityRoute{{Provider: "codex", NativeCapabilities: testNativeCapabilities(&falseValue)}}, want: false, present: true},
-		{name: "unsupported provider path", routes: []NativeCapabilityRoute{{Provider: "gemini", NativeCapabilities: testNativeCapabilities(&trueValue)}}, want: false, present: true},
+		{name: "gemini path with explicit support", routes: []NativeCapabilityRoute{{Provider: "gemini", NativeCapabilities: testNativeCapabilities(&trueValue)}}, want: true, present: true},
+		{name: "vertex path with explicit support", routes: []NativeCapabilityRoute{{Provider: "vertex", NativeCapabilities: testNativeCapabilities(&trueValue)}}, want: true, present: true},
+		{name: "aistudio path with explicit support", routes: []NativeCapabilityRoute{{Provider: "aistudio", NativeCapabilities: testNativeCapabilities(&trueValue)}}, want: true, present: true},
 		{name: "unknown metadata", routes: []NativeCapabilityRoute{{Provider: "codex"}}, present: false},
 		{name: "unknown provider", routes: []NativeCapabilityRoute{{Provider: "custom", NativeCapabilities: testNativeCapabilities(&trueValue)}}, present: false},
 		{name: "explicit false on unknown provider", routes: []NativeCapabilityRoute{{Provider: "custom", NativeCapabilities: testNativeCapabilities(&falseValue)}}, want: false, present: true},
@@ -83,7 +85,7 @@ func TestModelRegistryResponsesWebSearchCapabilityChecksEveryExactClientRoute(t 
 	}
 	assertCapability("shared", false, false)
 	assertCapability("mixed-same-provider", false, true)
-	assertCapability("mixed-provider", false, true)
+	assertCapability("mixed-provider", true, true)
 	assertCapability("alias", true, true)
 	assertCapability("team/alias", false, true)
 	assertCapability("upstream-capable", false, false)
