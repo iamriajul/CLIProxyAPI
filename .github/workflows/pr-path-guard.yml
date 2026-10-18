@@ -20,9 +20,11 @@ jobs:
         with:
           files: |
             internal/translator/**
-      - name: Fail when restricted paths change
+      - name: Note translator changes
         if: steps.changed-files.outputs.any_changed == 'true'
+        env:
+          CHANGED_FILES: ${{ steps.changed-files.outputs.all_changed_files }}
         run: |
-          echo "Changes under internal/translator are not allowed in pull requests."
-          echo "You need to create an issue for our maintenance team to make the necessary changes."
-          exit 1
+          echo "This pull request changes internal/translator."
+          echo "The fork maintains those files. Review the translation itself."
+          printf '%s\n' "$CHANGED_FILES"
