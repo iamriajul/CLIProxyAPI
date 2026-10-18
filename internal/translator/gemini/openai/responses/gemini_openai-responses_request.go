@@ -2,7 +2,6 @@ package responses
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -40,13 +39,9 @@ func convertOpenAIResponsesRequestToGemini(modelName string, inputRawJSON []byte
 	var toolBlocks [][]byte
 	hasGoogleSearch := false
 	if HasResponsesWebSearchTool(root) && ModelSupportsWebSearch(modelName) && AllowsResponsesWebSearchToolChoice(root) {
-		googleSearchBlock := []byte(`{"googleSearch":{}}`)
-		if allowedDomains := ExtractResponsesWebSearchAllowedDomains(root); len(allowedDomains) > 0 {
-			if domainsJSON, errMarshal := json.Marshal(allowedDomains); errMarshal == nil {
-				googleSearchBlock, _ = sjson.SetRawBytes(googleSearchBlock, "googleSearch.includedDomains", domainsJSON)
-			}
-		}
-		toolBlocks = append(toolBlocks, googleSearchBlock)
+		// Public generateContent accepts `googleSearch: {}`. includedDomains belongs
+		// to the Antigravity envelope; the public API does not document it.
+		toolBlocks = append(toolBlocks, []byte(`{"googleSearch":{}}`))
 		hasGoogleSearch = true
 	}
 	if len(functionDeclarations) > 0 {
