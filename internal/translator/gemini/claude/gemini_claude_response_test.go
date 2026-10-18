@@ -1180,3 +1180,88 @@ func TestConvertGeminiResponseToClaude_ParameterlessToolContinuationDoesNotDupli
 		t.Fatalf("expected concatenated partial_json {}, got %q (stream: %s)", got, string(streamBytes))
 	}
 }
+
+func TestConvertGeminiResponseToClaudeNonStream_GroundingBecomesServerSearch(t *testing.T) {
+	original := []byte(`{"tools":[{"type":"web_search_20250305","name":"web_search"}]}`)
+	translated := []byte(`{"tools":[{"googleSearch":{}}]}`)
+	raw := []byte(`{
+		"responseId": "resp-search",
+		"modelVersion": "gemini-search",
+		"candidates": [{
+			"content": {"parts": [{"text": "Spain won."}]},
+			"finishReason": "STOP",
+			"groundingMetadata": {
+				"webSearchQueries": ["euro 2024 winner"],
+				"groundingChunks": [{"web": {"uri": "https://example.com/euro", "title": "Euro"}}],
+				"groundingSupports": [{
+					"segment": {"startIndex": 0, "endIndex": 11, "text": "Spain won."},
+					"groundingChunkIndices": [0]
+				}]
+			}
+		}],
+		"usageMetadata": {"promptTokenCount": 3, "candidatesTokenCount": 4}
+	}`)
+	out := ConvertGeminiResponseToClaudeNonStream(context.Background(), "gemini-search", original, translated, raw, nil)
+	if gjson.GetBytes(out, "content.0.type").String() != "server_tool_use" {
+		t.Fatalf("content.0 = %s", gjson.GetBytes(out, "content.0").Raw)
+	}
+	if gjson.GetBytes(out, "content.0.input.query").String() != "euro 2024 winner" {
+		t.Fatalf("query = %s", gjson.GetBytes(out, "content.0.input").Raw)
+	}
+	if gjson.GetBytes(out, "content.1.type").String() != "web_search_tool_result" {
+		t.Fatalf("content.1 = %s", gjson.GetBytes(out, "content.1").Raw)
+	}
+	if gjson.GetBytes(out, "content.1.content.0.url").String() != "https://example.com/euro" {
+		t.Fatalf("result = %s", gjson.GetBytes(out, "content.1.content").Raw)
+	}
+	if gjson.GetBytes(out, "content.2.citations.0.url").String() != "https://example.com/euro" {
+		t.Fatalf("citation = %s", gjson.GetBytes(out, "content.2").Raw)
+	}
+	if gjson.GetBytes(out, "usage.server_tool_use.web_search_requests").Int() != 1 {
+		t.Fatalf("usage = %s", gjson.GetBytes(out, "usage").Raw)
+	}
+}
+
+func TestConvertGeminiResponseToClaude_StreamBuffersTextUntilGrounding(t *testing.T) {
+	original := []byte(`{"tools":[{"type":"web_search_20250305","name":"web_search"}]}`)
+	translated := []byte(`{"tools":[{"googleSearch":{}}]}`)
+	first := []byte(`{
+		"candidates": [{"content": {"parts": [{"text": "Spain "}]}}],
+		"modelVersion": "gemini-search",
+		"responseId": "resp-search"
+	}`)
+	second := []byte(`{
+		"candidates": [{
+			"content": {"parts": [{"text": "won."}]},
+			"finishReason": "STOP",
+			"groundingMetadata": {
+				"webSearchQueries": ["euro 2024 winner"],
+				"groundingChunks": [{"web": {"uri": "https://example.com/euro", "title": "Euro"}}]
+			}
+		}],
+		"usageMetadata": {"promptTokenCount": 3, "candidatesTokenCount": 4},
+		"modelVersion": "gemini-search",
+		"responseId": "resp-search"
+	}`)
+	var param any
+	ctx := context.Background()
+	var output []byte
+	output = append(output, bytes.Join(ConvertGeminiResponseToClaude(ctx, "gemini-search", original, translated, first, &param), nil)...)
+	if strings.Contains(string(output), "Spain") {
+		t.Fatalf("text must wait for grounding: %s", output)
+	}
+	output = append(output, bytes.Join(ConvertGeminiResponseToClaude(ctx, "gemini-search", original, translated, second, &param), nil)...)
+	got := string(output)
+	if !strings.Contains(got, `"type":"server_tool_use"`) {
+		t.Fatalf("missing server_tool_use: %s", got)
+	}
+	if !strings.Contains(got, `"type":"web_search_tool_result"`) {
+		t.Fatalf("missing web_search_tool_result: %s", got)
+	}
+	if !strings.Contains(got, "Spain won.") {
+		t.Fatalf("joined answer missing: %s", got)
+	}
+	if strings.Contains(got, `"content_block":{"type":"text"`) && strings.Index(got, `"type":"server_tool_use"`) > strings.Index(got, `"content_block":{"type":"text"`) {
+		t.Fatalf("plain text block opened before the search: %s", got)
+	}
+}
