@@ -1029,8 +1029,8 @@ func TestConvertClaudeRequestToGemini_TypedWebSearchInjectsGoogleSearch(t *testi
 	if !ojson.GetBytes(out, "tools.0.googleSearch").Exists() {
 		t.Fatalf("capable model should inject googleSearch: %s", out)
 	}
-	if got := ojson.GetBytes(out, "tools.0.googleSearch.includedDomains.0").String(); got != "example.com" {
-		t.Fatalf("includedDomains.0 = %q: %s", got, out)
+	if ojson.GetBytes(out, "tools.0.googleSearch.includedDomains").Exists() {
+		t.Fatalf("public generateContent must not receive includedDomains: %s", out)
 	}
 
 	plain, _ := ConvertClaudeRequestToGemini("gemini-search-plain", searchOnly, false)
@@ -1083,10 +1083,10 @@ func TestConvertClaudeRequestToGemini_ForcedSearchLeavesNoDanglingConstraint(t *
 		"tool_choice": {"type": "tool", "name": "web_search"}
 	}`)
 	out, _ := ConvertClaudeRequestToGemini("gemini-search-capable", forced, false)
-	if !gjson.GetBytes(out, "tools.0.googleSearch").Exists() {
+	if !ojson.GetBytes(out, "tools.0.googleSearch").Exists() {
 		t.Fatalf("grounding block missing: %s", out)
 	}
-	if cfg := gjson.GetBytes(out, "toolConfig"); cfg.Exists() {
+	if cfg := ojson.GetBytes(out, "toolConfig"); cfg.Exists() {
 		t.Fatalf("forced search must leave no calling constraint, got %s: %s", cfg.Raw, out)
 	}
 
@@ -1100,7 +1100,21 @@ func TestConvertClaudeRequestToGemini_ForcedSearchLeavesNoDanglingConstraint(t *
 		"tool_choice": {"type": "tool", "name": "lookup"}
 	}`)
 	mixedOut, _ := ConvertClaudeRequestToGemini("gemini-search-capable", mixed, false)
-	if got := gjson.GetBytes(mixedOut, "toolConfig.functionCallingConfig.allowedFunctionNames.0").String(); got != "lookup" {
-		t.Fatalf("forced function must still constrain, got %s: %s", gjson.GetBytes(mixedOut, "toolConfig").Raw, mixedOut)
+	if got := ojson.GetBytes(mixedOut, "toolConfig.functionCallingConfig.allowedFunctionNames.0").String(); got != "lookup" {
+		t.Fatalf("forced function must still constrain, got %s: %s", ojson.GetBytes(mixedOut, "toolConfig").Raw, mixedOut)
+	}
+
+	unnamed := []byte(`{
+		"model": "gemini-search-capable",
+		"messages": [{"role": "user", "content": "hi"}],
+		"tools": [{"type": "web_search_20250305"}],
+		"tool_choice": {"type": "tool", "name": "web_search"}
+	}`)
+	unnamedOut, _ := ConvertClaudeRequestToGemini("gemini-search-capable", unnamed, false)
+	if !ojson.GetBytes(unnamedOut, "tools.0.googleSearch").Exists() {
+		t.Fatalf("nameless search tool should still ground: %s", unnamedOut)
+	}
+	if cfg := ojson.GetBytes(unnamedOut, "toolConfig"); cfg.Exists() {
+		t.Fatalf("nameless forced search must leave no calling constraint, got %s", cfg.Raw)
 	}
 }
