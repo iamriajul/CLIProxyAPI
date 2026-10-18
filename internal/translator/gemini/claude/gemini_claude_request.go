@@ -6,7 +6,6 @@
 package claude
 
 import (
-	"encoding/json"
 	"strings"
 
 	"github.com/MoeForge/moego/ojson"
@@ -275,7 +274,6 @@ func convertClaudeRequestToGemini(modelName string, inputRawJSON []byte, _ bool,
 	hasStrictTool := false
 	hasTypedWebSearch := false
 	webSearchNames := map[string]bool{}
-	var webSearchAllowedDomains []string
 	if toolsResult := ojson.GetBytesNoCopy(rawJSON, "tools"); toolsResult.IsArray() {
 		toolsResult.ForEach(func(_, toolResult ojson.Result) bool {
 			if toolResult.Get("strict").Type == ojson.True {
@@ -283,14 +281,12 @@ func convertClaudeRequestToGemini(modelName string, inputRawJSON []byte, _ bool,
 			}
 			if translatorcommon.IsClaudeWebSearchToolType(toolResult.Get("type").String()) {
 				hasTypedWebSearch = true
-				if name := strings.TrimSpace(toolResult.Get("name").String()); name != "" {
-					webSearchNames[name] = true
+				name := strings.TrimSpace(toolResult.Get("name").String())
+				if name == "" {
+					// An omitted name is still Claude's server tool, which clients force as web_search.
+					name = "web_search"
 				}
-				for _, domain := range toolResult.Get("allowed_domains").Array() {
-					if trimmed := strings.TrimSpace(domain.String()); trimmed != "" {
-						webSearchAllowedDomains = append(webSearchAllowedDomains, trimmed)
-					}
-				}
+				webSearchNames[name] = true
 				return true
 			}
 			inputSchemaResult := toolResult.Get("input_schema")
@@ -323,14 +319,9 @@ func convertClaudeRequestToGemini(modelName string, inputRawJSON []byte, _ bool,
 		})
 		var toolBlocks [][]byte
 		if hasTypedWebSearch && translatorcommon.GeminiModelSupportsWebSearch(modelName) && claudeChoiceAllowsGeminiSearch(rawJSON) {
-			googleSearchBlock := []byte(`{"googleSearch":{}}`)
-			if len(webSearchAllowedDomains) > 0 {
-				domainsJSON, errMarshal := json.Marshal(webSearchAllowedDomains)
-				if errMarshal == nil {
-					googleSearchBlock, _ = ojson.SetRawBytes(googleSearchBlock, "googleSearch.includedDomains", domainsJSON)
-				}
-			}
-			toolBlocks = append(toolBlocks, googleSearchBlock)
+			// Public generateContent accepts `googleSearch: {}`. includedDomains belongs
+			// to the Antigravity envelope; the public API does not document it.
+			toolBlocks = append(toolBlocks, []byte(`{"googleSearch":{}}`))
 		}
 		if len(toolItems) > 0 {
 			fnBlock := []byte(`{"functionDeclarations":[]}`)
