@@ -115,12 +115,11 @@ func TestConvertOpenAIResponsesRequestToGemini_WebSearchAllowedDomains(t *testin
 	}`)
 
 	out, _ := ConvertOpenAIResponsesRequestToGemini(modelID, req, false)
-	domains := gjson.GetBytes(out, "tools.0.googleSearch.includedDomains").Array()
-	if len(domains) != 2 {
-		t.Fatalf("expected 2 includedDomains, got %d: %s", len(domains), out)
+	if !gjson.GetBytes(out, "tools.0.googleSearch").Exists() {
+		t.Fatalf("search tool missing: %s", out)
 	}
-	if domains[0].String() != "go.dev" || domains[1].String() != "github.com" {
-		t.Fatalf("unexpected domains: %v", domains)
+	if gjson.GetBytes(out, "tools.0.googleSearch.includedDomains").Exists() {
+		t.Fatalf("public generateContent must not receive includedDomains: %s", out)
 	}
 }
 
