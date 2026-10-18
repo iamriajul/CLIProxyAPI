@@ -40,6 +40,10 @@ type Params struct {
 	ActiveToolCall               *translatorcommon.VertexStreamingToolCall
 	PendingToolThoughtSignatures []string
 	HasIncompleteToolCall        bool
+	WebSearchChecked             bool
+	WebSearchMode                bool
+	WebSearchDone                bool
+	WebSearchText                strings.Builder
 }
 
 const geminiMalformedFunctionCallErrorPayload = `{"type":"error","error":{"type":"api_error","message":"Gemini response finished with MALFORMED_FUNCTION_CALL"}}`
@@ -122,6 +126,11 @@ func ConvertGeminiResponseToClaude(_ context.Context, _ string, originalRequestR
 		}
 	}
 
+	if !p.WebSearchChecked {
+		p.WebSearchMode = geminiClaudeWebSearchMode(originalRequestRawJSON, requestRawJSON)
+		p.WebSearchChecked = true
+	}
+
 	if bytes.Equal(rawJSON, []byte("[DONE]")) {
 		if p.ActiveToolCall != nil || p.HasIncompleteToolCall {
 			return [][]byte{}
@@ -141,6 +150,7 @@ func ConvertGeminiResponseToClaude(_ context.Context, _ string, originalRequestR
 			}
 			return [][]byte{}
 		}
+		flushBufferedGeminiSearchText(p, appendEvent)
 		if p.HasFirstResponse && !p.HasContent {
 			appendEvent("content_block_start", fmt.Sprintf(`{"type":"content_block_start","index":%d,"content_block":{"type":"text","text":""}}`, p.ResponseIndex))
 			p.ResponseType = 1
@@ -224,6 +234,18 @@ func ConvertGeminiResponseToClaude(_ context.Context, _ string, originalRequestR
 	// Process the response parts array from the backend client
 	// Each part can contain text content, thinking content, or function calls
 	partsResult := ojson.GetBytesNoCopy(rawJSON, "candidates.0.content.parts")
+	grounding := ojson.GetBytesNoCopy(rawJSON, "candidates.0.groundingMetadata")
+	suppressVisibleText := false
+	if p.WebSearchMode && !p.WebSearchDone && translatorcommon.HasWebGrounding(grounding) {
+		appendGeminiVisibleText(partsResult, &p.WebSearchText)
+		text := p.WebSearchText.String()
+		p.WebSearchText.Reset()
+		p.ResponseIndex = translatorcommon.AppendClaudeWebSearchStreamBlocks(appendEvent, p.ResponseIndex, translatorcommon.NewClaudeWebSearchToolUseID(), text, grounding)
+		p.WebSearchDone = true
+		p.HasContent = true
+		p.ResponseType = 0
+		suppressVisibleText = true
+	}
 	if partsResult.IsArray() {
 		partResults := partsResult.Array()
 		for i := 0; i < len(partResults); i++ {
@@ -527,6 +549,15 @@ func ConvertGeminiResponseToClaude(_ context.Context, _ string, originalRequestR
 				if hasThoughtSignature {
 					appendCarrierThinkingBlock(partSig)
 				}
+				if suppressVisibleText {
+					continue
+				}
+				if p.WebSearchMode && !p.WebSearchDone {
+					if partText != "" {
+						p.WebSearchText.WriteString(partText)
+					}
+					continue
+				}
 				if (*param).(*Params).ResponseType == 1 {
 					data, _ := ojson.SetBytes([]byte(fmt.Sprintf(`{"type":"content_block_delta","index":%d,"delta":{"type":"text_delta","text":""}}`, (*param).(*Params).ResponseIndex)), "delta.text", partText)
 					appendEvent("content_block_delta", string(data))
@@ -593,6 +624,7 @@ func ConvertGeminiResponseToClaude(_ context.Context, _ string, originalRequestR
 	}
 
 	if usageResult.Exists() && bytes.Contains(rawJSON, []byte(`"finishReason"`)) && !(*param).(*Params).HasFinalEvents && p.ActiveToolCall == nil && !p.HasIncompleteToolCall {
+		flushBufferedGeminiSearchText((*param).(*Params), appendEvent)
 		if !(*param).(*Params).HasContent && (*param).(*Params).HasFirstResponse {
 			appendEvent("content_block_start", fmt.Sprintf(`{"type":"content_block_start","index":%d,"content_block":{"type":"text","text":""}}`, (*param).(*Params).ResponseIndex))
 			(*param).(*Params).ResponseType = 1
@@ -633,7 +665,6 @@ func ConvertGeminiResponseToClaude(_ context.Context, _ string, originalRequestR
 // Returns:
 //   - []byte: A Claude-compatible JSON response.
 func ConvertGeminiResponseToClaudeNonStream(_ context.Context, _ string, originalRequestRawJSON, requestRawJSON, rawJSON []byte, _ *any) []byte {
-	_ = requestRawJSON
 
 	root := util.ParseGJSONBytesNoCopy(rawJSON)
 	toolNameMap := util.UnambiguousToolNameMapFromClaudeRequest(originalRequestRawJSON)
@@ -653,6 +684,19 @@ func ConvertGeminiResponseToClaudeNonStream(_ context.Context, _ string, origina
 	_ = outDoc.Set("usage.output_tokens", outputTokens)
 	if cachedTokens > 0 {
 		_ = outDoc.Set("usage.cache_read_input_tokens", cachedTokens)
+	}
+
+	if geminiClaudeWebSearchMode(originalRequestRawJSON, requestRawJSON) {
+		grounding := root.Get("candidates.0.groundingMetadata")
+		if translatorcommon.HasWebGrounding(grounding) {
+			var visible strings.Builder
+			appendGeminiVisibleText(root.Get("candidates.0.content.parts"), &visible)
+			content := translatorcommon.BuildClaudeWebSearchContent(translatorcommon.NewClaudeWebSearchToolUseID(), visible.String(), grounding)
+			_ = outDoc.SetRawBytes("content", content)
+			_ = outDoc.Set("stop_reason", "end_turn")
+			_ = outDoc.Set("usage.server_tool_use.web_search_requests", 1)
+			return outDoc.Bytes()
+		}
 	}
 
 	parts := root.Get("candidates.0.content.parts")
@@ -804,4 +848,69 @@ func ConvertGeminiResponseToClaudeNonStream(_ context.Context, _ string, origina
 
 func ClaudeTokenCount(ctx context.Context, count int64) []byte {
 	return translatorcommon.ClaudeInputTokensJSON(count)
+}
+
+func geminiClaudeWebSearchMode(originalRequest, translatedRequest []byte) bool {
+	if !geminiRequestHasGoogleSearch(translatedRequest) {
+		return false
+	}
+	tools := ojson.GetBytesNoCopy(originalRequest, "tools")
+	if !tools.IsArray() {
+		return false
+	}
+	for _, tool := range tools.Array() {
+		if translatorcommon.IsClaudeWebSearchToolType(tool.Get("type").String()) {
+			return true
+		}
+	}
+	return false
+}
+
+func geminiRequestHasGoogleSearch(request []byte) bool {
+	tools := ojson.GetBytesNoCopy(request, "tools")
+	if !tools.IsArray() {
+		return false
+	}
+	for _, tool := range tools.Array() {
+		if tool.Get("googleSearch").Exists() {
+			return true
+		}
+	}
+	return false
+}
+
+func appendGeminiVisibleText(parts ojson.Result, buf *strings.Builder) {
+	if !parts.IsArray() {
+		return
+	}
+	for _, part := range parts.Array() {
+		if part.Get("thought").Bool() || part.Get("functionCall").Exists() {
+			continue
+		}
+		if text := part.Get("text").String(); text != "" {
+			buf.WriteString(text)
+		}
+	}
+}
+
+func flushBufferedGeminiSearchText(p *Params, appendEvent func(event, payload string)) {
+	if p == nil || !p.WebSearchMode || p.WebSearchDone {
+		return
+	}
+	text := p.WebSearchText.String()
+	p.WebSearchText.Reset()
+	p.WebSearchDone = true
+	if text == "" {
+		return
+	}
+	if p.ResponseType != 0 {
+		appendEvent("content_block_stop", fmt.Sprintf(`{"type":"content_block_stop","index":%d}`, p.ResponseIndex))
+		p.ResponseIndex++
+		p.ResponseType = 0
+	}
+	appendEvent("content_block_start", fmt.Sprintf(`{"type":"content_block_start","index":%d,"content_block":{"type":"text","text":""}}`, p.ResponseIndex))
+	data, _ := ojson.SetBytes([]byte(fmt.Sprintf(`{"type":"content_block_delta","index":%d,"delta":{"type":"text_delta","text":""}}`, p.ResponseIndex)), "delta.text", text)
+	appendEvent("content_block_delta", string(data))
+	p.ResponseType = 1
+	p.HasContent = true
 }
