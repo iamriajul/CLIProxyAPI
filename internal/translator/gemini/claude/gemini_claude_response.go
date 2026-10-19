@@ -164,6 +164,7 @@ func ConvertGeminiResponseToClaude(_ context.Context, _ string, originalRequestR
 			return [][]byte{}
 		}
 		if isGeminiMalformedFunctionCall(p.FinishReason, p.HasVisibleOutput) {
+			flushBufferedGeminiSearchText(p, appendEvent)
 			if p.ResponseType != 0 {
 				flushPendingToolInput()
 				appendEvent("content_block_stop", fmt.Sprintf(`{"type":"content_block_stop","index":%d}`, p.ResponseIndex))
@@ -276,10 +277,28 @@ func ConvertGeminiResponseToClaude(_ context.Context, _ string, originalRequestR
 	partsResult := ojson.GetBytesNoCopy(rawJSON, "candidates.0.content.parts")
 	grounding := ojson.GetBytesNoCopy(rawJSON, "candidates.0.groundingMetadata")
 	suppressVisibleText := false
+	drainedToolContinuation := false
 	if p.WebSearchMode && !p.WebSearchDone && translatorcommon.HasWebGrounding(grounding) {
 		appendGeminiVisibleText(partsResult, &p.WebSearchText)
 		text := p.WebSearchText.String()
 		p.WebSearchText.Reset()
+		// A nameless functionCall is the rest of the open tool_use. Deliver it
+		// before that block is closed, or the loop below opens a second tool
+		// with an empty name.
+		if p.ResponseType == 3 && partsResult.IsArray() {
+			for _, part := range partsResult.Array() {
+				fc := part.Get("functionCall")
+				if !fc.Exists() || strings.TrimSpace(fc.Get("name").String()) != "" {
+					continue
+				}
+				if args := fc.Get("args"); args.Exists() {
+					partialJSON := util.CleanClaudeToolArgumentsWithTranslated(args.Raw, p.CurrentToolName, originalRequestRawJSON, requestRawJSON)
+					data, _ := sjson.SetBytes([]byte(fmt.Sprintf(`{"type":"content_block_delta","index":%d,"delta":{"type":"input_json_delta","partial_json":""}}`, p.ResponseIndex)), "delta.partial_json", partialJSON)
+					appendEvent("content_block_delta", string(data))
+				}
+			}
+			drainedToolContinuation = true
+		}
 		if p.ResponseType != 0 {
 			appendEvent("content_block_stop", fmt.Sprintf(`{"type":"content_block_stop","index":%d}`, p.ResponseIndex))
 			p.ResponseIndex++
@@ -288,6 +307,9 @@ func ConvertGeminiResponseToClaude(_ context.Context, _ string, originalRequestR
 		p.ResponseIndex = translatorcommon.AppendClaudeWebSearchStreamBlocks(appendEvent, p.ResponseIndex, translatorcommon.NewClaudeWebSearchToolUseID(), text, grounding)
 		p.WebSearchDone = true
 		p.HasContent = true
+		if strings.TrimSpace(text) != "" {
+			p.HasVisibleOutput = true
+		}
 		suppressVisibleText = true
 	}
 	if partsResult.IsArray() {
@@ -388,6 +410,13 @@ func ConvertGeminiResponseToClaude(_ context.Context, _ string, originalRequestR
 				rawToolName := strings.Clone(strings.TrimSpace(functionCallResult.Get("name").String()))
 				upstreamToolName := strings.Clone(util.RestoreSanitizedToolName((*param).(*Params).SanitizedNameMap, rawToolName))
 				clientToolName := strings.Clone(util.MapToolName((*param).(*Params).ToolNameMap, upstreamToolName))
+
+				if drainedToolContinuation && upstreamToolName == "" {
+					if hasThoughtSignature {
+						appendCarrierThinkingBlock(partSig)
+					}
+					continue
+				}
 
 				if active := p.ActiveToolCall; active != nil && active.CanContinueWith(functionCallResult) {
 					p.SawToolCall = true
@@ -626,6 +655,10 @@ func ConvertGeminiResponseToClaude(_ context.Context, _ string, originalRequestR
 				if p.WebSearchMode && !p.WebSearchDone {
 					if partText != "" {
 						p.WebSearchText.WriteString(partText)
+						// Buffered text is still delivered later, so it counts as output.
+						if strings.TrimSpace(partText) != "" {
+							p.HasVisibleOutput = true
+						}
 					}
 					continue
 				}
@@ -698,6 +731,7 @@ func ConvertGeminiResponseToClaude(_ context.Context, _ string, originalRequestR
 	}
 
 	if isGeminiMalformedFunctionCall((*param).(*Params).FinishReason, (*param).(*Params).HasVisibleOutput) && !(*param).(*Params).HasFinalEvents {
+		flushBufferedGeminiSearchText((*param).(*Params), appendEvent)
 		if (*param).(*Params).ResponseType != 0 {
 			flushPendingToolInput()
 			appendEvent("content_block_stop", fmt.Sprintf(`{"type":"content_block_stop","index":%d}`, (*param).(*Params).ResponseIndex))
@@ -977,6 +1011,10 @@ func ConvertGeminiResponseToClaudeNonStream(_ context.Context, _ string, origina
 		_ = outDoc.Delete("usage")
 	}
 	if geminiClaudeWebSearchMode(originalRequestRawJSON, requestRawJSON) && translatorcommon.HasWebGrounding(root.Get("candidates.0.groundingMetadata")) {
+		if !outDoc.Get("usage.input_tokens").Exists() {
+			_ = outDoc.Set("usage.input_tokens", inputTokens)
+			_ = outDoc.Set("usage.output_tokens", outputTokens)
+		}
 		_ = outDoc.Set("usage.server_tool_use.web_search_requests", 1)
 	}
 
