@@ -41,6 +41,7 @@ type Params struct {
 	WebSearchMode              bool
 	WebSearchDone              bool
 	WebSearchText              strings.Builder
+	WebSearchRequests          int
 }
 
 const geminiMalformedFunctionCallErrorPayload = `{"type":"error","error":{"type":"api_error","message":"Gemini response finished with MALFORMED_FUNCTION_CALL"}}`
@@ -142,6 +143,9 @@ func ConvertGeminiResponseToClaude(_ context.Context, _ string, originalRequestR
 				if p.CachedTokens > 0 {
 					template, _ = sjson.SetBytes(template, "usage.cache_read_input_tokens", p.CachedTokens)
 				}
+				if p.WebSearchRequests > 0 {
+					template, _ = sjson.SetBytes(template, "usage.server_tool_use.web_search_requests", p.WebSearchRequests)
+				}
 				appendEvent("message_delta", string(template))
 				p.HasFinalEvents = true
 			}
@@ -236,6 +240,7 @@ func ConvertGeminiResponseToClaude(_ context.Context, _ string, originalRequestR
 		}
 		p.ResponseIndex = translatorcommon.AppendClaudeWebSearchStreamBlocks(appendEvent, p.ResponseIndex, translatorcommon.NewClaudeWebSearchToolUseID(), text, grounding)
 		p.WebSearchDone = true
+		p.WebSearchRequests = 1
 		p.HasContent = true
 		suppressVisibleText = true
 	}
@@ -476,6 +481,9 @@ func ConvertGeminiResponseToClaude(_ context.Context, _ string, originalRequestR
 			template, _ = sjson.SetBytes(template, "usage.input_tokens", (*param).(*Params).InputTokens)
 			if (*param).(*Params).CachedTokens > 0 {
 				template, _ = sjson.SetBytes(template, "usage.cache_read_input_tokens", (*param).(*Params).CachedTokens)
+			}
+			if (*param).(*Params).WebSearchRequests > 0 {
+				template, _ = sjson.SetBytes(template, "usage.server_tool_use.web_search_requests", (*param).(*Params).WebSearchRequests)
 			}
 
 			appendEvent("message_delta", string(template))
