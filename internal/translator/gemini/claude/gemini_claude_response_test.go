@@ -1288,6 +1288,9 @@ func TestConvertGeminiResponseToClaude_StreamBuffersTextUntilGrounding(t *testin
 	if !strings.Contains(got, `"type":"web_search_tool_result"`) {
 		t.Fatalf("missing web_search_tool_result: %s", got)
 	}
+	if !strings.Contains(got, "web_search_requests") {
+		t.Fatalf("stream usage missing search count: %s", got)
+	}
 	if !strings.Contains(got, "Spain won.") {
 		t.Fatalf("joined answer missing: %s", got)
 	}
