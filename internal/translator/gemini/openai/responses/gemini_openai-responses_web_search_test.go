@@ -99,7 +99,7 @@ func TestConvertOpenAIResponsesRequestToGemini_WebSearchCapabilityGate(t *testin
 	}
 }
 
-func TestConvertOpenAIResponsesRequestToGemini_WebSearchAllowedDomains(t *testing.T) {
+func TestConvertOpenAIResponsesRequestToGemini_WebSearchOmitsAllowedDomains(t *testing.T) {
 	modelID := "gemini-search-domains"
 	registerTestWebSearchModel(t, "client-domains", "antigravity", modelID, true)
 
