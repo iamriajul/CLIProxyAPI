@@ -190,9 +190,11 @@ func claudeServerSearchToolNames(payload []byte) map[string]bool {
 	names := map[string]bool{}
 	gjson.GetBytes(payload, "tools").ForEach(func(_, tool gjson.Result) bool {
 		if isClaudeWebSearchToolType(tool.Get("type").String()) {
-			if name := strings.TrimSpace(tool.Get("name").String()); name != "" {
-				names[name] = true
+			name := strings.TrimSpace(tool.Get("name").String())
+			if name == "" {
+				name = "web_search"
 			}
+			names[name] = true
 		}
 		return true
 	})
