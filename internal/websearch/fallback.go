@@ -69,7 +69,7 @@ func NativeSearchSupported(format string, providers []string, model string, payl
 			if antigravityNativeSearch(format, model, payload) {
 				return true
 			}
-		case "gemini":
+		case "gemini", "aistudio", "vertex":
 			if geminiNativeSearch(format, model, payload) {
 				return true
 			}
