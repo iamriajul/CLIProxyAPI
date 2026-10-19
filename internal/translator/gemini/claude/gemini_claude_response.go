@@ -47,6 +47,7 @@ type Params struct {
 	WebSearchMode                bool
 	WebSearchDone                bool
 	WebSearchText                strings.Builder
+	WebSearchRequests            int
 }
 
 const geminiMalformedFunctionCallErrorPayload = `{"type":"error","error":{"type":"api_error","message":"Gemini response finished with MALFORMED_FUNCTION_CALL"}}`
@@ -175,6 +176,9 @@ func ConvertGeminiResponseToClaude(_ context.Context, _ string, originalRequestR
 				if p.CachedTokens > 0 {
 					_ = templateDoc.Set("usage.cache_read_input_tokens", p.CachedTokens)
 				}
+				if p.WebSearchRequests > 0 {
+					_ = templateDoc.Set("usage.server_tool_use.web_search_requests", p.WebSearchRequests)
+				}
 				appendEvent("message_delta", templateDoc.String())
 				p.HasFinalEvents = true
 			}
@@ -268,7 +272,7 @@ func ConvertGeminiResponseToClaude(_ context.Context, _ string, originalRequestR
 				}
 				if args := fc.Get("args"); args.Exists() {
 					partialJSON := util.CleanClaudeToolArgumentsWithTranslated(args.Raw, p.CurrentToolName, originalRequestRawJSON, requestRawJSON)
-					data, _ := sjson.SetBytes([]byte(fmt.Sprintf(`{"type":"content_block_delta","index":%d,"delta":{"type":"input_json_delta","partial_json":""}}`, p.ResponseIndex)), "delta.partial_json", partialJSON)
+					data, _ := ojson.SetBytes([]byte(fmt.Sprintf(`{"type":"content_block_delta","index":%d,"delta":{"type":"input_json_delta","partial_json":""}}`, p.ResponseIndex)), "delta.partial_json", partialJSON)
 					appendEvent("content_block_delta", string(data))
 				}
 			}
@@ -281,6 +285,7 @@ func ConvertGeminiResponseToClaude(_ context.Context, _ string, originalRequestR
 		}
 		p.ResponseIndex = translatorcommon.AppendClaudeWebSearchStreamBlocks(appendEvent, p.ResponseIndex, translatorcommon.NewClaudeWebSearchToolUseID(), text, grounding)
 		p.WebSearchDone = true
+		p.WebSearchRequests = 1
 		p.HasContent = true
 		suppressVisibleText = true
 	}
@@ -720,6 +725,9 @@ func ConvertGeminiResponseToClaude(_ context.Context, _ string, originalRequestR
 			_ = templateDoc.Set("usage.input_tokens", (*param).(*Params).InputTokens)
 			if (*param).(*Params).CachedTokens > 0 {
 				_ = templateDoc.Set("usage.cache_read_input_tokens", (*param).(*Params).CachedTokens)
+			}
+			if (*param).(*Params).WebSearchRequests > 0 {
+				_ = templateDoc.Set("usage.server_tool_use.web_search_requests", (*param).(*Params).WebSearchRequests)
 			}
 
 			appendEvent("message_delta", templateDoc.String())

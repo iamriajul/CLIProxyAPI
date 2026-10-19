@@ -175,6 +175,14 @@ func TestNativeSearchGeminiRequiresRegistryCapability(t *testing.T) {
 	if NativeSearchSupported("openai-response", []string{"gemini"}, "gem-plain", responsesSearch) {
 		t.Fatal("incapable gemini responses route should need fallback")
 	}
+	nameless := []byte(`{"tools":[{"type":"web_search_20250305"}],"tool_choice":{"type":"tool","name":"web_search"}}`)
+	if !NativeSearchSupported("claude", []string{"gemini"}, "gem-capable", nameless) {
+		t.Fatal("nameless forced web_search should stay native")
+	}
+	forcedOther := []byte(`{"tools":[{"type":"web_search_20250305","name":"web_search"},{"name":"lookup","input_schema":{}}],"tool_choice":{"type":"tool","name":"lookup"}}`)
+	if NativeSearchSupported("claude", []string{"gemini"}, "gem-capable", forcedOther) {
+		t.Fatal("a choice forcing another tool should need fallback")
+	}
 }
 
 func searchStubConfig() Config {
