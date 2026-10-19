@@ -974,6 +974,9 @@ func TestConvertClaudeRequestToGemini_ForcedSearchLeavesNoDanglingConstraint(t *
 	if got := gjson.GetBytes(mixedOut, "toolConfig.functionCallingConfig.allowedFunctionNames.0").String(); got != "lookup" {
 		t.Fatalf("forced function must still constrain, got %s: %s", gjson.GetBytes(mixedOut, "toolConfig").Raw, mixedOut)
 	}
+	if gjson.GetBytes(mixedOut, "tools.#(googleSearch)").Raw != "" {
+		t.Fatalf("a choice that forces another tool must not add googleSearch: %s", mixedOut)
+	}
 
 	unnamed := []byte(`{
 		"model": "gemini-search-capable",
