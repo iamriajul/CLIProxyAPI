@@ -167,6 +167,11 @@ func TestNativeSearchGeminiRequiresRegistryCapability(t *testing.T) {
 	if !NativeSearchSupported("openai-response", []string{"gemini"}, "gem-capable", responsesSearch) {
 		t.Fatal("capable gemini responses route should be native")
 	}
+	for _, provider := range []string{"aistudio", "vertex"} {
+		if !NativeSearchSupported("openai-response", []string{provider}, "gem-capable", responsesSearch) {
+			t.Fatalf("%s should follow the gemini native gate", provider)
+		}
+	}
 	if NativeSearchSupported("openai-response", []string{"gemini"}, "gem-plain", responsesSearch) {
 		t.Fatal("incapable gemini responses route should need fallback")
 	}
