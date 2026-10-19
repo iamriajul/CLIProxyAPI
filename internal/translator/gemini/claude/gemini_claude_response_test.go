@@ -1582,3 +1582,92 @@ func TestConvertGeminiResponseToClaude_GroundingClosesOpenThinkingBlock(t *testi
 		t.Fatalf("index 0 starts=%d stops=%d: %s", starts, stops, got)
 	}
 }
+
+func TestConvertGeminiResponseToClaude_GroundingKeepsOpenToolContinuation(t *testing.T) {
+	original := []byte(`{"tools":[{"type":"web_search_20250305","name":"web_search"},{"name":"lookup","input_schema":{"type":"object","properties":{"q":{"type":"string"}}}}]}`)
+	translated := []byte(`{"tools":[{"googleSearch":{}},{"functionDeclarations":[{"name":"lookup"}]}]}`)
+	open := []byte(`{
+		"candidates": [{"content": {"parts": [{"functionCall": {"name": "lookup", "args": {}}}]}}],
+		"modelVersion": "gemini-search",
+		"responseId": "resp-tool"
+	}`)
+	cont := []byte(`{
+		"candidates": [{
+			"content": {"parts": [{"functionCall": {"args": {"q": "x"}}}]},
+			"finishReason": "STOP",
+			"groundingMetadata": {
+				"webSearchQueries": ["q"],
+				"groundingChunks": [{"web": {"uri": "https://example.com", "title": "Example"}}]
+			}
+		}],
+		"usageMetadata": {"promptTokenCount": 2, "candidatesTokenCount": 3},
+		"modelVersion": "gemini-search",
+		"responseId": "resp-tool"
+	}`)
+	var param any
+	ctx := context.Background()
+	var output []byte
+	output = append(output, bytes.Join(ConvertGeminiResponseToClaude(ctx, "gemini-search", original, translated, open, &param), nil)...)
+	output = append(output, bytes.Join(ConvertGeminiResponseToClaude(ctx, "gemini-search", original, translated, cont, &param), nil)...)
+	got := string(output)
+	if strings.Count(got, `"type":"tool_use"`) != 1 {
+		t.Fatalf("tool_use count: %s", got)
+	}
+	if strings.Contains(got, `"name":""`) {
+		t.Fatalf("empty tool name: %s", got)
+	}
+	if !strings.Contains(got, `"name":"lookup"`) || !strings.Contains(got, `{\"q\"`) {
+		t.Fatalf("continuation args missing: %s", got)
+	}
+}
+
+func TestConvertGeminiResponseToClaude_MalformedStillEmitsBufferedSearchText(t *testing.T) {
+	original := []byte(`{"tools":[{"type":"web_search_20250305","name":"web_search"}]}`)
+	translated := []byte(`{"tools":[{"googleSearch":{}}]}`)
+	textChunk := []byte(`{
+		"candidates": [{"content": {"parts": [{"text": "partial answer"}]}}],
+		"modelVersion": "gemini-search",
+		"responseId": "resp-bad"
+	}`)
+	bad := []byte(`{
+		"candidates": [{"finishReason": "MALFORMED_FUNCTION_CALL"}],
+		"usageMetadata": {"promptTokenCount": 2, "candidatesTokenCount": 1},
+		"modelVersion": "gemini-search",
+		"responseId": "resp-bad"
+	}`)
+	var param any
+	ctx := context.Background()
+	var output []byte
+	output = append(output, bytes.Join(ConvertGeminiResponseToClaude(ctx, "gemini-search", original, translated, textChunk, &param), nil)...)
+	output = append(output, bytes.Join(ConvertGeminiResponseToClaude(ctx, "gemini-search", original, translated, bad, &param), nil)...)
+	got := string(output)
+	textAt := strings.Index(got, "partial answer")
+	errAt := strings.Index(got, "MALFORMED_FUNCTION_CALL")
+	if textAt < 0 || errAt < 0 || textAt > errAt {
+		t.Fatalf("buffered text must precede the error: %s", got)
+	}
+}
+
+func TestConvertGeminiResponseToClaudeNonStream_GroundingUsageKeepsTokenFields(t *testing.T) {
+	original := []byte(`{"tools":[{"type":"web_search_20250305","name":"web_search"}]}`)
+	translated := []byte(`{"tools":[{"googleSearch":{}}]}`)
+	raw := []byte(`{
+		"responseId": "resp-usage",
+		"modelVersion": "gemini-search",
+		"candidates": [{
+			"content": {"parts": [{"text": "Answer."}]},
+			"finishReason": "STOP",
+			"groundingMetadata": {
+				"webSearchQueries": ["q"],
+				"groundingChunks": [{"web": {"uri": "https://example.com", "title": "Example"}}]
+			}
+		}]
+	}`)
+	out := ConvertGeminiResponseToClaudeNonStream(context.Background(), "gemini-search", original, translated, raw, nil)
+	if !gjson.GetBytes(out, "usage.input_tokens").Exists() || !gjson.GetBytes(out, "usage.output_tokens").Exists() {
+		t.Fatalf("usage missing token fields: %s", gjson.GetBytes(out, "usage").Raw)
+	}
+	if gjson.GetBytes(out, "usage.server_tool_use.web_search_requests").Int() != 1 {
+		t.Fatalf("search count: %s", gjson.GetBytes(out, "usage").Raw)
+	}
+}
