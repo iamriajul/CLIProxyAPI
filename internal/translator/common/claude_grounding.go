@@ -3,6 +3,7 @@ package common
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/tidwall/gjson"
@@ -125,7 +126,11 @@ func parseGroundingSupports(groundingMetadata gjson.Result) []groundingSupport {
 				if chunkIndex < 0 || chunkIndex >= len(chunkData) {
 					continue
 				}
-				parsed.ChunkURLs = append(parsed.ChunkURLs, chunkData[chunkIndex].URL)
+				url := strings.TrimSpace(chunkData[chunkIndex].URL)
+				if url == "" {
+					continue
+				}
+				parsed.ChunkURLs = append(parsed.ChunkURLs, url)
 				if parsed.ChunkTitle == "" {
 					parsed.ChunkTitle = chunkData[chunkIndex].Title
 				}
@@ -169,16 +174,17 @@ func citedTextBlocks(textContent string, supports []groundingSupport) []citedTex
 				citedText = string(textBytes[start:end])
 			}
 		}
-		if citedText != "" && len(support.ChunkURLs) > 0 {
-			blocks = append(blocks, citedTextBlock{
-				Text: citedText,
-				Citations: []map[string]any{{
+		if citedText != "" {
+			block := citedTextBlock{Text: citedText}
+			if len(support.ChunkURLs) > 0 {
+				block.Citations = []map[string]any{{
 					"type":       "web_search_result_location",
 					"cited_text": citedText,
 					"url":        support.ChunkURLs[0],
 					"title":      support.ChunkTitle,
-				}},
-			})
+				}}
+			}
+			blocks = append(blocks, block)
 		}
 		if support.EndIndex > lastEnd {
 			lastEnd = support.EndIndex

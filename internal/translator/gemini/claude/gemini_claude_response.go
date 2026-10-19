@@ -241,10 +241,14 @@ func ConvertGeminiResponseToClaude(_ context.Context, _ string, originalRequestR
 		appendGeminiVisibleText(partsResult, &p.WebSearchText)
 		text := p.WebSearchText.String()
 		p.WebSearchText.Reset()
+		if p.ResponseType != 0 {
+			appendEvent("content_block_stop", fmt.Sprintf(`{"type":"content_block_stop","index":%d}`, p.ResponseIndex))
+			p.ResponseIndex++
+			p.ResponseType = 0
+		}
 		p.ResponseIndex = translatorcommon.AppendClaudeWebSearchStreamBlocks(appendEvent, p.ResponseIndex, translatorcommon.NewClaudeWebSearchToolUseID(), text, grounding)
 		p.WebSearchDone = true
 		p.HasContent = true
-		p.ResponseType = 0
 		suppressVisibleText = true
 	}
 	if partsResult.IsArray() {
@@ -687,19 +691,6 @@ func ConvertGeminiResponseToClaudeNonStream(_ context.Context, _ string, origina
 		out, _ = sjson.SetBytes(out, "usage.cache_read_input_tokens", cachedTokens)
 	}
 
-	if geminiClaudeWebSearchMode(originalRequestRawJSON, requestRawJSON) {
-		grounding := root.Get("candidates.0.groundingMetadata")
-		if translatorcommon.HasWebGrounding(grounding) {
-			var visible strings.Builder
-			appendGeminiVisibleText(root.Get("candidates.0.content.parts"), &visible)
-			content := translatorcommon.BuildClaudeWebSearchContent(translatorcommon.NewClaudeWebSearchToolUseID(), visible.String(), grounding)
-			out, _ = sjson.SetRawBytes(out, "content", content)
-			out, _ = sjson.SetBytes(out, "stop_reason", "end_turn")
-			out, _ = sjson.SetBytes(out, "usage.server_tool_use.web_search_requests", 1)
-			return out
-		}
-	}
-
 	parts := root.Get("candidates.0.content.parts")
 	textBuilder := strings.Builder{}
 	thinkingBuilder := strings.Builder{}
@@ -827,6 +818,36 @@ func ConvertGeminiResponseToClaudeNonStream(_ context.Context, _ string, origina
 	flushThinking()
 	flushText()
 
+	if geminiClaudeWebSearchMode(originalRequestRawJSON, requestRawJSON) {
+		grounding := root.Get("candidates.0.groundingMetadata")
+		if translatorcommon.HasWebGrounding(grounding) {
+			var visible strings.Builder
+			appendGeminiVisibleText(parts, &visible)
+			searchRaw := translatorcommon.BuildClaudeWebSearchContent(translatorcommon.NewClaudeWebSearchToolUseID(), visible.String(), grounding)
+			searchBlocks := make([][]byte, 0)
+			gjson.ParseBytes(searchRaw).ForEach(func(_, item gjson.Result) bool {
+				searchBlocks = append(searchBlocks, []byte(item.Raw))
+				return true
+			})
+			merged := make([][]byte, 0, len(blocks)+len(searchBlocks))
+			inserted := false
+			for _, block := range blocks {
+				if gjson.GetBytes(block, "type").String() == "text" {
+					if !inserted {
+						merged = append(merged, searchBlocks...)
+						inserted = true
+					}
+					continue
+				}
+				merged = append(merged, block)
+			}
+			if !inserted {
+				merged = append(searchBlocks, merged...)
+			}
+			blocks = merged
+		}
+	}
+
 	if len(blocks) > 0 {
 		out, _ = sjson.SetRawBytes(out, "content", translatorcommon.JoinRawArray(blocks))
 	}
@@ -842,6 +863,9 @@ func ConvertGeminiResponseToClaudeNonStream(_ context.Context, _ string, origina
 
 	if inputTokens == int64(0) && outputTokens == int64(0) && !root.Get("usageMetadata").Exists() {
 		out, _ = sjson.DeleteBytes(out, "usage")
+	}
+	if geminiClaudeWebSearchMode(originalRequestRawJSON, requestRawJSON) && translatorcommon.HasWebGrounding(root.Get("candidates.0.groundingMetadata")) {
+		out, _ = sjson.SetBytes(out, "usage.server_tool_use.web_search_requests", 1)
 	}
 
 	return out
