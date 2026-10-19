@@ -414,16 +414,47 @@ func claudeBase64InlineData(source gjson.Result) []byte {
 }
 
 // claudeChoiceAllowsGeminiSearch reports whether the Claude tool choice
-// permits native googleSearch grounding. Only an explicit none denies it.
+// permits native googleSearch grounding. It matches the proxy fallback gate:
+// none denies it, and a choice that forces some other tool denies it too.
 func claudeChoiceAllowsGeminiSearch(rawJSON []byte) bool {
 	choice := gjson.GetBytes(rawJSON, "tool_choice")
 	if !choice.Exists() || choice.Type == gjson.Null {
 		return true
 	}
+	choiceType := ""
+	choiceName := ""
 	if choice.Type == gjson.String {
-		return !strings.EqualFold(strings.TrimSpace(choice.String()), "none")
+		choiceType = strings.ToLower(strings.TrimSpace(choice.String()))
+	} else {
+		choiceType = strings.ToLower(strings.TrimSpace(choice.Get("type").String()))
+		choiceName = strings.TrimSpace(choice.Get("name").String())
 	}
-	return !strings.EqualFold(strings.TrimSpace(choice.Get("type").String()), "none")
+	switch choiceType {
+	case "", "auto", "any":
+		return true
+	case "none":
+		return false
+	case "tool":
+		return claudeDeclaredSearchNames(rawJSON)[choiceName]
+	default:
+		return true
+	}
+}
+
+func claudeDeclaredSearchNames(rawJSON []byte) map[string]bool {
+	names := map[string]bool{}
+	gjson.GetBytes(rawJSON, "tools").ForEach(func(_, tool gjson.Result) bool {
+		if !translatorcommon.IsClaudeWebSearchToolType(tool.Get("type").String()) {
+			return true
+		}
+		name := strings.TrimSpace(tool.Get("name").String())
+		if name == "" {
+			name = "web_search"
+		}
+		names[name] = true
+		return true
+	})
+	return names
 }
 
 func geminiContentWithParts(role string, parts [][]byte) []byte {
