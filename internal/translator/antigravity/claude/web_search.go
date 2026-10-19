@@ -335,7 +335,11 @@ func parseWebSearchGroundingSupports(groundingMetadata gjson.Result) []webSearch
 				if chunkIndex < 0 || chunkIndex >= len(chunkData) {
 					continue
 				}
-				parsed.ChunkURLs = append(parsed.ChunkURLs, chunkData[chunkIndex].URL)
+				url := strings.TrimSpace(chunkData[chunkIndex].URL)
+				if url == "" {
+					continue
+				}
+				parsed.ChunkURLs = append(parsed.ChunkURLs, url)
 				if parsed.ChunkTitle == "" {
 					parsed.ChunkTitle = chunkData[chunkIndex].Title
 				}
@@ -381,17 +385,18 @@ func buildWebSearchCitedTextBlocks(textContent string, supports []webSearchGroun
 				citedText = string(textBytes[start:end])
 			}
 		}
-		if citedText != "" && len(support.ChunkURLs) > 0 {
-			citation := map[string]any{
-				"type":       "web_search_result_location",
-				"cited_text": citedText,
-				"url":        support.ChunkURLs[0],
-				"title":      support.ChunkTitle,
+		if citedText != "" {
+			block := webSearchCitedTextBlock{Text: citedText}
+			if len(support.ChunkURLs) > 0 {
+				citation := map[string]any{
+					"type":       "web_search_result_location",
+					"cited_text": citedText,
+					"url":        support.ChunkURLs[0],
+					"title":      support.ChunkTitle,
+				}
+				block.Citations = []map[string]any{citation}
 			}
-			blocks = append(blocks, webSearchCitedTextBlock{
-				Text:      citedText,
-				Citations: []map[string]any{citation},
-			})
+			blocks = append(blocks, block)
 		}
 		if support.EndIndex > lastEnd {
 			lastEnd = support.EndIndex
