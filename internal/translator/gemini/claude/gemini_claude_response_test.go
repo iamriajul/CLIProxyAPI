@@ -1295,3 +1295,72 @@ func TestConvertGeminiResponseToClaude_StreamBuffersTextUntilGrounding(t *testin
 		t.Fatalf("plain text block opened before the search: %s", got)
 	}
 }
+
+func TestConvertGeminiResponseToClaudeNonStream_GroundingKeepsFunctionCall(t *testing.T) {
+	original := []byte(`{"tools":[{"type":"web_search_20250305","name":"web_search"},{"name":"lookup","input_schema":{"type":"object"}}]}`)
+	translated := []byte(`{"tools":[{"googleSearch":{}},{"functionDeclarations":[{"name":"lookup"}]}]}`)
+	raw := []byte(`{
+		"responseId": "resp-mix",
+		"modelVersion": "gemini-search",
+		"candidates": [{
+			"content": {"parts": [
+				{"text": "Answer.", "thought": true},
+				{"text": "Use the tool."},
+				{"functionCall": {"name": "lookup", "args": {"q": "x"}}}
+			]},
+			"finishReason": "STOP",
+			"groundingMetadata": {
+				"webSearchQueries": ["q"],
+				"groundingChunks": [{"web": {"uri": "https://example.com", "title": "Example"}}]
+			}
+		}],
+		"usageMetadata": {"promptTokenCount": 3, "candidatesTokenCount": 4}
+	}`)
+	out := ConvertGeminiResponseToClaudeNonStream(context.Background(), "gemini-search", original, translated, raw, nil)
+	if gjson.GetBytes(out, "stop_reason").String() != "tool_use" {
+		t.Fatalf("stop_reason = %s", gjson.GetBytes(out, "stop_reason").Raw)
+	}
+	if gjson.GetBytes(out, `content.#(type=="tool_use").name`).String() != "lookup" {
+		t.Fatalf("tool call dropped: %s", out)
+	}
+	if gjson.GetBytes(out, `content.#(type=="thinking")`).Raw == "" {
+		t.Fatalf("thinking dropped: %s", out)
+	}
+	if gjson.GetBytes(out, `content.#(type=="server_tool_use")`).Raw == "" {
+		t.Fatalf("search block missing: %s", out)
+	}
+}
+
+func TestConvertGeminiResponseToClaude_GroundingClosesOpenThinkingBlock(t *testing.T) {
+	original := []byte(`{"tools":[{"type":"web_search_20250305","name":"web_search"}]}`)
+	translated := []byte(`{"tools":[{"googleSearch":{}}]}`)
+	thinking := []byte(`{
+		"candidates": [{"content": {"parts": [{"text": "thinking...", "thought": true}]}}],
+		"modelVersion": "gemini-search",
+		"responseId": "resp-think"
+	}`)
+	grounded := []byte(`{
+		"candidates": [{
+			"content": {"parts": [{"text": "Spain won."}]},
+			"finishReason": "STOP",
+			"groundingMetadata": {
+				"webSearchQueries": ["euro"],
+				"groundingChunks": [{"web": {"uri": "https://example.com/euro", "title": "Euro"}}]
+			}
+		}],
+		"usageMetadata": {"promptTokenCount": 3, "candidatesTokenCount": 4},
+		"modelVersion": "gemini-search",
+		"responseId": "resp-think"
+	}`)
+	var param any
+	ctx := context.Background()
+	var output []byte
+	output = append(output, bytes.Join(ConvertGeminiResponseToClaude(ctx, "gemini-search", original, translated, thinking, &param), nil)...)
+	output = append(output, bytes.Join(ConvertGeminiResponseToClaude(ctx, "gemini-search", original, translated, grounded, &param), nil)...)
+	got := string(output)
+	starts := strings.Count(got, `"type":"content_block_start","index":0`)
+	stops := strings.Count(got, `"type":"content_block_stop","index":0`)
+	if starts != 1 || stops != 1 {
+		t.Fatalf("index 0 starts=%d stops=%d: %s", starts, stops, got)
+	}
+}
