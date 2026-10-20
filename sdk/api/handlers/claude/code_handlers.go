@@ -24,6 +24,7 @@ import (
 	. "github.com/router-for-me/CLIProxyAPI/v8/internal/constant"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/websearch"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	log "github.com/sirupsen/logrus"
@@ -159,7 +160,19 @@ func rewriteClaudeDDModelInBody(rawJSON []byte) []byte {
 func (h *ClaudeCodeAPIHandler) ClaudeModels(c *gin.Context) {
 	cfg := h.CurrentConfig()
 	disableCloaking := cfg != nil && cfg.ClaudeCode.DisableCloakingModelList
-	h.WriteModelListResponse(c, h.HandlerType(), claudemodels.BuildResponse(h.Models(), disableCloaking))
+	models := h.Models()
+	if websearch.RequestWantsClaudeWebSearchCapability(
+		c.GetHeader("User-Agent"),
+		c.GetHeader(websearch.CPAClientHeader),
+		c.Query(websearch.ClaudeWebSearchCapabilityQuery),
+	) {
+		webSearchCfg := websearch.Config{}
+		if cfg != nil {
+			webSearchCfg = cfg.WebSearch
+		}
+		websearch.AnnotateClaudeWebSearch(models, webSearchCfg, registry.GetGlobalRegistry().GetModelProviders)
+	}
+	h.WriteModelListResponse(c, h.HandlerType(), claudemodels.BuildResponse(models, disableCloaking))
 }
 
 // handleNonStreamingResponse handles non-streaming content generation requests for Claude models.
