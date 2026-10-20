@@ -25,6 +25,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
 	responsesclaude "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/claude/openai/responses"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/websearch"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers/claude"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers/gemini"
@@ -923,7 +924,19 @@ func (s *Server) handleHomeModels(c *gin.Context) {
 	if isClaude {
 		cfg := s.getConfig()
 		disableCloaking := cfg != nil && cfg.ClaudeCode.DisableCloakingModelList
-		s.writeModelListResponse(c, "claude", claudemodels.BuildResponse(formatHomeClaudeModels(entries), disableCloaking))
+		models := formatHomeClaudeModels(entries)
+		if websearch.RequestWantsClaudeWebSearchCapability(
+			c.GetHeader("User-Agent"),
+			c.GetHeader(websearch.CPAClientHeader),
+			c.Query(websearch.ClaudeWebSearchCapabilityQuery),
+		) {
+			webSearchCfg := websearch.Config{}
+			if cfg != nil {
+				webSearchCfg = cfg.WebSearch
+			}
+			websearch.AnnotateClaudeWebSearch(models, webSearchCfg, homeClaudeProviders(entries))
+		}
+		s.writeModelListResponse(c, "claude", claudemodels.BuildResponse(models, disableCloaking))
 		return
 	}
 
@@ -945,6 +958,16 @@ func (s *Server) handleHomeModels(c *gin.Context) {
 		"object": "list",
 		"data":   filtered,
 	})
+}
+
+func homeClaudeProviders(entries []homeModelEntry) func(string) []string {
+	byID := make(map[string][]string, len(entries))
+	for _, entry := range entries {
+		byID[entry.id] = append([]string(nil), entry.providers...)
+	}
+	return func(id string) []string {
+		return byID[strings.TrimSpace(id)]
+	}
 }
 
 func formatHomeClaudeModels(entries []homeModelEntry) []map[string]any {
