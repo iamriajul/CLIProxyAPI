@@ -240,6 +240,13 @@ routing:
 # search itself, and feeds results back to the model internally.
 # Native search (Claude/Codex/Grok/Antigravity/Gemini capable routes) is
 # always preferred; this only covers the rest.
+#
+# Paseo catalog fetches (User-Agent claude-cli/paseo, X-CPA-Client: paseo,
+# or ?cpa_capabilities=1) receive cpa_capabilities.claude_web_search on each
+# Anthropic model row. True means every route for that model will execute a
+# Claude server web_search tool, natively or through this chain. False means
+# a route would drop it. The field is omitted when routing is unknown, and
+# it is not sent to official Claude Code clients.
 web-search:
   enabled: false
   # No credentials are required: the credential-free providers (startpage,
