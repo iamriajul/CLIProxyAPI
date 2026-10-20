@@ -3344,9 +3344,10 @@ func TestModelsForCPAClientSerializesWebSearchCapabilities(t *testing.T) {
 		{"cpa-web-search-codex", "codex", "cpa-search-codex-model"},
 		{"cpa-web-search-xai", "xai", "cpa-search-xai-model"},
 		{"cpa-web-search-claude", "claude", "cpa-search-claude-model"},
-		{"cpa-web-search-gemini", "gemini", "cpa-no-search-gemini-model"},
+		{"cpa-web-search-gemini", "gemini", "cpa-search-gemini-model"},
+		{"cpa-web-search-openai", "openai", "cpa-no-search-openai-model"},
 		{"cpa-web-search-mixed-codex", "codex", "cpa-mixed-search-model"},
-		{"cpa-web-search-mixed-gemini", "gemini", "cpa-mixed-search-model"},
+		{"cpa-web-search-mixed-openai", "openai", "cpa-mixed-search-model"},
 		{"cpa-web-search-prefixed", "codex", "team/cpa-prefixed-search-model"},
 	}
 	webSearch := true
@@ -3384,10 +3385,10 @@ func TestModelsForCPAClientSerializesWebSearchCapabilities(t *testing.T) {
 		slug, _ := model["slug"].(string)
 		entries[slug] = model
 	}
-	for _, modelID := range []string{"cpa-search-codex-model", "cpa-search-xai-model", "cpa-search-claude-model", "team/cpa-prefixed-search-model"} {
+	for _, modelID := range []string{"cpa-search-codex-model", "cpa-search-xai-model", "cpa-search-claude-model", "cpa-search-gemini-model", "team/cpa-prefixed-search-model"} {
 		assertSerializedCPAWebSearch(t, entries[modelID], true)
 	}
-	for _, modelID := range []string{"cpa-no-search-gemini-model", "cpa-mixed-search-model"} {
+	for _, modelID := range []string{"cpa-no-search-openai-model", "cpa-mixed-search-model"} {
 		assertSerializedCPAWebSearch(t, entries[modelID], false)
 	}
 
@@ -3411,6 +3412,7 @@ func TestHomeModelsRequirePerEntryWebSearchCapabilityAndConservativeRoutes(t *te
 		"xai":[{"id":"home-xai","native_capabilities":{"web_search":true}}],
 		"claude":[{"id":"gpt-5.5","native_capabilities":{"web_search":true}}],
 		"gemini":[{"id":"home-gemini","native_capabilities":{"web_search":true}}],
+		"openai":[{"id":"home-openai","native_capabilities":{"web_search":true}}],
 		"custom":[{"id":"home-custom","native_capabilities":{"web_search":true}}]
 	}`))
 	if errDecode != nil {
@@ -3431,13 +3433,13 @@ func TestHomeModelsRequirePerEntryWebSearchCapabilityAndConservativeRoutes(t *te
 		slug, _ := model["slug"].(string)
 		bySlug[slug] = model
 	}
-	for _, modelID := range []string{"home-codex", "home-xai", "gpt-5.5"} {
+	for _, modelID := range []string{"home-codex", "home-xai", "gpt-5.5", "home-gemini"} {
 		assertSerializedCPAWebSearch(t, bySlug[modelID], true)
 	}
 	if supportsSearchTool, _ := bySlug["gpt-5.5"]["supports_search_tool"].(bool); !supportsSearchTool {
 		t.Fatal("CPA capability metadata changed legacy Home supports_search_tool")
 	}
-	for _, modelID := range []string{"home-gemini", "home-duplicate"} {
+	for _, modelID := range []string{"home-openai", "home-duplicate"} {
 		assertSerializedCPAWebSearch(t, bySlug[modelID], false)
 	}
 	for _, modelID := range []string{"home-unknown", "home-custom"} {
