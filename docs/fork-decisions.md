@@ -37,6 +37,24 @@ grep -q 'head -n 300 "$changelog_entries_file"' .github/workflows/release.yaml
 grep -q 'head -c 100000 "$changelog_notes_file"' .github/workflows/release.yaml
 ```
 
+## release-go-version
+**The release job builds with a Go at least as new as go.mod requires**
+
+The release workflow pins `GO_VERSION` and runs with `GOTOOLCHAIN=local`, so
+when go.mod's `go` line moves past the pin, every build job fails on its first
+`go` command and the release ships with no assets. Upstream v8.0.39 bumped
+go.mod to 1.26.10 but left the pin at 1.26.4, and its own v8.0.39 release has
+no assets. The fork raises the pin to match. Once upstream fixes the pin
+itself, this commit goes empty on the next sync and the section can be
+deleted.
+
+```bash
+want="$(awk '/^go /{print $2; exit}' go.mod)"
+have="$(sed -n "s/^  GO_VERSION: '\(.*\)'$/\1/p" .github/workflows/release.yaml)"
+test -n "$have"
+test "$(printf '%s\n%s\n' "$want" "$have" | sort -V | head -n1)" = "$want"
+```
+
 ## retarget-skip-in-fork
 
 **Upstream's main-to-dev retarget bot stays off in the fork**
