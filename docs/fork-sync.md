@@ -3,10 +3,17 @@
 This fork keeps a rebase queue shape: `main` is an upstream release tag plus
 one commit per fork change, with no merge commits. Land the queue directly:
 rebase onto the target tag, then `git push --force-with-lease origin
-HEAD:main`. (Branch protection was previously assumed to force squash-merge
-PRs, but it is not currently enabled on this fork — verified 2026-09-15 when
-the branch-protection API returned 404 — so the direct push is the landing
-method; PRs remain optional for review and never carry merge commits.)
+HEAD:main`. `main` is guarded by two repository rulesets (`general-practices`:
+linear history, pull request, required checks; `strict-pullfrog-approval`:
+the `pullfrog-approval` check). Both let repository admins bypass, and the
+sync lands through that bypass: GitHub prints "Bypassed rule violations" on
+the push. The linear-history rule also reports any merge commits upstream
+has in the new release tag; those are expected, but the fork queue itself
+must still have none. PRs
+remain optional for review and never carry merge commits. (An earlier version
+of this doc said no protection was enabled, based on the classic
+branch-protection API returning 404 on 2026-09-15. That API does not report
+rulesets, which have existed since 2026-09-13.)
 
 Track **stable release tags** (`v*`). `origin/main` may move past the latest
 tag with unfinished work; never base fork work on an untagged tip.
@@ -72,7 +79,7 @@ go build -o /tmp/fork-verify-build ./cmd/server && rm -f /tmp/fork-verify-build
 ```
 
 Land the verified queue with `git push --force-with-lease origin HEAD:main`
-(no branch protection currently enforces a PR step — see the note at the top).
+(admins bypass the `main` rulesets — see the note at the top).
 
 ## Releases from the queue
 
