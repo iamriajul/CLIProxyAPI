@@ -364,4 +364,19 @@ func TestKagiRecencyUsesCalendarArithmetic(t *testing.T) {
 	if parse(year).Year() != now.Year()-1 {
 		t.Fatalf("year window = %s, want last year", year)
 	}
+
+	// Month-end dates must clamp to the previous month's final day rather
+	// than overflowing into the current month.
+	oct31 := time.Date(2026, time.October, 31, 12, 0, 0, 0, time.UTC)
+	if got, _ := kagiAfterDateAt(RecencyMonth, oct31); got != "2026-09-30" {
+		t.Fatalf("kagiAfterDateAt(Oct 31) = %s, want 2026-09-30", got)
+	}
+	mar31 := time.Date(2026, time.March, 31, 12, 0, 0, 0, time.UTC)
+	if got, _ := kagiAfterDateAt(RecencyMonth, mar31); got != "2026-02-28" {
+		t.Fatalf("kagiAfterDateAt(Mar 31) = %s, want 2026-02-28", got)
+	}
+	leapFeb29 := time.Date(2028, time.February, 29, 12, 0, 0, 0, time.UTC)
+	if got, _ := kagiAfterDateAt(RecencyYear, leapFeb29); got != "2027-02-28" {
+		t.Fatalf("kagiAfterDateAt(leap Feb 29 - 1yr) = %s, want 2027-02-28", got)
+	}
 }
