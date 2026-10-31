@@ -365,16 +365,30 @@ func kagiErrorMessage(root gjson.Result) string {
 // calendar arithmetic rather than fixed day counts keeps month and leap-year
 // boundaries correct.
 func kagiAfterDate(recency Recency) (string, bool) {
-	now := time.Now().UTC()
+	return kagiAfterDateAt(recency, time.Now().UTC())
+}
+
+func kagiAfterDateAt(recency Recency, now time.Time) (string, bool) {
+	now = now.UTC()
 	switch recency {
 	case RecencyDay:
 		return now.AddDate(0, 0, -1).Format("2006-01-02"), true
 	case RecencyWeek:
 		return now.AddDate(0, 0, -7).Format("2006-01-02"), true
 	case RecencyMonth:
-		return now.AddDate(0, -1, 0).Format("2006-01-02"), true
+		year, month, day := now.Date()
+		firstOfPrev := time.Date(year, month-1, 1, 0, 0, 0, 0, time.UTC)
+		lastDay := firstOfPrev.AddDate(0, 1, -1).Day()
+		if day > lastDay {
+			day = lastDay
+		}
+		return time.Date(firstOfPrev.Year(), firstOfPrev.Month(), day, 0, 0, 0, 0, time.UTC).Format("2006-01-02"), true
 	case RecencyYear:
-		return now.AddDate(-1, 0, 0).Format("2006-01-02"), true
+		year, month, day := now.Date()
+		if month == time.February && day == 29 {
+			day = 28
+		}
+		return time.Date(year-1, month, day, 0, 0, 0, 0, time.UTC).Format("2006-01-02"), true
 	default:
 		return "", false
 	}
