@@ -7,12 +7,11 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/clienterror"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 	"golang.org/x/net/context"
 )
 
@@ -198,14 +197,14 @@ func writeDirectErrorResponse(c *gin.Context, status int, msg *interfaces.ErrorM
 		if rec, ok := coreauth.EarliestRecoveryTime(msg.Error); ok && !rec.IsZero() {
 			suffix := coreauth.FormatRetryAfterSuffix(rec)
 			if suffix != "" && !bytes.Contains(body, []byte("RETRY_AFTER:")) {
-				if gjson.GetBytes(body, "error.message").Exists() {
-					msgVal := gjson.GetBytes(body, "error.message").String()
-					if updated, errSet := sjson.SetBytes(body, "error.message", fmt.Sprintf("%s %s", msgVal, suffix)); errSet == nil {
+				if ojson.GetBytes(body, "error.message").Exists() {
+					msgVal := ojson.GetBytes(body, "error.message").String()
+					if updated, errSet := ojson.SetBytes(body, "error.message", fmt.Sprintf("%s %s", msgVal, suffix)); errSet == nil {
 						body = updated
 					}
-				} else if gjson.GetBytes(body, "message").Exists() {
-					msgVal := gjson.GetBytes(body, "message").String()
-					if updated, errSet := sjson.SetBytes(body, "message", fmt.Sprintf("%s %s", msgVal, suffix)); errSet == nil {
+				} else if ojson.GetBytes(body, "message").Exists() {
+					msgVal := ojson.GetBytes(body, "message").String()
+					if updated, errSet := ojson.SetBytes(body, "message", fmt.Sprintf("%s %s", msgVal, suffix)); errSet == nil {
 						body = updated
 					}
 				}

@@ -1193,13 +1193,13 @@ func TestConvertClaudeRequestToOpenAI_SkipsTypedWebSearchTools(t *testing.T) {
 	}`)
 
 	output, _ := ConvertClaudeRequestToOpenAI("test-model", inputJSON, false)
-	if got := gjson.GetBytes(output, "tools.#").Int(); got != 1 {
+	if got := ojson.GetBytes(output, "tools.#").Int(); got != 1 {
 		t.Fatalf("tools count = %d, want 1: %s", got, output)
 	}
-	if got := gjson.GetBytes(output, "tools.0.function.name").String(); got != "lookup" {
+	if got := ojson.GetBytes(output, "tools.0.function.name").String(); got != "lookup" {
 		t.Fatalf("kept tool = %q, want lookup: %s", got, output)
 	}
-	if got := gjson.GetBytes(output, "tool_choice").String(); got != "auto" {
+	if got := ojson.GetBytes(output, "tool_choice").String(); got != "auto" {
 		t.Fatalf("tool_choice = %q, want auto downgrade: %s", got, output)
 	}
 
@@ -1210,10 +1210,10 @@ func TestConvertClaudeRequestToOpenAI_SkipsTypedWebSearchTools(t *testing.T) {
 		"messages": [{"role": "user", "content": "hello"}]
 	}`)
 	outOnly, _ := ConvertClaudeRequestToOpenAI("test-model", searchOnly, false)
-	if gjson.GetBytes(outOnly, "tools").Exists() {
+	if ojson.GetBytes(outOnly, "tools").Exists() {
 		t.Fatalf("search-only tools should be omitted: %s", outOnly)
 	}
-	if gjson.GetBytes(outOnly, "tool_choice").Exists() {
+	if ojson.GetBytes(outOnly, "tool_choice").Exists() {
 		t.Fatalf("search-only tool_choice should be omitted: %s", outOnly)
 	}
 }
@@ -1984,7 +1984,7 @@ func TestDroppedSearchChoiceLookupTrimsPadding(t *testing.T) {
 		"tools":[{"type":"web_search_20250305","name":"web_search"},{"name":"calc","description":"d","input_schema":{"type":"object"}}],
 		"tool_choice":{"type":"tool","name":"  web_search  "}}`)
 	out, _ := ConvertClaudeRequestToOpenAI("gpt-5", in, false)
-	if got := gjson.GetBytes(out, "tool_choice").String(); got != "auto" {
+	if got := ojson.GetBytes(out, "tool_choice").String(); got != "auto" {
 		t.Fatalf("tool_choice = %q, want auto: %s", got, out)
 	}
 }
@@ -1997,10 +1997,10 @@ func TestNamelessSearchToolDowngradesForcedChoice(t *testing.T) {
 		"tools":[{"type":"web_search_20250305"},{"name":"calc","description":"d","input_schema":{"type":"object"}}],
 		"tool_choice":{"type":"tool","name":"web_search"}}`)
 	out, _ := ConvertClaudeRequestToOpenAI("gpt-5", in, false)
-	if got := gjson.GetBytes(out, "tool_choice").String(); got != "auto" {
+	if got := ojson.GetBytes(out, "tool_choice").String(); got != "auto" {
 		t.Fatalf("tool_choice = %q, want auto: %s", got, out)
 	}
-	if got := gjson.GetBytes(out, "tools.#").Int(); got != 1 {
+	if got := ojson.GetBytes(out, "tools.#").Int(); got != 1 {
 		t.Fatalf("calc must survive the drop: %s", out)
 	}
 }
