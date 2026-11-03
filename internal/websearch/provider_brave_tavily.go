@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tidwall/gjson"
+	"github.com/MoeForge/moego/ojson"
 )
 
 // braveProvider queries the Brave Search API.
@@ -79,7 +79,7 @@ func (braveProvider) Search(ctx context.Context, cfg Config, req SearchRequest, 
 		respHeader.Get("X-Request-Id"),
 		respHeader.Get("Request-Id"),
 	)
-	for _, item := range gjson.GetBytes(body, "web.results").Array() {
+	for _, item := range ojson.GetBytes(body, "web.results").Array() {
 		source := Source{
 			Title:   firstNonEmpty(strings.TrimSpace(item.Get("title").String()), strings.TrimSpace(item.Get("url").String())),
 			URL:     braveResultURL(item.Get("url").String()),
@@ -127,7 +127,7 @@ func braveResultURL(raw string) string {
 
 // braveSnippet merges the description with every extra snippet Brave
 // returned, so the paid-for field is not discarded.
-func braveSnippet(item gjson.Result) string {
+func braveSnippet(item ojson.Result) string {
 	parts := make([]string, 0, 4)
 	appendPart := func(text string) {
 		if text = strings.TrimSpace(text); text != "" {
@@ -290,10 +290,10 @@ func tavilyCall(ctx context.Context, cfg Config, key string, payload map[string]
 		return SearchResponse{}, &ProviderError{Provider: "Tavily", Message: errFetch.Error(), Status: status}
 	}
 	var response SearchResponse
-	response.Answer = strings.TrimSpace(gjson.GetBytes(body, "answer").String())
-	response.RequestID = gjson.GetBytes(body, "request_id").String()
+	response.Answer = strings.TrimSpace(ojson.GetBytes(body, "answer").String())
+	response.RequestID = ojson.GetBytes(body, "request_id").String()
 	response.AuthMode = "api_key"
-	for _, item := range gjson.GetBytes(body, "results").Array() {
+	for _, item := range ojson.GetBytes(body, "results").Array() {
 		url := strings.TrimSpace(item.Get("url").String())
 		if url == "" {
 			continue
