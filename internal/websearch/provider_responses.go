@@ -7,8 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
+	"github.com/MoeForge/moego/ojson"
 )
 
 // LLM-backed search providers. Both xAI and OpenAI expose an OpenAI-style
@@ -84,9 +83,9 @@ func (xaiProvider) Search(ctx context.Context, cfg Config, req SearchRequest, pa
 		// silently un-filters the search.
 		if len(parsed.Sites) > 0 {
 			// Allow-list wins over block-list; the tool accepts one or the other.
-			tool, _ = sjson.SetRawBytes(tool, "filters.allowed_domains", domainsJSON(parsed.Sites, maxXAIDomains))
+			tool, _ = ojson.SetRawBytes(tool, "filters.allowed_domains", domainsJSON(parsed.Sites, maxXAIDomains))
 		} else if len(parsed.ExcludedSites) > 0 {
-			tool, _ = sjson.SetRawBytes(tool, "filters.excluded_domains", domainsJSON(parsed.ExcludedSites, maxXAIDomains))
+			tool, _ = ojson.SetRawBytes(tool, "filters.excluded_domains", domainsJSON(parsed.ExcludedSites, maxXAIDomains))
 		}
 	}
 	return responsesSearch(ctx, cfg, responsesRequest{
@@ -128,7 +127,7 @@ func (codexProvider) Search(ctx context.Context, cfg Config, req SearchRequest, 
 		// The ChatGPT backend cannot be trusted to honor the documented
 		// domain filter, so the operator is also re-emitted in the query.
 		if len(parsed.Sites) > 0 {
-			tool, _ = sjson.SetRawBytes(tool, "filters.allowed_domains", domainsJSON(parsed.Sites, maxCodexDomains))
+			tool, _ = ojson.SetRawBytes(tool, "filters.allowed_domains", domainsJSON(parsed.Sites, maxCodexDomains))
 		}
 		query = FormatQuery(parsed, GoogleQuerySyntax)
 	}
@@ -222,14 +221,14 @@ type responsesInput func(query string) []byte
 
 func xaiResponsesInput(query string) []byte {
 	payload := []byte(`[{"role":"system","content":""},{"role":"user","content":""}]`)
-	payload, _ = sjson.SetBytes(payload, "0.content", responsesSearchInstructions)
-	payload, _ = sjson.SetBytes(payload, "1.content", query)
+	payload, _ = ojson.SetBytes(payload, "0.content", responsesSearchInstructions)
+	payload, _ = ojson.SetBytes(payload, "1.content", query)
 	return payload
 }
 
 func codexResponsesInput(query string) []byte {
 	payload := []byte(`[{"type":"message","role":"user","content":[]}]`)
-	payload, _ = sjson.SetBytes(payload, "0.content.0", map[string]string{"type": "input_text", "text": query})
+	payload, _ = ojson.SetBytes(payload, "0.content.0", map[string]string{"type": "input_text", "text": query})
 	return payload
 }
 
@@ -259,24 +258,24 @@ type responsesRequest struct {
 // citations; 0 means the provider default.
 func responsesSearch(ctx context.Context, cfg Config, request responsesRequest) (SearchResponse, error) {
 	payload := []byte(`{"model":"","input":[],"tools":[]}`)
-	payload, _ = sjson.SetBytes(payload, "model", request.model)
-	payload, _ = sjson.SetRawBytes(payload, "input", request.input(request.query))
-	payload, _ = sjson.SetRawBytes(payload, "tools", joinRawJSONArray([][]byte{request.tool}))
-	payload, _ = sjson.SetBytes(payload, "instructions", request.instructions)
+	payload, _ = ojson.SetBytes(payload, "model", request.model)
+	payload, _ = ojson.SetRawBytes(payload, "input", request.input(request.query))
+	payload, _ = ojson.SetRawBytes(payload, "tools", joinRawJSONArray([][]byte{request.tool}))
+	payload, _ = ojson.SetBytes(payload, "instructions", request.instructions)
 	if len(request.include) > 0 {
 		encoded, errMarshal := json.Marshal(request.include)
 		if errMarshal == nil {
-			payload, _ = sjson.SetRawBytes(payload, "include", encoded)
+			payload, _ = ojson.SetRawBytes(payload, "include", encoded)
 		}
 	}
 	if request.lowReasoning {
-		payload, _ = sjson.SetRawBytes(payload, "reasoning", []byte(`{"effort":"low"}`))
+		payload, _ = ojson.SetRawBytes(payload, "reasoning", []byte(`{"effort":"low"}`))
 	}
 	if request.maxTokens > 0 {
-		payload, _ = sjson.SetBytes(payload, "max_output_tokens", request.maxTokens)
+		payload, _ = ojson.SetBytes(payload, "max_output_tokens", request.maxTokens)
 	}
 	if request.temperature > 0 {
-		payload, _ = sjson.SetBytes(payload, "temperature", request.temperature)
+		payload, _ = ojson.SetBytes(payload, "temperature", request.temperature)
 	}
 	httpReq, errRequest := newJSONRequest(ctx, http.MethodPost, request.endpoint, payload, map[string]string{
 		"Authorization": "Bearer " + request.key,
@@ -292,9 +291,9 @@ func responsesSearch(ctx context.Context, cfg Config, request responsesRequest) 
 	response := parseResponsesSearch(body)
 	response.Model = request.model
 	response.AuthMode = "api_key"
-	response.RequestID = gjson.GetBytes(body, "id").String()
-	response.Usage.InputTokens = gjson.GetBytes(body, "usage.input_tokens").Int()
-	response.Usage.OutputTokens = gjson.GetBytes(body, "usage.output_tokens").Int()
+	response.RequestID = ojson.GetBytes(body, "id").String()
+	response.Usage.InputTokens = ojson.GetBytes(body, "usage.input_tokens").Int()
+	response.Usage.OutputTokens = ojson.GetBytes(body, "usage.output_tokens").Int()
 	if request.resultCap > 0 {
 		response.Sources = capSources(response.Sources, request.resultCap)
 		response.Citations = capCitations(response.Citations, request.resultCap)
@@ -338,7 +337,7 @@ func parseResponsesSearch(body []byte) SearchResponse {
 			CitedText: citedText,
 		})
 	}
-	addAnnotations := func(annotations []gjson.Result) {
+	addAnnotations := func(annotations []ojson.Result) {
 		for _, annotation := range annotations {
 			if annotation.Get("type").String() != "url_citation" {
 				continue
@@ -346,13 +345,13 @@ func parseResponsesSearch(body []byte) SearchResponse {
 			addSource(annotation.Get("url").String(), annotation.Get("title").String(), firstNonEmpty(annotation.Get("cited_text").String(), annotation.Get("text").String()))
 		}
 	}
-	addSearchSources := func(item gjson.Result) {
+	addSearchSources := func(item ojson.Result) {
 		if item.Get("type").String() != "web_search_call" {
 			return
 		}
 		// The retrieved pages live under `action.sources`; `sources` and
 		// `results` are the shapes other Responses-compatible backends use.
-		for _, group := range [][]gjson.Result{
+		for _, group := range [][]ojson.Result{
 			item.Get("action.sources").Array(),
 			item.Get("sources").Array(),
 			item.Get("results").Array(),
@@ -363,8 +362,8 @@ func parseResponsesSearch(body []byte) SearchResponse {
 			}
 		}
 	}
-	addAnnotations(gjson.GetBytes(body, "annotations").Array())
-	for _, item := range gjson.GetBytes(body, "output").Array() {
+	addAnnotations(ojson.GetBytes(body, "annotations").Array())
+	for _, item := range ojson.GetBytes(body, "output").Array() {
 		switch item.Get("type").String() {
 		case "web_search_call":
 			if query := strings.TrimSpace(item.Get("action.query").String()); query != "" {

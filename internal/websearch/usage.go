@@ -1,8 +1,7 @@
 package websearch
 
 import (
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
+	"github.com/MoeForge/moego/ojson"
 )
 
 // usageTotals accumulates token usage across fallback loop iterations so
@@ -25,17 +24,17 @@ func (t usageTotals) empty() bool {
 func parseUsage(format string, body []byte) (input, output int64) {
 	switch normalizeFallbackFormat(format) {
 	case FallbackFormatClaude:
-		return gjson.GetBytes(body, "usage.input_tokens").Int(),
-			gjson.GetBytes(body, "usage.output_tokens").Int()
+		return ojson.GetBytes(body, "usage.input_tokens").Int(),
+			ojson.GetBytes(body, "usage.output_tokens").Int()
 	case FallbackFormatOpenAI:
-		return gjson.GetBytes(body, "usage.prompt_tokens").Int(),
-			gjson.GetBytes(body, "usage.completion_tokens").Int()
+		return ojson.GetBytes(body, "usage.prompt_tokens").Int(),
+			ojson.GetBytes(body, "usage.completion_tokens").Int()
 	case FallbackFormatOpenAIResponse, FallbackFormatCodex:
-		return gjson.GetBytes(body, "usage.input_tokens").Int(),
-			gjson.GetBytes(body, "usage.output_tokens").Int()
+		return ojson.GetBytes(body, "usage.input_tokens").Int(),
+			ojson.GetBytes(body, "usage.output_tokens").Int()
 	case FallbackFormatGemini:
-		return gjson.GetBytes(body, "usageMetadata.promptTokenCount").Int(),
-			gjson.GetBytes(body, "usageMetadata.candidatesTokenCount").Int()
+		return ojson.GetBytes(body, "usageMetadata.promptTokenCount").Int(),
+			ojson.GetBytes(body, "usageMetadata.candidatesTokenCount").Int()
 	default:
 		return 0, 0
 	}
@@ -50,32 +49,32 @@ func withUsage(format string, body []byte, totals usageTotals) []byte {
 	out := body
 	switch normalizeFallbackFormat(format) {
 	case FallbackFormatClaude:
-		out, _ = sjson.SetBytes(out, "usage.input_tokens", totals.input)
-		out, _ = sjson.SetBytes(out, "usage.output_tokens", totals.output)
+		out, _ = ojson.SetBytes(out, "usage.input_tokens", totals.input)
+		out, _ = ojson.SetBytes(out, "usage.output_tokens", totals.output)
 	case FallbackFormatOpenAI:
-		out, _ = sjson.SetBytes(out, "usage.prompt_tokens", totals.input)
-		out, _ = sjson.SetBytes(out, "usage.completion_tokens", totals.output)
-		if gjson.GetBytes(out, "usage.total_tokens").Exists() {
-			out, _ = sjson.SetBytes(out, "usage.total_tokens", totals.input+totals.output)
+		out, _ = ojson.SetBytes(out, "usage.prompt_tokens", totals.input)
+		out, _ = ojson.SetBytes(out, "usage.completion_tokens", totals.output)
+		if ojson.GetBytes(out, "usage.total_tokens").Exists() {
+			out, _ = ojson.SetBytes(out, "usage.total_tokens", totals.input+totals.output)
 		}
-		out, _ = sjson.DeleteBytes(out, "usage.prompt_tokens_details")
-		out, _ = sjson.DeleteBytes(out, "usage.completion_tokens_details")
+		out, _ = ojson.DeleteBytes(out, "usage.prompt_tokens_details")
+		out, _ = ojson.DeleteBytes(out, "usage.completion_tokens_details")
 	case FallbackFormatOpenAIResponse, FallbackFormatCodex:
-		out, _ = sjson.SetBytes(out, "usage.input_tokens", totals.input)
-		out, _ = sjson.SetBytes(out, "usage.output_tokens", totals.output)
-		if gjson.GetBytes(out, "usage.total_tokens").Exists() {
-			out, _ = sjson.SetBytes(out, "usage.total_tokens", totals.input+totals.output)
+		out, _ = ojson.SetBytes(out, "usage.input_tokens", totals.input)
+		out, _ = ojson.SetBytes(out, "usage.output_tokens", totals.output)
+		if ojson.GetBytes(out, "usage.total_tokens").Exists() {
+			out, _ = ojson.SetBytes(out, "usage.total_tokens", totals.input+totals.output)
 		}
-		out, _ = sjson.DeleteBytes(out, "usage.input_tokens_details")
-		out, _ = sjson.DeleteBytes(out, "usage.output_tokens_details")
+		out, _ = ojson.DeleteBytes(out, "usage.input_tokens_details")
+		out, _ = ojson.DeleteBytes(out, "usage.output_tokens_details")
 	case FallbackFormatGemini:
-		out, _ = sjson.SetBytes(out, "usageMetadata.promptTokenCount", totals.input)
-		out, _ = sjson.SetBytes(out, "usageMetadata.candidatesTokenCount", totals.output)
-		if gjson.GetBytes(out, "usageMetadata.totalTokenCount").Exists() {
-			out, _ = sjson.SetBytes(out, "usageMetadata.totalTokenCount", totals.input+totals.output)
+		out, _ = ojson.SetBytes(out, "usageMetadata.promptTokenCount", totals.input)
+		out, _ = ojson.SetBytes(out, "usageMetadata.candidatesTokenCount", totals.output)
+		if ojson.GetBytes(out, "usageMetadata.totalTokenCount").Exists() {
+			out, _ = ojson.SetBytes(out, "usageMetadata.totalTokenCount", totals.input+totals.output)
 		}
-		out, _ = sjson.DeleteBytes(out, "usageMetadata.promptTokensDetails")
-		out, _ = sjson.DeleteBytes(out, "usageMetadata.candidatesTokensDetails")
+		out, _ = ojson.DeleteBytes(out, "usageMetadata.promptTokensDetails")
+		out, _ = ojson.DeleteBytes(out, "usageMetadata.candidatesTokensDetails")
 	}
 	return out
 }
