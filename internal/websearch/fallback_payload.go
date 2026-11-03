@@ -4,8 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
+	"github.com/MoeForge/moego/ojson"
 )
 
 // Proxy search function surface shared by every entry format.
@@ -151,7 +150,7 @@ func isResponsesWebSearchToolType(toolType string) bool {
 
 func hasClaudeServerSearchTool(payload []byte) bool {
 	found := false
-	gjson.GetBytes(payload, "tools").ForEach(func(_, tool gjson.Result) bool {
+	ojson.GetBytes(payload, "tools").ForEach(func(_, tool ojson.Result) bool {
 		if isClaudeWebSearchToolType(tool.Get("type").String()) {
 			found = true
 			return false
@@ -162,12 +161,12 @@ func hasClaudeServerSearchTool(payload []byte) bool {
 }
 
 func allClaudeToolsAreSearch(payload []byte) bool {
-	tools := gjson.GetBytes(payload, "tools")
+	tools := ojson.GetBytes(payload, "tools")
 	if !tools.IsArray() || len(tools.Array()) == 0 {
 		return false
 	}
 	searchOnly := true
-	tools.ForEach(func(_, tool gjson.Result) bool {
+	tools.ForEach(func(_, tool ojson.Result) bool {
 		if !isClaudeWebSearchToolType(tool.Get("type").String()) {
 			searchOnly = false
 			return false
@@ -188,7 +187,7 @@ func hasResponsesServerSearchTool(payload []byte) bool {
 
 func claudeServerSearchToolNames(payload []byte) map[string]bool {
 	names := map[string]bool{}
-	gjson.GetBytes(payload, "tools").ForEach(func(_, tool gjson.Result) bool {
+	ojson.GetBytes(payload, "tools").ForEach(func(_, tool ojson.Result) bool {
 		if isClaudeWebSearchToolType(tool.Get("type").String()) {
 			name := strings.TrimSpace(tool.Get("name").String())
 			if name == "" {
@@ -202,7 +201,7 @@ func claudeServerSearchToolNames(payload []byte) map[string]bool {
 }
 
 func claudeChoiceAllowsSearch(payload []byte) bool {
-	choice := gjson.GetBytes(payload, "tool_choice")
+	choice := ojson.GetBytes(payload, "tool_choice")
 	if !choice.Exists() {
 		return true
 	}
@@ -219,7 +218,7 @@ func claudeChoiceAllowsSearch(payload []byte) bool {
 }
 func toolsHasType(payload []byte, path string, match func(string) bool) bool {
 	found := false
-	gjson.GetBytes(payload, path).ForEach(func(_, tool gjson.Result) bool {
+	ojson.GetBytes(payload, path).ForEach(func(_, tool ojson.Result) bool {
 		if match(tool.Get("type").String()) {
 			found = true
 			return false
@@ -233,10 +232,10 @@ func toolsHasType(payload []byte, path string, match func(string) bool) bool {
 // additional_tools input items.
 func responsesToolArrayPaths(payload []byte) []string {
 	paths := []string{"tools"}
-	input := gjson.GetBytes(payload, "input")
+	input := ojson.GetBytes(payload, "input")
 	if input.IsArray() {
 		for index := range input.Array() {
-			if gjson.GetBytes(payload, fmt.Sprintf("input.%d.type", index)).String() == "additional_tools" {
+			if ojson.GetBytes(payload, fmt.Sprintf("input.%d.type", index)).String() == "additional_tools" {
 				paths = append(paths, fmt.Sprintf("input.%d.tools", index))
 			}
 		}
@@ -248,7 +247,7 @@ func allResponsesToolsAreSearch(payload []byte) bool {
 	count := 0
 	searchOnly := true
 	for _, path := range responsesToolArrayPaths(payload) {
-		gjson.GetBytes(payload, path).ForEach(func(_, tool gjson.Result) bool {
+		ojson.GetBytes(payload, path).ForEach(func(_, tool ojson.Result) bool {
 			count++
 			if !isResponsesWebSearchToolType(tool.Get("type").String()) {
 				searchOnly = false
@@ -264,11 +263,11 @@ func allResponsesToolsAreSearch(payload []byte) bool {
 }
 
 func responsesChoiceAllowsSearch(payload []byte) bool {
-	choice := gjson.GetBytes(payload, "tool_choice")
+	choice := ojson.GetBytes(payload, "tool_choice")
 	if !choice.Exists() {
 		return true
 	}
-	if choice.Type == gjson.String {
+	if choice.Type == ojson.String {
 		switch strings.ToLower(strings.TrimSpace(choice.String())) {
 		case "none":
 			return false
@@ -283,7 +282,7 @@ func responsesChoiceAllowsSearch(payload []byte) bool {
 		return false
 	case "allowed_tools":
 		allowed := false
-		choice.Get("tools").ForEach(func(_, tool gjson.Result) bool {
+		choice.Get("tools").ForEach(func(_, tool ojson.Result) bool {
 			if isResponsesWebSearchToolType(tool.Get("type").String()) {
 				allowed = true
 				return false
@@ -304,12 +303,12 @@ func hasChatServerSearchTool(payload []byte) bool {
 }
 
 func allChatToolsAreSearch(payload []byte) bool {
-	tools := gjson.GetBytes(payload, "tools")
+	tools := ojson.GetBytes(payload, "tools")
 	if !tools.IsArray() || len(tools.Array()) == 0 {
 		return false
 	}
 	searchOnly := true
-	tools.ForEach(func(_, tool gjson.Result) bool {
+	tools.ForEach(func(_, tool ojson.Result) bool {
 		if !isResponsesWebSearchToolType(tool.Get("type").String()) {
 			searchOnly = false
 			return false
@@ -320,11 +319,11 @@ func allChatToolsAreSearch(payload []byte) bool {
 }
 
 func chatChoiceAllowsSearch(payload []byte) bool {
-	choice := gjson.GetBytes(payload, "tool_choice")
+	choice := ojson.GetBytes(payload, "tool_choice")
 	if !choice.Exists() {
 		return true
 	}
-	if choice.Type == gjson.String {
+	if choice.Type == ojson.String {
 		switch strings.ToLower(strings.TrimSpace(choice.String())) {
 		case "none":
 			return false
@@ -348,7 +347,7 @@ func chatChoiceAllowsSearch(payload []byte) bool {
 
 func hasGeminiServerSearchTool(payload []byte) bool {
 	found := false
-	gjson.GetBytes(payload, "tools").ForEach(func(_, tool gjson.Result) bool {
+	ojson.GetBytes(payload, "tools").ForEach(func(_, tool ojson.Result) bool {
 		if tool.Get("googleSearch").Exists() {
 			found = true
 			return false
@@ -359,12 +358,12 @@ func hasGeminiServerSearchTool(payload []byte) bool {
 }
 
 func allGeminiToolsAreSearch(payload []byte) bool {
-	tools := gjson.GetBytes(payload, "tools")
+	tools := ojson.GetBytes(payload, "tools")
 	if !tools.IsArray() || len(tools.Array()) == 0 {
 		return false
 	}
 	searchOnly := true
-	tools.ForEach(func(_, tool gjson.Result) bool {
+	tools.ForEach(func(_, tool ojson.Result) bool {
 		if !tool.Get("googleSearch").Exists() || tool.Get("functionDeclarations").Exists() {
 			searchOnly = false
 			return false
@@ -375,7 +374,7 @@ func allGeminiToolsAreSearch(payload []byte) bool {
 }
 
 func geminiChoiceAllowsSearch(payload []byte) bool {
-	mode := gjson.GetBytes(payload, "toolConfig.functionCallingConfig.mode").String()
+	mode := ojson.GetBytes(payload, "toolConfig.functionCallingConfig.mode").String()
 	switch strings.ToUpper(strings.TrimSpace(mode)) {
 	case "", "AUTO", "ANY", "VALIDATED":
 		return true
@@ -406,7 +405,7 @@ func aliasProxyName(desired string, taken map[string]bool) string {
 
 func claudeTakenFunctionNames(payload []byte) map[string]bool {
 	taken := map[string]bool{}
-	gjson.GetBytes(payload, "tools").ForEach(func(_, tool gjson.Result) bool {
+	ojson.GetBytes(payload, "tools").ForEach(func(_, tool ojson.Result) bool {
 		if !isClaudeWebSearchToolType(tool.Get("type").String()) {
 			if name := strings.TrimSpace(tool.Get("name").String()); name != "" {
 				taken[name] = true
@@ -418,7 +417,7 @@ func claudeTakenFunctionNames(payload []byte) map[string]bool {
 }
 
 func rewriteClaudeSearchTools(payload []byte) ([]byte, []string) {
-	tools := gjson.GetBytes(payload, "tools")
+	tools := ojson.GetBytes(payload, "tools")
 	if !tools.IsArray() {
 		return payload, nil
 	}
@@ -441,18 +440,18 @@ func rewriteClaudeSearchTools(payload []byte) ([]byte, []string) {
 		renamed[original] = chosen
 		names = append(names, chosen)
 		replacement := []byte(`{"name":"","description":"","input_schema":{"type":"object","properties":{"query":{"type":"string","description":""}},"required":["query"],"additionalProperties":false}}`)
-		replacement, _ = sjson.SetBytes(replacement, "name", chosen)
-		replacement, _ = sjson.SetBytes(replacement, "description", proxySearchDescription)
-		replacement, _ = sjson.SetBytes(replacement, "input_schema.properties.query.description", proxySearchQueryDesc)
-		out, _ = sjson.SetRawBytes(out, fmt.Sprintf("tools.%d", index), replacement)
+		replacement, _ = ojson.SetBytes(replacement, "name", chosen)
+		replacement, _ = ojson.SetBytes(replacement, "description", proxySearchDescription)
+		replacement, _ = ojson.SetBytes(replacement, "input_schema.properties.query.description", proxySearchQueryDesc)
+		out, _ = ojson.SetRawBytes(out, fmt.Sprintf("tools.%d", index), replacement)
 	}
 	if len(names) == 0 {
 		return payload, nil
 	}
-	choice := gjson.GetBytes(out, "tool_choice")
+	choice := ojson.GetBytes(out, "tool_choice")
 	if choice.IsObject() && strings.ToLower(strings.TrimSpace(choice.Get("type").String())) == "tool" {
 		if chosen, ok := renamed[strings.TrimSpace(choice.Get("name").String())]; ok {
-			out, _ = sjson.SetBytes(out, "tool_choice.name", chosen)
+			out, _ = ojson.SetBytes(out, "tool_choice.name", chosen)
 		}
 	}
 	return out, names
@@ -461,7 +460,7 @@ func rewriteClaudeSearchTools(payload []byte) ([]byte, []string) {
 func responsesTakenFunctionNames(payload []byte) map[string]bool {
 	taken := map[string]bool{}
 	for _, path := range responsesToolArrayPaths(payload) {
-		gjson.GetBytes(payload, path).ForEach(func(_, tool gjson.Result) bool {
+		ojson.GetBytes(payload, path).ForEach(func(_, tool ojson.Result) bool {
 			if tool.Get("type").String() == "function" || tool.Get("type").String() == "custom" {
 				if name := strings.TrimSpace(tool.Get("name").String()); name != "" {
 					taken[name] = true
@@ -478,7 +477,7 @@ func rewriteResponsesSearchTools(payload []byte) ([]byte, []string) {
 	var names []string
 	out := payload
 	for _, path := range responsesToolArrayPaths(out) {
-		tools := gjson.GetBytes(out, path)
+		tools := ojson.GetBytes(out, path)
 		if !tools.IsArray() {
 			continue
 		}
@@ -492,10 +491,10 @@ func rewriteResponsesSearchTools(payload []byte) ([]byte, []string) {
 			taken[chosen] = true
 			names = append(names, chosen)
 			replacement := []byte(`{"type":"function","name":"","description":"","parameters":{"type":"object","properties":{"query":{"type":"string","description":""}},"required":["query"],"additionalProperties":false}}`)
-			replacement, _ = sjson.SetBytes(replacement, "name", chosen)
-			replacement, _ = sjson.SetBytes(replacement, "description", proxySearchDescription)
-			replacement, _ = sjson.SetBytes(replacement, "parameters.properties.query.description", proxySearchQueryDesc)
-			out, _ = sjson.SetRawBytes(out, fmt.Sprintf("%s.%d", path, index), replacement)
+			replacement, _ = ojson.SetBytes(replacement, "name", chosen)
+			replacement, _ = ojson.SetBytes(replacement, "description", proxySearchDescription)
+			replacement, _ = ojson.SetBytes(replacement, "parameters.properties.query.description", proxySearchQueryDesc)
+			out, _ = ojson.SetRawBytes(out, fmt.Sprintf("%s.%d", path, index), replacement)
 		}
 	}
 	if len(names) == 0 {
@@ -506,14 +505,14 @@ func rewriteResponsesSearchTools(payload []byte) ([]byte, []string) {
 }
 
 func rewriteResponsesSearchChoice(payload []byte, chosen string) []byte {
-	choice := gjson.GetBytes(payload, "tool_choice")
+	choice := ojson.GetBytes(payload, "tool_choice")
 	if !choice.IsObject() {
 		return payload
 	}
 	choiceType := choice.Get("type").String()
 	if isResponsesWebSearchToolType(choiceType) {
-		out, _ := sjson.SetBytes(payload, "tool_choice.type", "function")
-		out, _ = sjson.SetBytes(out, "tool_choice.name", chosen)
+		out, _ := ojson.SetBytes(payload, "tool_choice.type", "function")
+		out, _ = ojson.SetBytes(out, "tool_choice.name", chosen)
 		return out
 	}
 	if strings.ToLower(strings.TrimSpace(choiceType)) == "allowed_tools" {
@@ -532,7 +531,7 @@ func rewriteResponsesSearchChoice(payload []byte, chosen string) []byte {
 				}
 				seenChosen = true
 				replacement := []byte(`{"type":"function","name":""}`)
-				replacement, _ = sjson.SetBytes(replacement, "name", chosen)
+				replacement, _ = ojson.SetBytes(replacement, "name", chosen)
 				kept = append(kept, replacement)
 				continue
 			}
@@ -542,7 +541,7 @@ func rewriteResponsesSearchChoice(payload []byte, chosen string) []byte {
 		if len(kept) > 0 {
 			joined = joinRawJSONArray(kept)
 		}
-		out, _ = sjson.SetRawBytes(out, "tool_choice.tools", joined)
+		out, _ = ojson.SetRawBytes(out, "tool_choice.tools", joined)
 		return out
 	}
 	return payload
@@ -561,7 +560,7 @@ func joinRawJSONArray(items [][]byte) []byte {
 
 func chatTakenFunctionNames(payload []byte) map[string]bool {
 	taken := map[string]bool{}
-	gjson.GetBytes(payload, "tools").ForEach(func(_, tool gjson.Result) bool {
+	ojson.GetBytes(payload, "tools").ForEach(func(_, tool ojson.Result) bool {
 		if name := strings.TrimSpace(tool.Get("function.name").String()); name != "" {
 			taken[name] = true
 		}
@@ -571,7 +570,7 @@ func chatTakenFunctionNames(payload []byte) map[string]bool {
 }
 
 func rewriteChatSearchTools(payload []byte) ([]byte, []string) {
-	tools := gjson.GetBytes(payload, "tools")
+	tools := ojson.GetBytes(payload, "tools")
 	if !tools.IsArray() {
 		return payload, nil
 	}
@@ -588,27 +587,27 @@ func rewriteChatSearchTools(payload []byte) ([]byte, []string) {
 		taken[chosen] = true
 		names = append(names, chosen)
 		replacement := []byte(`{"type":"function","function":{"name":"","description":"","parameters":{"type":"object","properties":{"query":{"type":"string","description":""}},"required":["query"],"additionalProperties":false}}}`)
-		replacement, _ = sjson.SetBytes(replacement, "function.name", chosen)
-		replacement, _ = sjson.SetBytes(replacement, "function.description", proxySearchDescription)
-		replacement, _ = sjson.SetBytes(replacement, "function.parameters.properties.query.description", proxySearchQueryDesc)
-		out, _ = sjson.SetRawBytes(out, fmt.Sprintf("tools.%d", index), replacement)
+		replacement, _ = ojson.SetBytes(replacement, "function.name", chosen)
+		replacement, _ = ojson.SetBytes(replacement, "function.description", proxySearchDescription)
+		replacement, _ = ojson.SetBytes(replacement, "function.parameters.properties.query.description", proxySearchQueryDesc)
+		out, _ = ojson.SetRawBytes(out, fmt.Sprintf("tools.%d", index), replacement)
 	}
 	if len(names) == 0 {
 		return payload, nil
 	}
-	choice := gjson.GetBytes(out, "tool_choice")
+	choice := ojson.GetBytes(out, "tool_choice")
 	if choice.IsObject() && isResponsesWebSearchToolType(choice.Get("type").String()) {
 		replacement := []byte(`{"type":"function","function":{"name":""}}`)
-		replacement, _ = sjson.SetBytes(replacement, "function.name", names[0])
-		out, _ = sjson.SetRawBytes(out, "tool_choice", replacement)
+		replacement, _ = ojson.SetBytes(replacement, "function.name", names[0])
+		out, _ = ojson.SetRawBytes(out, "tool_choice", replacement)
 	}
 	return out, names
 }
 
 func geminiTakenFunctionNames(payload []byte) map[string]bool {
 	taken := map[string]bool{}
-	gjson.GetBytes(payload, "tools").ForEach(func(_, tool gjson.Result) bool {
-		tool.Get("functionDeclarations").ForEach(func(_, decl gjson.Result) bool {
+	ojson.GetBytes(payload, "tools").ForEach(func(_, tool ojson.Result) bool {
+		tool.Get("functionDeclarations").ForEach(func(_, decl ojson.Result) bool {
 			if name := strings.TrimSpace(decl.Get("name").String()); name != "" {
 				taken[name] = true
 			}
@@ -620,7 +619,7 @@ func geminiTakenFunctionNames(payload []byte) map[string]bool {
 }
 
 func rewriteGeminiSearchTools(payload []byte) ([]byte, []string) {
-	tools := gjson.GetBytes(payload, "tools")
+	tools := ojson.GetBytes(payload, "tools")
 	if !tools.IsArray() {
 		return payload, nil
 	}
@@ -634,7 +633,7 @@ func rewriteGeminiSearchTools(payload []byte) ([]byte, []string) {
 			continue
 		}
 		found = true
-		stripped, _ := sjson.DeleteBytes([]byte(tool.Raw), "googleSearch")
+		stripped, _ := ojson.DeleteBytes([]byte(tool.Raw), "googleSearch")
 		if strings.TrimSpace(string(stripped)) != "{}" {
 			kept = append(kept, stripped)
 		}
@@ -645,16 +644,16 @@ func rewriteGeminiSearchTools(payload []byte) ([]byte, []string) {
 	taken := geminiTakenFunctionNames(payload)
 	chosen := aliasProxyName(proxySearchName, taken)
 	declaration := []byte(`{"name":"","description":"","parameters":{"type":"OBJECT","properties":{"query":{"type":"STRING","description":""}},"required":["query"]}}`)
-	declaration, _ = sjson.SetBytes(declaration, "name", chosen)
-	declaration, _ = sjson.SetBytes(declaration, "description", proxySearchDescription)
-	declaration, _ = sjson.SetBytes(declaration, "parameters.properties.query.description", proxySearchQueryDesc)
+	declaration, _ = ojson.SetBytes(declaration, "name", chosen)
+	declaration, _ = ojson.SetBytes(declaration, "description", proxySearchDescription)
+	declaration, _ = ojson.SetBytes(declaration, "parameters.properties.query.description", proxySearchQueryDesc)
 	block := []byte(`{"functionDeclarations":[]}`)
-	block, _ = sjson.SetRawBytes(block, "functionDeclarations", joinRawJSONArray([][]byte{declaration}))
+	block, _ = ojson.SetRawBytes(block, "functionDeclarations", joinRawJSONArray([][]byte{declaration}))
 	kept = append(kept, block)
-	out, _ = sjson.SetRawBytes(out, "tools", joinRawJSONArray(kept))
-	if allowed := gjson.GetBytes(out, "toolConfig.functionCallingConfig.allowedFunctionNames"); allowed.IsArray() {
+	out, _ = ojson.SetRawBytes(out, "tools", joinRawJSONArray(kept))
+	if allowed := ojson.GetBytes(out, "toolConfig.functionCallingConfig.allowedFunctionNames"); allowed.IsArray() {
 		present := false
-		allowed.ForEach(func(_, name gjson.Result) bool {
+		allowed.ForEach(func(_, name ojson.Result) bool {
 			if name.String() == chosen {
 				present = true
 				return false
@@ -662,7 +661,7 @@ func rewriteGeminiSearchTools(payload []byte) ([]byte, []string) {
 			return true
 		})
 		if !present {
-			out, _ = sjson.SetRawBytes(out, "toolConfig.functionCallingConfig.allowedFunctionNames.-1", []byte(`"`+chosen+`"`))
+			out, _ = ojson.SetRawBytes(out, "toolConfig.functionCallingConfig.allowedFunctionNames.-1", []byte(`"`+chosen+`"`))
 		}
 	}
 	return out, []string{chosen}
@@ -670,18 +669,18 @@ func rewriteGeminiSearchTools(payload []byte) ([]byte, []string) {
 
 // searchQueryFromArgs extracts the query from function arguments that may be
 // an object with common key names or a bare string.
-func searchQueryFromArgs(args gjson.Result) string {
+func searchQueryFromArgs(args ojson.Result) string {
 	if !args.Exists() {
 		return ""
 	}
-	if args.Type == gjson.String {
+	if args.Type == ojson.String {
 		return strings.TrimSpace(args.String())
 	}
-	if args.Type != gjson.JSON {
+	if args.Type != ojson.JSON {
 		return ""
 	}
 	for _, key := range []string{"query", "q", "search_query", "text", "keywords"} {
-		if value := args.Get(key); value.Type == gjson.String && strings.TrimSpace(value.String()) != "" {
+		if value := args.Get(key); value.Type == ojson.String && strings.TrimSpace(value.String()) != "" {
 			return strings.TrimSpace(value.String())
 		}
 	}
@@ -693,14 +692,14 @@ func searchQueryFromJSONString(raw string) string {
 	if raw == "" {
 		return ""
 	}
-	parsed := gjson.Parse(raw)
+	parsed := ojson.Parse(raw)
 	if !parsed.Exists() {
 		return raw
 	}
 	if query := searchQueryFromArgs(parsed); query != "" {
 		return query
 	}
-	if parsed.Type == gjson.String {
+	if parsed.Type == ojson.String {
 		return strings.TrimSpace(parsed.String())
 	}
 	return ""
@@ -708,7 +707,7 @@ func searchQueryFromJSONString(raw string) string {
 
 func extractClaudeProxyCalls(body []byte, names map[string]bool) []ProxyCall {
 	var calls []ProxyCall
-	gjson.GetBytes(body, "content").ForEach(func(_, block gjson.Result) bool {
+	ojson.GetBytes(body, "content").ForEach(func(_, block ojson.Result) bool {
 		if block.Get("type").String() != "tool_use" {
 			return true
 		}
@@ -728,7 +727,7 @@ func extractClaudeProxyCalls(body []byte, names map[string]bool) []ProxyCall {
 
 func extractResponsesProxyCalls(body []byte, names map[string]bool) []ProxyCall {
 	var calls []ProxyCall
-	gjson.GetBytes(body, "output").ForEach(func(index, item gjson.Result) bool {
+	ojson.GetBytes(body, "output").ForEach(func(index, item ojson.Result) bool {
 		if item.Get("type").String() != "function_call" {
 			return true
 		}
@@ -751,7 +750,7 @@ func extractResponsesProxyCalls(body []byte, names map[string]bool) []ProxyCall 
 
 func extractChatProxyCalls(body []byte, names map[string]bool) []ProxyCall {
 	var calls []ProxyCall
-	gjson.GetBytes(body, "choices.0.message.tool_calls").ForEach(func(index, call gjson.Result) bool {
+	ojson.GetBytes(body, "choices.0.message.tool_calls").ForEach(func(index, call ojson.Result) bool {
 		name := call.Get("function.name").String()
 		if !names[name] {
 			return true
@@ -768,7 +767,7 @@ func extractChatProxyCalls(body []byte, names map[string]bool) []ProxyCall {
 
 func extractGeminiProxyCalls(body []byte, names map[string]bool) []ProxyCall {
 	var calls []ProxyCall
-	gjson.GetBytes(body, "candidates.0.content.parts").ForEach(func(index, part gjson.Result) bool {
+	ojson.GetBytes(body, "candidates.0.content.parts").ForEach(func(index, part ojson.Result) bool {
 		call := part.Get("functionCall")
 		if !call.Exists() {
 			return true
@@ -788,7 +787,7 @@ func extractGeminiProxyCalls(body []byte, names map[string]bool) []ProxyCall {
 }
 
 func appendClaudeSearchResults(payload, body []byte, calls []ProxyCall, outputs []string) []byte {
-	echo := gjson.GetBytes(body, "content")
+	echo := ojson.GetBytes(body, "content")
 	var assistantContent []byte
 	if echo.IsArray() && len(echo.Array()) > 0 {
 		assistantContent = []byte(echo.Raw)
@@ -796,15 +795,15 @@ func appendClaudeSearchResults(payload, body []byte, calls []ProxyCall, outputs 
 		blocks := make([][]byte, 0, len(calls))
 		for _, call := range calls {
 			block := []byte(`{"type":"tool_use","id":"","name":"","input":{"query":""}}`)
-			block, _ = sjson.SetBytes(block, "id", call.ID)
-			block, _ = sjson.SetBytes(block, "name", call.Name)
-			block, _ = sjson.SetBytes(block, "input.query", call.Query)
+			block, _ = ojson.SetBytes(block, "id", call.ID)
+			block, _ = ojson.SetBytes(block, "name", call.Name)
+			block, _ = ojson.SetBytes(block, "input.query", call.Query)
 			blocks = append(blocks, block)
 		}
 		assistantContent = joinRawJSONArray(blocks)
 	}
 	out := payload
-	out, _ = sjson.SetRawBytes(out, "messages.-1", joinClaudeMessage("assistant", assistantContent))
+	out, _ = ojson.SetRawBytes(out, "messages.-1", joinClaudeMessage("assistant", assistantContent))
 	results := make([][]byte, 0, len(calls))
 	for index, call := range calls {
 		output := ""
@@ -812,35 +811,35 @@ func appendClaudeSearchResults(payload, body []byte, calls []ProxyCall, outputs 
 			output = outputs[index]
 		}
 		result := []byte(`{"type":"tool_result","tool_use_id":"","content":""}`)
-		result, _ = sjson.SetBytes(result, "tool_use_id", call.ID)
-		result, _ = sjson.SetBytes(result, "content", output)
+		result, _ = ojson.SetBytes(result, "tool_use_id", call.ID)
+		result, _ = ojson.SetBytes(result, "content", output)
 		results = append(results, result)
 	}
-	out, _ = sjson.SetRawBytes(out, "messages.-1", joinClaudeMessage("user", joinRawJSONArray(results)))
+	out, _ = ojson.SetRawBytes(out, "messages.-1", joinClaudeMessage("user", joinRawJSONArray(results)))
 	return out
 }
 
 func joinClaudeMessage(role string, content []byte) []byte {
 	message := []byte(`{"role":"","content":[]}`)
-	message, _ = sjson.SetBytes(message, "role", role)
-	message, _ = sjson.SetRawBytes(message, "content", content)
+	message, _ = ojson.SetBytes(message, "role", role)
+	message, _ = ojson.SetRawBytes(message, "content", content)
 	return message
 }
 
 func appendResponsesSearchResults(payload, body []byte, calls []ProxyCall, outputs []string) []byte {
 	out := payload
-	gjson.GetBytes(body, "output").ForEach(func(_, item gjson.Result) bool {
-		out, _ = sjson.SetRawBytes(out, "input.-1", []byte(item.Raw))
+	ojson.GetBytes(body, "output").ForEach(func(_, item ojson.Result) bool {
+		out, _ = ojson.SetRawBytes(out, "input.-1", []byte(item.Raw))
 		return true
 	})
-	if !gjson.GetBytes(body, "output").IsArray() {
+	if !ojson.GetBytes(body, "output").IsArray() {
 		for _, call := range calls {
 			item := []byte(`{"type":"function_call","call_id":"","name":"","arguments":""}`)
-			item, _ = sjson.SetBytes(item, "call_id", call.ID)
-			item, _ = sjson.SetBytes(item, "name", call.Name)
-			arguments, _ := sjson.SetBytes([]byte(`{}`), "query", call.Query)
-			item, _ = sjson.SetBytes(item, "arguments", string(arguments))
-			out, _ = sjson.SetRawBytes(out, "input.-1", item)
+			item, _ = ojson.SetBytes(item, "call_id", call.ID)
+			item, _ = ojson.SetBytes(item, "name", call.Name)
+			arguments, _ := ojson.SetBytes([]byte(`{}`), "query", call.Query)
+			item, _ = ojson.SetBytes(item, "arguments", string(arguments))
+			out, _ = ojson.SetRawBytes(out, "input.-1", item)
 		}
 	}
 	for index, call := range calls {
@@ -849,33 +848,33 @@ func appendResponsesSearchResults(payload, body []byte, calls []ProxyCall, outpu
 			output = outputs[index]
 		}
 		entry := []byte(`{"type":"function_call_output","call_id":"","output":""}`)
-		entry, _ = sjson.SetBytes(entry, "call_id", call.ID)
-		entry, _ = sjson.SetBytes(entry, "output", output)
-		out, _ = sjson.SetRawBytes(out, "input.-1", entry)
+		entry, _ = ojson.SetBytes(entry, "call_id", call.ID)
+		entry, _ = ojson.SetBytes(entry, "output", output)
+		out, _ = ojson.SetRawBytes(out, "input.-1", entry)
 	}
 	return out
 }
 
 func appendChatSearchResults(payload, body []byte, calls []ProxyCall, outputs []string) []byte {
 	out := payload
-	assistant := gjson.GetBytes(body, "choices.0.message")
+	assistant := ojson.GetBytes(body, "choices.0.message")
 	if assistant.IsObject() {
 		echo := []byte(assistant.Raw)
-		echo, _ = sjson.SetBytes(echo, "role", "assistant")
-		out, _ = sjson.SetRawBytes(out, "messages.-1", echo)
+		echo, _ = ojson.SetBytes(echo, "role", "assistant")
+		out, _ = ojson.SetRawBytes(out, "messages.-1", echo)
 	} else {
 		fallback := []byte(`{"role":"assistant","content":null,"tool_calls":[]}`)
 		toolCalls := make([][]byte, 0, len(calls))
 		for _, call := range calls {
 			entry := []byte(`{"id":"","type":"function","function":{"name":"","arguments":""}}`)
-			entry, _ = sjson.SetBytes(entry, "id", call.ID)
-			entry, _ = sjson.SetBytes(entry, "function.name", call.Name)
-			arguments, _ := sjson.SetBytes([]byte(`{}`), "query", call.Query)
-			entry, _ = sjson.SetBytes(entry, "function.arguments", string(arguments))
+			entry, _ = ojson.SetBytes(entry, "id", call.ID)
+			entry, _ = ojson.SetBytes(entry, "function.name", call.Name)
+			arguments, _ := ojson.SetBytes([]byte(`{}`), "query", call.Query)
+			entry, _ = ojson.SetBytes(entry, "function.arguments", string(arguments))
 			toolCalls = append(toolCalls, entry)
 		}
-		fallback, _ = sjson.SetRawBytes(fallback, "tool_calls", joinRawJSONArray(toolCalls))
-		out, _ = sjson.SetRawBytes(out, "messages.-1", fallback)
+		fallback, _ = ojson.SetRawBytes(fallback, "tool_calls", joinRawJSONArray(toolCalls))
+		out, _ = ojson.SetRawBytes(out, "messages.-1", fallback)
 	}
 	for index, call := range calls {
 		output := ""
@@ -883,16 +882,16 @@ func appendChatSearchResults(payload, body []byte, calls []ProxyCall, outputs []
 			output = outputs[index]
 		}
 		entry := []byte(`{"role":"tool","tool_call_id":"","content":""}`)
-		entry, _ = sjson.SetBytes(entry, "tool_call_id", call.ID)
-		entry, _ = sjson.SetBytes(entry, "content", output)
-		out, _ = sjson.SetRawBytes(out, "messages.-1", entry)
+		entry, _ = ojson.SetBytes(entry, "tool_call_id", call.ID)
+		entry, _ = ojson.SetBytes(entry, "content", output)
+		out, _ = ojson.SetRawBytes(out, "messages.-1", entry)
 	}
 	return out
 }
 
 func appendGeminiSearchResults(payload, body []byte, calls []ProxyCall, outputs []string) []byte {
 	out := payload
-	parts := gjson.GetBytes(body, "candidates.0.content.parts")
+	parts := ojson.GetBytes(body, "candidates.0.content.parts")
 	var echo []byte
 	if parts.IsArray() && len(parts.Array()) > 0 {
 		echo = []byte(parts.Raw)
@@ -900,15 +899,15 @@ func appendGeminiSearchResults(payload, body []byte, calls []ProxyCall, outputs 
 		synthesized := make([][]byte, 0, len(calls))
 		for _, call := range calls {
 			part := []byte(`{"functionCall":{"name":"","args":{"query":""}}}`)
-			part, _ = sjson.SetBytes(part, "functionCall.name", call.Name)
-			part, _ = sjson.SetBytes(part, "functionCall.args.query", call.Query)
+			part, _ = ojson.SetBytes(part, "functionCall.name", call.Name)
+			part, _ = ojson.SetBytes(part, "functionCall.args.query", call.Query)
 			synthesized = append(synthesized, part)
 		}
 		echo = joinRawJSONArray(synthesized)
 	}
 	modelTurn := []byte(`{"role":"model","parts":[]}`)
-	modelTurn, _ = sjson.SetRawBytes(modelTurn, "parts", echo)
-	out, _ = sjson.SetRawBytes(out, "contents.-1", modelTurn)
+	modelTurn, _ = ojson.SetRawBytes(modelTurn, "parts", echo)
+	out, _ = ojson.SetRawBytes(out, "contents.-1", modelTurn)
 	responses := make([][]byte, 0, len(calls))
 	for index, call := range calls {
 		output := ""
@@ -916,19 +915,19 @@ func appendGeminiSearchResults(payload, body []byte, calls []ProxyCall, outputs 
 			output = outputs[index]
 		}
 		part := []byte(`{"functionResponse":{"name":"","response":{"output":""}}}`)
-		part, _ = sjson.SetBytes(part, "functionResponse.name", call.Name)
-		part, _ = sjson.SetBytes(part, "functionResponse.response.output", output)
+		part, _ = ojson.SetBytes(part, "functionResponse.name", call.Name)
+		part, _ = ojson.SetBytes(part, "functionResponse.response.output", output)
 		responses = append(responses, part)
 	}
 	userTurn := []byte(`{"role":"user","parts":[]}`)
-	userTurn, _ = sjson.SetRawBytes(userTurn, "parts", joinRawJSONArray(responses))
-	out, _ = sjson.SetRawBytes(out, "contents.-1", userTurn)
+	userTurn, _ = ojson.SetRawBytes(userTurn, "parts", joinRawJSONArray(responses))
+	out, _ = ojson.SetRawBytes(out, "contents.-1", userTurn)
 	return out
 }
 
 func stripClaudeProxyTools(payload []byte, names map[string]bool) []byte {
 	out := payload
-	tools := gjson.GetBytes(out, "tools")
+	tools := ojson.GetBytes(out, "tools")
 	if tools.IsArray() {
 		kept := [][]byte{}
 		for _, tool := range tools.Array() {
@@ -937,14 +936,14 @@ func stripClaudeProxyTools(payload []byte, names map[string]bool) []byte {
 			}
 			kept = append(kept, []byte(tool.Raw))
 		}
-		out, _ = sjson.SetRawBytes(out, "tools", joinRawJSONArray(kept))
+		out, _ = ojson.SetRawBytes(out, "tools", joinRawJSONArray(kept))
 	}
-	choice := gjson.GetBytes(out, "tool_choice")
+	choice := ojson.GetBytes(out, "tool_choice")
 	if choice.IsObject() {
 		choiceType := strings.ToLower(strings.TrimSpace(choice.Get("type").String()))
 		if choiceType == "any" || (choiceType == "tool" && names[strings.TrimSpace(choice.Get("name").String())]) {
-			out, _ = sjson.SetBytes(out, "tool_choice.type", "auto")
-			out, _ = sjson.DeleteBytes(out, "tool_choice.name")
+			out, _ = ojson.SetBytes(out, "tool_choice.type", "auto")
+			out, _ = ojson.DeleteBytes(out, "tool_choice.name")
 		}
 	}
 	return dropEmptyToolChoice(out, "tools")
@@ -953,7 +952,7 @@ func stripClaudeProxyTools(payload []byte, names map[string]bool) []byte {
 func stripResponsesProxyTools(payload []byte, names map[string]bool) []byte {
 	out := payload
 	for _, path := range responsesToolArrayPaths(out) {
-		tools := gjson.GetBytes(out, path)
+		tools := ojson.GetBytes(out, path)
 		if !tools.IsArray() {
 			continue
 		}
@@ -965,15 +964,15 @@ func stripResponsesProxyTools(payload []byte, names map[string]bool) []byte {
 			}
 			kept = append(kept, []byte(tool.Raw))
 		}
-		out, _ = sjson.SetRawBytes(out, path, joinRawJSONArray(kept))
+		out, _ = ojson.SetRawBytes(out, path, joinRawJSONArray(kept))
 	}
-	choice := gjson.GetBytes(out, "tool_choice")
+	choice := ojson.GetBytes(out, "tool_choice")
 	if choice.IsObject() {
 		choiceType := strings.ToLower(strings.TrimSpace(choice.Get("type").String()))
 		switch choiceType {
 		case "function", "custom", "tool":
 			if names[strings.TrimSpace(choice.Get("name").String())] {
-				out, _ = sjson.SetBytes(out, "tool_choice", "auto")
+				out, _ = ojson.SetBytes(out, "tool_choice", "auto")
 			}
 		case "allowed_tools":
 			members := choice.Get("tools")
@@ -988,9 +987,9 @@ func stripResponsesProxyTools(payload []byte, names map[string]bool) []byte {
 					kept = append(kept, []byte(member.Raw))
 				}
 				if len(kept) == 0 {
-					out, _ = sjson.SetBytes(out, "tool_choice", "auto")
+					out, _ = ojson.SetBytes(out, "tool_choice", "auto")
 				} else {
-					out, _ = sjson.SetRawBytes(out, "tool_choice.tools", joinRawJSONArray(kept))
+					out, _ = ojson.SetRawBytes(out, "tool_choice.tools", joinRawJSONArray(kept))
 				}
 			}
 		}
@@ -1000,7 +999,7 @@ func stripResponsesProxyTools(payload []byte, names map[string]bool) []byte {
 
 func stripChatProxyTools(payload []byte, names map[string]bool) []byte {
 	out := payload
-	tools := gjson.GetBytes(out, "tools")
+	tools := ojson.GetBytes(out, "tools")
 	if tools.IsArray() {
 		kept := [][]byte{}
 		for _, tool := range tools.Array() {
@@ -1009,15 +1008,15 @@ func stripChatProxyTools(payload []byte, names map[string]bool) []byte {
 			}
 			kept = append(kept, []byte(tool.Raw))
 		}
-		out, _ = sjson.SetRawBytes(out, "tools", joinRawJSONArray(kept))
+		out, _ = ojson.SetRawBytes(out, "tools", joinRawJSONArray(kept))
 	}
-	choice := gjson.GetBytes(out, "tool_choice")
+	choice := ojson.GetBytes(out, "tool_choice")
 	if choice.IsObject() {
 		if names[strings.TrimSpace(choice.Get("function.name").String())] {
-			out, _ = sjson.SetBytes(out, "tool_choice", "auto")
+			out, _ = ojson.SetBytes(out, "tool_choice", "auto")
 		} else if names[strings.TrimSpace(choice.Get("name").String())] &&
 			strings.ToLower(strings.TrimSpace(choice.Get("type").String())) == "function" {
-			out, _ = sjson.SetBytes(out, "tool_choice", "auto")
+			out, _ = ojson.SetBytes(out, "tool_choice", "auto")
 		}
 	}
 	return dropEmptyToolChoice(out, "tools")
@@ -1025,7 +1024,7 @@ func stripChatProxyTools(payload []byte, names map[string]bool) []byte {
 
 func stripGeminiProxyTools(payload []byte, names map[string]bool) []byte {
 	out := payload
-	tools := gjson.GetBytes(out, "tools")
+	tools := ojson.GetBytes(out, "tools")
 	if tools.IsArray() {
 		kept := [][]byte{}
 		for _, tool := range tools.Array() {
@@ -1044,12 +1043,12 @@ func stripGeminiProxyTools(payload []byte, names map[string]bool) []byte {
 			if len(remaining) == 0 {
 				continue
 			}
-			updated, _ := sjson.SetRawBytes([]byte(tool.Raw), "functionDeclarations", joinRawJSONArray(remaining))
+			updated, _ := ojson.SetRawBytes([]byte(tool.Raw), "functionDeclarations", joinRawJSONArray(remaining))
 			kept = append(kept, updated)
 		}
-		out, _ = sjson.SetRawBytes(out, "tools", joinRawJSONArray(kept))
+		out, _ = ojson.SetRawBytes(out, "tools", joinRawJSONArray(kept))
 	}
-	allowed := gjson.GetBytes(out, "toolConfig.functionCallingConfig.allowedFunctionNames")
+	allowed := ojson.GetBytes(out, "toolConfig.functionCallingConfig.allowedFunctionNames")
 	if allowed.IsArray() {
 		kept := [][]byte{}
 		for _, name := range allowed.Array() {
@@ -1059,13 +1058,13 @@ func stripGeminiProxyTools(payload []byte, names map[string]bool) []byte {
 			kept = append(kept, []byte(`"`+name.String()+`"`))
 		}
 		if len(kept) == 0 {
-			out, _ = sjson.DeleteBytes(out, "toolConfig")
+			out, _ = ojson.DeleteBytes(out, "toolConfig")
 		} else {
-			out, _ = sjson.SetRawBytes(out, "toolConfig.functionCallingConfig.allowedFunctionNames", joinRawJSONArray(kept))
+			out, _ = ojson.SetRawBytes(out, "toolConfig.functionCallingConfig.allowedFunctionNames", joinRawJSONArray(kept))
 		}
 	}
-	if tools := gjson.GetBytes(out, "tools"); !tools.IsArray() || len(tools.Array()) == 0 {
-		out, _ = sjson.DeleteBytes(out, "tools")
+	if tools := ojson.GetBytes(out, "tools"); !tools.IsArray() || len(tools.Array()) == 0 {
+		out, _ = ojson.DeleteBytes(out, "tools")
 	}
 	return out
 }
@@ -1073,14 +1072,14 @@ func stripGeminiProxyTools(payload []byte, names map[string]bool) []byte {
 // dropEmptyToolChoice removes tool_choice (and tools) when no tools remain,
 // since upstreams reject choices without declarations.
 func dropEmptyToolChoice(payload []byte, toolsPath string) []byte {
-	tools := gjson.GetBytes(payload, toolsPath)
+	tools := ojson.GetBytes(payload, toolsPath)
 	if !tools.Exists() {
 		return payload
 	}
 	if tools.IsArray() && len(tools.Array()) > 0 {
 		return payload
 	}
-	out, _ := sjson.DeleteBytes(payload, "tools")
-	out, _ = sjson.DeleteBytes(out, "tool_choice")
+	out, _ := ojson.DeleteBytes(payload, "tools")
+	out, _ = ojson.DeleteBytes(out, "tool_choice")
 	return out
 }
