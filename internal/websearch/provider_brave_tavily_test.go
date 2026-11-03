@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tidwall/gjson"
+	"github.com/MoeForge/moego/ojson"
 )
 
 // Brave strips date-bound tokens from the query and carries them in the
@@ -74,12 +74,12 @@ func TestTavilyRetriesWithoutTimeFilter(t *testing.T) {
 		calls++
 		body := readBody(t, req)
 		if calls == 1 {
-			if got := gjson.GetBytes(body, "time_range").String(); got != "week" {
+			if got := ojson.GetBytes(body, "time_range").String(); got != "week" {
 				t.Fatalf("time_range = %q", got)
 			}
 			return jsonResponse(200, `{"results":[]}`), nil
 		}
-		if gjson.GetBytes(body, "time_range").Exists() {
+		if ojson.GetBytes(body, "time_range").Exists() {
 			t.Fatalf("retry must drop the time filter: %s", body)
 		}
 		return jsonResponse(200, `{"answer":"a","results":[{"title":"T","url":"https://t.example"}]}`), nil
@@ -104,16 +104,16 @@ func TestTavilyMapsDomainsAndDates(t *testing.T) {
 			t.Fatalf("auth = %q", got)
 		}
 		body := readBody(t, req)
-		if got := gjson.GetBytes(body, "include_domains.0").String(); got != "go.dev" {
-			t.Fatalf("include_domains = %s", gjson.GetBytes(body, "include_domains").Raw)
+		if got := ojson.GetBytes(body, "include_domains.0").String(); got != "go.dev" {
+			t.Fatalf("include_domains = %s", ojson.GetBytes(body, "include_domains").Raw)
 		}
-		if got := gjson.GetBytes(body, "start_date").String(); got != "2024-01-01" {
+		if got := ojson.GetBytes(body, "start_date").String(); got != "2024-01-01" {
 			t.Fatalf("start_date = %q", got)
 		}
-		if got := gjson.GetBytes(body, "messages").Exists(); got {
+		if got := ojson.GetBytes(body, "messages").Exists(); got {
 			t.Fatalf("body must not carry messages: %s", body)
 		}
-		if strings.Contains(gjson.GetBytes(body, "query").String(), "site:") {
+		if strings.Contains(ojson.GetBytes(body, "query").String(), "site:") {
 			t.Fatalf("site: must not also appear in the query: %s", body)
 		}
 		// An answer means the time filter produced results, so no retry.

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/MoeForge/moego/ojson"
 	zaiauth "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/zai"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/buildinfo"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
@@ -20,8 +21,6 @@ import (
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 	log "github.com/sirupsen/logrus"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 // ZaiExecutor is a stateless executor for Z.AI GLM (coding plan keys).
@@ -127,7 +126,7 @@ func (e *ZaiExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, req 
 	originalTranslated := helps.TranslateRequestWithCodexMultiAgentV2(ctx, opts.Headers, e.cfg, from, to, baseModel, originalPayload, false)
 	body := helps.TranslateRequestWithCodexMultiAgentV2(ctx, opts.Headers, e.cfg, from, to, baseModel, bytes.Clone(req.Payload), false)
 
-	body, err = sjson.SetBytes(body, "model", baseModel)
+	body, err = ojson.SetBytes(body, "model", baseModel)
 	if err != nil {
 		return resp, fmt.Errorf("zai executor: failed to set model in payload: %w", err)
 	}
@@ -237,7 +236,7 @@ func (e *ZaiExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Auth
 	originalTranslated := helps.TranslateRequestWithCodexMultiAgentV2(ctx, opts.Headers, e.cfg, from, to, baseModel, originalPayload, true)
 	body := helps.TranslateRequestWithCodexMultiAgentV2(ctx, opts.Headers, e.cfg, from, to, baseModel, bytes.Clone(req.Payload), true)
 
-	body, err = sjson.SetBytes(body, "model", baseModel)
+	body, err = ojson.SetBytes(body, "model", baseModel)
 	if err != nil {
 		return nil, fmt.Errorf("zai executor: failed to set model in payload: %w", err)
 	}
@@ -247,7 +246,7 @@ func (e *ZaiExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Auth
 		return nil, err
 	}
 
-	body, err = sjson.SetBytes(body, "stream_options.include_usage", true)
+	body, err = ojson.SetBytes(body, "stream_options.include_usage", true)
 	if err != nil {
 		return nil, fmt.Errorf("zai executor: failed to set stream_options in payload: %w", err)
 	}
@@ -366,7 +365,7 @@ func (e *ZaiExecutor) executeResponses(ctx context.Context, auth *cliproxyauth.A
 
 	to := sdktranslator.FromString("openai")
 	translated := helps.TranslateRequestWithCodexMultiAgentV2(ctx, opts.Headers, e.cfg, opts.SourceFormat, to, baseModel, bytes.Clone(req.Payload), false)
-	body, err := sjson.SetBytes(translated, "model", baseModel)
+	body, err := ojson.SetBytes(translated, "model", baseModel)
 	if err != nil {
 		return resp, fmt.Errorf("zai executor: failed to set model in payload: %w", err)
 	}
@@ -465,7 +464,7 @@ func (e *ZaiExecutor) executeResponsesStream(ctx context.Context, auth *cliproxy
 	from := opts.SourceFormat
 	to := sdktranslator.FromString("openai")
 	translated := helps.TranslateRequestWithCodexMultiAgentV2(ctx, opts.Headers, e.cfg, from, to, baseModel, bytes.Clone(req.Payload), true)
-	body, err := sjson.SetBytes(translated, "model", baseModel)
+	body, err := ojson.SetBytes(translated, "model", baseModel)
 	if err != nil {
 		return nil, fmt.Errorf("zai executor: failed to set model in payload: %w", err)
 	}
@@ -653,7 +652,7 @@ func (e *ZaiExecutor) executeClaude(ctx context.Context, auth *cliproxyauth.Auth
 	originalTranslated := helps.TranslateRequestWithCodexMultiAgentV2(ctx, opts.Headers, e.cfg, from, to, baseModel, originalPayload, false)
 	body := helps.TranslateRequestWithCodexMultiAgentV2(ctx, opts.Headers, e.cfg, from, to, baseModel, bytes.Clone(req.Payload), false)
 
-	body, err = sjson.SetBytes(body, "model", baseModel)
+	body, err = ojson.SetBytes(body, "model", baseModel)
 	if err != nil {
 		return resp, fmt.Errorf("zai executor: failed to set model in payload: %w", err)
 	}
@@ -758,7 +757,7 @@ func (e *ZaiExecutor) executeClaudeStream(ctx context.Context, auth *cliproxyaut
 	originalTranslated := helps.TranslateRequestWithCodexMultiAgentV2(ctx, opts.Headers, e.cfg, from, to, baseModel, originalPayload, true)
 	body := helps.TranslateRequestWithCodexMultiAgentV2(ctx, opts.Headers, e.cfg, from, to, baseModel, bytes.Clone(req.Payload), true)
 
-	body, err = sjson.SetBytes(body, "model", baseModel)
+	body, err = ojson.SetBytes(body, "model", baseModel)
 	if err != nil {
 		return nil, fmt.Errorf("zai executor: failed to set model in payload: %w", err)
 	}
@@ -991,10 +990,10 @@ func normalizeZaiUpstreamModel(model string) string {
 // normalizeZaiTools converts `custom` tools to `function` tools and inlines
 // local $refs in parameter schemas.
 func normalizeZaiTools(body []byte) []byte {
-	if len(body) == 0 || !gjson.ValidBytes(body) {
+	if len(body) == 0 || !ojson.ValidBytes(body) {
 		return body
 	}
-	items := gjson.GetBytes(body, "tools")
+	items := ojson.GetBytes(body, "tools")
 	if !items.Exists() || !items.IsArray() || len(items.Array()) == 0 {
 		return body
 	}
@@ -1003,15 +1002,15 @@ func normalizeZaiTools(body []byte) []byte {
 	for _, item := range items.Array() {
 		raw := item.Raw
 		if strings.EqualFold(strings.TrimSpace(item.Get("type").String()), "custom") {
-			if updated, err := sjson.SetBytes([]byte(raw), "type", "function"); err == nil {
+			if updated, err := ojson.SetBytes([]byte(raw), "type", "function"); err == nil {
 				raw = string(updated)
 				changed = true
 			}
 		}
-		if params := gjson.GetBytes([]byte(raw), "function.parameters"); params.Exists() && params.IsObject() {
+		if params := ojson.GetBytes([]byte(raw), "function.parameters"); params.Exists() && params.IsObject() {
 			inlined := util.InlineLocalRefs(params.Raw)
 			if inlined != params.Raw {
-				if updated, err := sjson.SetRawBytes([]byte(raw), "function.parameters", []byte(inlined)); err == nil {
+				if updated, err := ojson.SetRawBytes([]byte(raw), "function.parameters", []byte(inlined)); err == nil {
 					raw = string(updated)
 					changed = true
 				}
@@ -1020,7 +1019,7 @@ func normalizeZaiTools(body []byte) []byte {
 		updatedItems = append(updatedItems, raw)
 	}
 	if changed {
-		if updated, err := sjson.SetRawBytes(body, "tools", helps.JoinRawJSONStrings(updatedItems)); err == nil {
+		if updated, err := ojson.SetRawBytes(body, "tools", helps.JoinRawJSONStrings(updatedItems)); err == nil {
 			body = updated
 		}
 	}
