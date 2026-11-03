@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/tidwall/gjson"
+	"github.com/MoeForge/moego/ojson"
 )
 
 // exaProvider queries the Exa search API.
@@ -54,7 +54,7 @@ func (exaProvider) Search(ctx context.Context, cfg Config, req SearchRequest, pa
 	}
 	var response SearchResponse
 	var summaries []string
-	for _, item := range gjson.GetBytes(body, "results").Array() {
+	for _, item := range ojson.GetBytes(body, "results").Array() {
 		target := strings.TrimSpace(item.Get("url").String())
 		if target == "" {
 			continue
@@ -91,7 +91,7 @@ const (
 // a requested per-result `summary`, else the page `text`, else the joined
 // `highlights`. Exa has no `snippet` field, so a result carrying none of
 // these three genuinely has no snippet.
-func exaSnippet(item gjson.Result) string {
+func exaSnippet(item ojson.Result) string {
 	if summary := strings.TrimSpace(item.Get("summary").String()); summary != "" {
 		return summary
 	}
@@ -182,7 +182,7 @@ func (searxngProvider) Search(ctx context.Context, cfg Config, req SearchRequest
 	}
 	count := clampCount(EffectiveLimit(cfg, req), 1, 20, 10)
 	var response SearchResponse
-	for _, item := range gjson.GetBytes(body, "results").Array() {
+	for _, item := range ojson.GetBytes(body, "results").Array() {
 		target := strings.TrimSpace(item.Get("url").String())
 		if target == "" {
 			continue
@@ -202,7 +202,7 @@ func (searxngProvider) Search(ctx context.Context, cfg Config, req SearchRequest
 			break
 		}
 	}
-	for _, suggestion := range gjson.GetBytes(body, "suggestions").Array() {
+	for _, suggestion := range ojson.GetBytes(body, "suggestions").Array() {
 		if text := strings.TrimSpace(suggestion.String()); text != "" {
 			response.Related = append(response.Related, text)
 		}

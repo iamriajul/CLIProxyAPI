@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tidwall/gjson"
+	"github.com/MoeForge/moego/ojson"
 )
 
 // sseBody joins events with the blank-line separator the SSE spec requires
@@ -25,19 +25,19 @@ func TestPerplexityAPIKeyModeDefaults(t *testing.T) {
 	cfg := Config{PerplexityAPIKey: "k"}.WithDefaults()
 	cfg = cfg.WithDoer(stubDoer{handle: func(req *http.Request) (*http.Response, error) {
 		body, _ := io.ReadAll(req.Body)
-		if got := gjson.GetBytes(body, "model").String(); got != "sonar-pro" {
+		if got := ojson.GetBytes(body, "model").String(); got != "sonar-pro" {
 			t.Fatalf("model = %q", got)
 		}
-		if got := gjson.GetBytes(body, "search_mode").String(); got != "web" {
+		if got := ojson.GetBytes(body, "search_mode").String(); got != "web" {
 			t.Fatalf("search_mode = %q", got)
 		}
-		if got := gjson.GetBytes(body, "max_tokens").Int(); got != PerplexityDefaultMaxTokens {
+		if got := ojson.GetBytes(body, "max_tokens").Int(); got != PerplexityDefaultMaxTokens {
 			t.Fatalf("max_tokens = %d", got)
 		}
-		if got := gjson.GetBytes(body, "temperature").Float(); got != PerplexityDefaultTemperature {
+		if got := ojson.GetBytes(body, "temperature").Float(); got != PerplexityDefaultTemperature {
 			t.Fatalf("temperature = %v", got)
 		}
-		if got := gjson.GetBytes(body, "num_search_results").Int(); got != PerplexityDefaultNumSearchResults {
+		if got := ojson.GetBytes(body, "num_search_results").Int(); got != PerplexityDefaultNumSearchResults {
 			t.Fatalf("num_search_results = %d", got)
 		}
 		return jsonResponse(200, `{"id":"r1","choices":[{"message":{"content":"answer"}}],
@@ -60,7 +60,7 @@ func TestPerplexityAPIKeyRecency(t *testing.T) {
 	cfg := Config{PerplexityAPIKey: "k"}.WithDefaults()
 	cfg = cfg.WithDoer(stubDoer{handle: func(req *http.Request) (*http.Response, error) {
 		body, _ := io.ReadAll(req.Body)
-		if got := gjson.GetBytes(body, "search_recency_filter").String(); got != "week" {
+		if got := ojson.GetBytes(body, "search_recency_filter").String(); got != "week" {
 			t.Fatalf("recency filter = %q", got)
 		}
 		return jsonResponse(200, `{"choices":[{"message":{"content":"a"}}],"citations":["https://a.example"]}`), nil
@@ -117,7 +117,7 @@ func TestPerplexityOAuthMergesSSE(t *testing.T) {
 // revisions, so a label that merely contains "markdown" must still win.
 func TestPerplexityAnswerBlockMatchedBySubstring(t *testing.T) {
 	merged := newPerplexityEvent()
-	mergePerplexityEvent(&merged, gjson.Parse(`{"blocks":[
+	mergePerplexityEvent(&merged, ojson.Parse(`{"blocks":[
 		{"intended_usage":"ask_text","markdown_block":{"answer":"ask prose"}},
 		{"intended_usage":"markdown_answer","markdown_block":{"answer":"grounded answer"}}
 	]}`))
@@ -146,16 +146,16 @@ func TestPerplexityAskRequestEnvelope(t *testing.T) {
 	cfg := Config{PerplexityOAuth: "tok"}.WithDefaults()
 	cfg = cfg.WithDoer(stubDoer{handle: func(req *http.Request) (*http.Response, error) {
 		body := readBody(t, req)
-		if gjson.GetBytes(body, "params.query_str").String() != "go" {
+		if ojson.GetBytes(body, "params.query_str").String() != "go" {
 			t.Fatalf("query_str missing: %s", body)
 		}
-		if gjson.GetBytes(body, "query_str").Exists() != true {
+		if ojson.GetBytes(body, "query_str").Exists() != true {
 			t.Fatalf("envelope must carry query_str: %s", body)
 		}
-		if gjson.GetBytes(body, "params.skip_search_enabled").Bool() {
+		if ojson.GetBytes(body, "params.skip_search_enabled").Bool() {
 			t.Fatalf("skip_search_enabled must be false so retrieval always runs: %s", body)
 		}
-		if !gjson.GetBytes(body, "params.always_search_override").Bool() {
+		if !ojson.GetBytes(body, "params.always_search_override").Bool() {
 			t.Fatalf("always_search_override must be true: %s", body)
 		}
 		return sseBody(`data: {"blocks":[{"intended_usage":"markdown","markdown_block":{"answer":"done"}}],"status":"COMPLETED"}`), nil
@@ -170,10 +170,10 @@ func TestPerplexityRecencySuppressedByDateBounds(t *testing.T) {
 	cfg := Config{PerplexityOAuth: "tok"}.WithDefaults()
 	cfg = cfg.WithDoer(stubDoer{handle: func(req *http.Request) (*http.Response, error) {
 		body := readBody(t, req)
-		if got := gjson.GetBytes(body, "params.search_after_date_filter").String(); got != "1/1/2024" {
+		if got := ojson.GetBytes(body, "params.search_after_date_filter").String(); got != "1/1/2024" {
 			t.Fatalf("after date filter = %q, want Perplexity's M/D/YYYY form", got)
 		}
-		if gjson.GetBytes(body, "params.search_recency_filter").Type == gjson.String {
+		if ojson.GetBytes(body, "params.search_recency_filter").Type == ojson.String {
 			t.Fatalf("recency must be null when date bounds are present: %s", body)
 		}
 		return sseBody(`data: {"blocks":[{"intended_usage":"markdown","markdown_block":{"answer":"ok"}}],"status":"COMPLETED"}`), nil
@@ -325,10 +325,10 @@ func TestAnthropicServerToolParsing(t *testing.T) {
 			t.Fatalf("version = %q", got)
 		}
 		body, _ := io.ReadAll(req.Body)
-		if got := gjson.GetBytes(body, "tools.0.type").String(); got != "web_search_20250305" {
+		if got := ojson.GetBytes(body, "tools.0.type").String(); got != "web_search_20250305" {
 			t.Fatalf("tool type = %q", got)
 		}
-		if got := gjson.GetBytes(body, "max_tokens").Int(); got != AnthropicDefaultMaxTokens {
+		if got := ojson.GetBytes(body, "max_tokens").Int(); got != AnthropicDefaultMaxTokens {
 			t.Fatalf("max_tokens = %d", got)
 		}
 		return jsonResponse(200, `{"id":"msg_1","content":[
@@ -381,10 +381,10 @@ func TestAnthropicSurfacesQueriesAndCitations(t *testing.T) {
 	cfg = cfg.WithDoer(stubDoer{handle: func(req *http.Request) (*http.Response, error) {
 		body := readBody(t, req)
 		// `limit` is the source cap, not an upstream parameter.
-		if got := gjson.GetBytes(body, "messages.0.content").String(); got != "go 1.18 release notes" {
+		if got := ojson.GetBytes(body, "messages.0.content").String(); got != "go 1.18 release notes" {
 			t.Fatalf("query = %q", got)
 		}
-		if got := gjson.GetBytes(body, "tools.0.type").String(); got != "web_search_20250305" {
+		if got := ojson.GetBytes(body, "tools.0.type").String(); got != "web_search_20250305" {
 			t.Fatalf("tool type = %q", got)
 		}
 		return jsonResponse(200, `{"id":"msg_1","model":"claude-haiku-4-5","content":[
@@ -428,11 +428,11 @@ func TestAnthropicMapsSiteToNativeDomains(t *testing.T) {
 	cfg := Config{AnthropicAPIKey: "k"}.WithDefaults()
 	cfg = cfg.WithDoer(stubDoer{handle: func(req *http.Request) (*http.Response, error) {
 		body := readBody(t, req)
-		domains := gjson.GetBytes(body, "tools.0.allowed_domains")
+		domains := ojson.GetBytes(body, "tools.0.allowed_domains")
 		if got := domains.Array(); len(got) != 1 || got[0].String() != "github.com" {
 			t.Fatalf("allowed_domains = %s, want the bare host", domains.Raw)
 		}
-		if strings.Contains(gjson.GetBytes(body, "messages.0.content").String(), "site:") {
+		if strings.Contains(ojson.GetBytes(body, "messages.0.content").String(), "site:") {
 			t.Fatalf("site: must not also appear in the query: %s", body)
 		}
 		return jsonResponse(200, `{"id":"msg_2","content":[
@@ -450,10 +450,10 @@ func TestAnthropicIncludesSuppressExcludes(t *testing.T) {
 	cfg := Config{AnthropicAPIKey: "k"}.WithDefaults()
 	cfg = cfg.WithDoer(stubDoer{handle: func(req *http.Request) (*http.Response, error) {
 		body := readBody(t, req)
-		if !gjson.GetBytes(body, "tools.0.allowed_domains").Exists() {
+		if !ojson.GetBytes(body, "tools.0.allowed_domains").Exists() {
 			t.Fatalf("expected allowed_domains: %s", body)
 		}
-		if gjson.GetBytes(body, "tools.0.blocked_domains").Exists() {
+		if ojson.GetBytes(body, "tools.0.blocked_domains").Exists() {
 			t.Fatalf("blocked_domains must be omitted when includes exist: %s", body)
 		}
 		return jsonResponse(200, `{"id":"msg_3","content":[{"type":"text","text":"ok"}]}`), nil
