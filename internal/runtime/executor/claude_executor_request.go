@@ -920,10 +920,10 @@ func stripAnthropicOnlyClassifierFields(body []byte, isAnthropicBase bool) []byt
 	if isAnthropicBase {
 		return body
 	}
-	if !gjson.GetBytes(body, "safeguards").Exists() {
+	if !ojson.GetBytesNoCopy(body, "safeguards").Exists() {
 		return body
 	}
-	stripped, err := sjson.DeleteBytes(body, "safeguards")
+	stripped, err := ojson.DeleteBytes(body, "safeguards")
 	if err != nil {
 		return body
 	}
