@@ -8,12 +8,12 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/websearch"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	coreexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	sdkconfig "github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
-	"github.com/tidwall/gjson"
 )
 
 type websearchStubDoer struct {
@@ -106,17 +106,17 @@ func TestWebsearchFallbackNonStreamLoop(t *testing.T) {
 	model := "ws-fallback-model"
 	executor := &websearchFakeExecutor{execute: func(call int, req coreexecutor.Request) ([]byte, error) {
 		if call == 1 {
-			if got := gjson.GetBytes(req.Payload, "tools.0.type").String(); got != "" {
+			if got := ojson.GetBytes(req.Payload, "tools.0.type").String(); got != "" {
 				t.Errorf("first payload keeps server type: %s", req.Payload)
 			}
-			if got := gjson.GetBytes(req.Payload, "tools.0.input_schema.required.0").String(); got != "query" {
+			if got := ojson.GetBytes(req.Payload, "tools.0.input_schema.required.0").String(); got != "query" {
 				t.Errorf("first payload not rewritten: %s", req.Payload)
 			}
 			return []byte(`{"id":"msg_1","type":"message","role":"assistant","model":"` + model + `",
 				"content":[{"type":"tool_use","id":"toolu_1","name":"web_search","input":{"query":"golang"}}],
 				"stop_reason":"tool_use","usage":{"input_tokens":10,"output_tokens":5}}`), nil
 		}
-		if got := gjson.GetBytes(req.Payload, "messages.2.content.0.type").String(); got != "tool_result" {
+		if got := ojson.GetBytes(req.Payload, "messages.2.content.0.type").String(); got != "tool_result" {
 			t.Errorf("second payload missing tool result: %s", req.Payload)
 		}
 		return []byte(`{"id":"msg_2","type":"message","role":"assistant","model":"` + model + `",
@@ -131,7 +131,7 @@ func TestWebsearchFallbackNonStreamLoop(t *testing.T) {
 	if errMsg != nil {
 		t.Fatalf("ExecuteWithAuthManager error = %#v", errMsg)
 	}
-	if got := gjson.GetBytes(body, "content.0.text").String(); got != "Go is great." {
+	if got := ojson.GetBytes(body, "content.0.text").String(); got != "Go is great." {
 		t.Fatalf("body = %s", body)
 	}
 	if executor.calls != 2 {
@@ -177,7 +177,7 @@ func TestWebsearchFallbackStreamSynthesizesSSE(t *testing.T) {
 func TestWebsearchFallbackSkippedForNativeRoutes(t *testing.T) {
 	model := "ws-native-model"
 	executor := &websearchFakeExecutor{execute: func(_ int, req coreexecutor.Request) ([]byte, error) {
-		if got := gjson.GetBytes(req.Payload, "tools.0.type").String(); got != "web_search_20250305" {
+		if got := ojson.GetBytes(req.Payload, "tools.0.type").String(); got != "web_search_20250305" {
 			t.Errorf("native payload rewritten: %s", req.Payload)
 		}
 		return []byte(`{"id":"msg_1","content":[{"type":"text","text":"native"}],"stop_reason":"end_turn",
@@ -191,7 +191,7 @@ func TestWebsearchFallbackSkippedForNativeRoutes(t *testing.T) {
 	if errMsg != nil {
 		t.Fatalf("ExecuteWithAuthManager error = %#v", errMsg)
 	}
-	if got := gjson.GetBytes(body, "content.0.text").String(); got != "native" {
+	if got := ojson.GetBytes(body, "content.0.text").String(); got != "native" {
 		t.Fatalf("body = %s", body)
 	}
 	if executor.calls != 1 {
@@ -202,7 +202,7 @@ func TestWebsearchFallbackSkippedForNativeRoutes(t *testing.T) {
 func TestWebsearchFallbackDisabledByDefault(t *testing.T) {
 	model := "ws-disabled-model"
 	executor := &websearchFakeExecutor{execute: func(_ int, req coreexecutor.Request) ([]byte, error) {
-		if got := gjson.GetBytes(req.Payload, "tools.0.type").String(); got != "web_search_20250305" {
+		if got := ojson.GetBytes(req.Payload, "tools.0.type").String(); got != "web_search_20250305" {
 			t.Errorf("disabled fallback rewrote payload: %s", req.Payload)
 		}
 		return []byte(`{"id":"msg_1","content":[{"type":"text","text":"passthrough"}],"stop_reason":"end_turn",
@@ -214,7 +214,7 @@ func TestWebsearchFallbackDisabledByDefault(t *testing.T) {
 	if errMsg != nil {
 		t.Fatalf("ExecuteWithAuthManager error = %#v", errMsg)
 	}
-	if got := gjson.GetBytes(body, "content.0.text").String(); got != "passthrough" {
+	if got := ojson.GetBytes(body, "content.0.text").String(); got != "passthrough" {
 		t.Fatalf("body = %s", body)
 	}
 }

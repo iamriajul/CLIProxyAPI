@@ -6,8 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
+	"github.com/MoeForge/moego/ojson"
 )
 
 // perplexityProvider answers searches with Perplexity's Sonar models. The
@@ -85,36 +84,36 @@ func perplexityAPIKeySearch(ctx context.Context, cfg Config, key string, req Sea
 	numResults := clampCount(req.NumSearchResults, 1, 20, perplexityAPINumResults)
 
 	payload := []byte(`{"model":"sonar-pro","messages":[{"role":"user","content":""}],"search_mode":"web"}`)
-	payload, _ = sjson.SetBytes(payload, "messages.0.content", FormatQuery(parsed, perplexityAPISyntax))
-	payload, _ = sjson.SetBytes(payload, "num_search_results", numResults)
-	payload, _ = sjson.SetBytes(payload, "max_tokens", maxTokens)
-	payload, _ = sjson.SetBytes(payload, "temperature", temperature)
+	payload, _ = ojson.SetBytes(payload, "messages.0.content", FormatQuery(parsed, perplexityAPISyntax))
+	payload, _ = ojson.SetBytes(payload, "num_search_results", numResults)
+	payload, _ = ojson.SetBytes(payload, "max_tokens", maxTokens)
+	payload, _ = ojson.SetBytes(payload, "temperature", temperature)
 	// Ask whether the model should retrieve, and ask for related questions;
 	// the API key path is a proper chat endpoint, so a system message is safe.
-	payload, _ = sjson.SetRawBytes(payload, "web_search_options", []byte(`{"search_type":"pro","search_context_size":"high"}`))
-	payload, _ = sjson.SetBytes(payload, "enable_search_classifier", true)
-	payload, _ = sjson.SetBytes(payload, "return_related_questions", true)
-	payload, _ = sjson.SetBytes(payload, "reasoning_effort", "medium")
-	payload, _ = sjson.SetBytes(payload, "language_preference", "en")
+	payload, _ = ojson.SetRawBytes(payload, "web_search_options", []byte(`{"search_type":"pro","search_context_size":"high"}`))
+	payload, _ = ojson.SetBytes(payload, "enable_search_classifier", true)
+	payload, _ = ojson.SetBytes(payload, "return_related_questions", true)
+	payload, _ = ojson.SetBytes(payload, "reasoning_effort", "medium")
+	payload, _ = ojson.SetBytes(payload, "language_preference", "en")
 	// site:/date:/lang: directives map onto native request fields; the query
 	// text is rebuilt without them so the engine is not double-constrained.
 	if len(parsed.Sites) > 0 || len(parsed.ExcludedSites) > 0 {
-		payload, _ = sjson.SetRawBytes(payload, "search_domain_filter", perplexityDomainFilter(parsed))
+		payload, _ = ojson.SetRawBytes(payload, "search_domain_filter", perplexityDomainFilter(parsed))
 	}
 	if parsed.After != "" {
-		payload, _ = sjson.SetBytes(payload, "search_after_date_filter", perplexityDate(parsed.After))
+		payload, _ = ojson.SetBytes(payload, "search_after_date_filter", perplexityDate(parsed.After))
 	}
 	if parsed.Before != "" {
-		payload, _ = sjson.SetBytes(payload, "search_before_date_filter", perplexityDate(parsed.Before))
+		payload, _ = ojson.SetBytes(payload, "search_before_date_filter", perplexityDate(parsed.Before))
 	}
 	if parsed.Lang != "" {
 		if code := perplexityLangCode(parsed.Lang); code != "" {
-			payload, _ = sjson.SetRawBytes(payload, "search_language_filter", []byte(`["`+code+`"]`))
+			payload, _ = ojson.SetRawBytes(payload, "search_language_filter", []byte(`["`+code+`"]`))
 		}
 	}
 	// Recency cannot combine with absolute date bounds.
 	if recency, ok := perplexityRecencyFilter(req.Recency); ok && parsed.After == "" && parsed.Before == "" {
-		payload, _ = sjson.SetBytes(payload, "search_recency_filter", recency)
+		payload, _ = ojson.SetBytes(payload, "search_recency_filter", recency)
 	}
 
 	httpReq, errRequest := newJSONRequest(ctx, "POST", perplexityAPIURL, payload, map[string]string{
@@ -129,7 +128,7 @@ func perplexityAPIKeySearch(ctx context.Context, cfg Config, key string, req Sea
 		return SearchResponse{}, &ProviderError{Provider: "Perplexity", Message: errFetch.Error(), Status: status}
 	}
 
-	root := gjson.ParseBytes(body)
+	root := ojson.ParseBytes(body)
 	var response SearchResponse
 	response.Answer = strings.TrimSpace(root.Get("choices.0.message.content").String())
 	response.Model = firstNonEmpty(root.Get("model").String(), "sonar-pro")
@@ -193,7 +192,7 @@ func perplexityRecencyFilter(recency Recency) (string, bool) {
 // references the citations: a citation without a matching result keeps its
 // URL, and one with a match inherits that result's title, snippet, and
 // date. With no citations at all, every titled result is a source.
-func perplexityAPIBuildSources(root gjson.Result) []Source {
+func perplexityAPIBuildSources(root ojson.Result) []Source {
 	results := perplexityAPISearchResults(root)
 	citations := perplexityCitationURLs(root)
 	if len(citations) == 0 {
@@ -226,7 +225,7 @@ func perplexityAPIBuildSources(root gjson.Result) []Source {
 
 // perplexityAPISearchResults reads the titled, snippet-bearing hits the
 // chat-completions response reports under `search_results`.
-func perplexityAPISearchResults(root gjson.Result) []Source {
+func perplexityAPISearchResults(root ojson.Result) []Source {
 	var results []Source
 	for _, result := range root.Get("search_results").Array() {
 		url := strings.TrimSpace(result.Get("url").String())
@@ -243,7 +242,7 @@ func perplexityAPISearchResults(root gjson.Result) []Source {
 	return results
 }
 
-func perplexityCitationURLs(root gjson.Result) []string {
+func perplexityCitationURLs(root ojson.Result) []string {
 	var citations []string
 	for _, item := range root.Get("citations").Array() {
 		if url := strings.TrimSpace(item.String()); url != "" {

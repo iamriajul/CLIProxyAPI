@@ -7,9 +7,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/MoeForge/moego/ojson"
 	log "github.com/sirupsen/logrus"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 // geminiProvider answers searches through the Google generative-language
@@ -46,12 +45,12 @@ func (geminiProvider) Search(ctx context.Context, cfg Config, req SearchRequest,
 	// The tool key is camelCase `googleSearch`; the snake_case spelling is
 	// silently ignored, which leaves the request ungrounded.
 	payload := []byte(`{"contents":[{"role":"user","parts":[{"text":""}]}],"tools":[{"googleSearch":{}}]}`)
-	payload, _ = sjson.SetBytes(payload, "contents.0.parts.0.text", query)
+	payload, _ = ojson.SetBytes(payload, "contents.0.parts.0.text", query)
 	if req.MaxTokens > 0 {
-		payload, _ = sjson.SetBytes(payload, "generationConfig.maxOutputTokens", req.MaxTokens)
+		payload, _ = ojson.SetBytes(payload, "generationConfig.maxOutputTokens", req.MaxTokens)
 	}
 	if req.Temperature > 0 {
-		payload, _ = sjson.SetBytes(payload, "generationConfig.temperature", req.Temperature)
+		payload, _ = ojson.SetBytes(payload, "generationConfig.temperature", req.Temperature)
 	}
 	endpoint := cfg.GeminiBaseURL() + "/v1beta/models/" + requestedModel + ":streamGenerateContent?alt=sse"
 	resp, errRequest := fetchWithRetry(ctx, cfg, "Gemini", endpoint, payload, map[string]string{
@@ -147,8 +146,8 @@ func (geminiProvider) Search(ctx context.Context, cfg Config, req SearchRequest,
 
 // geminiChunkCandidate returns the candidate and its enclosing response
 // object, tolerating both the bare and enveloped stream shapes.
-func geminiChunkCandidate(data []byte) (gjson.Result, gjson.Result) {
-	root := gjson.ParseBytes(data)
+func geminiChunkCandidate(data []byte) (ojson.Result, ojson.Result) {
+	root := ojson.ParseBytes(data)
 	if response := root.Get("response"); response.IsObject() {
 		return response.Get("candidates.0"), response
 	}
@@ -170,7 +169,7 @@ func dedupeStrings(values []string) []string {
 }
 
 // geminiChunkText concatenates every text part of one stream candidate.
-func geminiChunkText(candidate gjson.Result) string {
+func geminiChunkText(candidate ojson.Result) string {
 	var out strings.Builder
 	for _, part := range candidate.Get("content.parts").Array() {
 		if text := part.Get("text").String(); text != "" {
@@ -183,7 +182,7 @@ func geminiChunkText(candidate gjson.Result) string {
 // mergeGeminiUsage keeps the highest token counts observed across the
 // stream, since each chunk carries a cumulative or final usageMetadata.
 func mergeGeminiUsage(previous SearchUsage, data []byte) SearchUsage {
-	root := gjson.ParseBytes(data)
+	root := ojson.ParseBytes(data)
 	metadata := root.Get("usageMetadata")
 	if !metadata.Exists() {
 		metadata = root.Get("response.usageMetadata")
@@ -205,7 +204,7 @@ func maxInt64(left, right int64) int64 {
 
 // mergeGeminiGrounding unions two grounding metadata objects, preserving
 // every query, chunk, and support seen across the stream.
-func mergeGeminiGrounding(previous gjson.Result, data []byte) gjson.Result {
+func mergeGeminiGrounding(previous ojson.Result, data []byte) ojson.Result {
 	current := geminiGroundingRoot(data)
 	if !current.Exists() {
 		return previous
@@ -219,27 +218,27 @@ func mergeGeminiGrounding(previous gjson.Result, data []byte) gjson.Result {
 		gjsonResultsToStrings(current.Get("webSearchQueries").Array())...,
 	); len(queries) > 0 {
 		if raw, errMarshal := json.Marshal(queries); errMarshal == nil {
-			merged, _ = sjson.SetRawBytes(merged, "webSearchQueries", raw)
+			merged, _ = ojson.SetRawBytes(merged, "webSearchQueries", raw)
 		}
 	}
 	if chunks := append(previous.Get("groundingChunks").Array(), current.Get("groundingChunks").Array()...); len(chunks) > 0 {
 		if raw, errMarshal := json.Marshal(chunks); errMarshal == nil {
-			merged, _ = sjson.SetRawBytes(merged, "groundingChunks", raw)
+			merged, _ = ojson.SetRawBytes(merged, "groundingChunks", raw)
 		}
 	}
 	if supports := append(previous.Get("groundingSupports").Array(), current.Get("groundingSupports").Array()...); len(supports) > 0 {
 		if raw, errMarshal := json.Marshal(supports); errMarshal == nil {
-			merged, _ = sjson.SetRawBytes(merged, "groundingSupports", raw)
+			merged, _ = ojson.SetRawBytes(merged, "groundingSupports", raw)
 		}
 	}
-	return gjson.ParseBytes(merged)
+	return ojson.ParseBytes(merged)
 }
 
 // geminiGroundingRoot locates the grounding metadata across the shapes the
 // generative-language API emits: nested in a candidate, nested under a
 // non-stream response envelope, or at the response root.
-func geminiGroundingRoot(data []byte) gjson.Result {
-	root := gjson.ParseBytes(data)
+func geminiGroundingRoot(data []byte) ojson.Result {
+	root := ojson.ParseBytes(data)
 	for _, path := range []string{
 		"candidates.0.groundingMetadata",
 		"response.candidates.0.groundingMetadata",
@@ -249,17 +248,17 @@ func geminiGroundingRoot(data []byte) gjson.Result {
 			return metadata
 		}
 	}
-	return gjson.Result{}
+	return ojson.Result{}
 }
 
-func geminiGroundingQueries(metadata gjson.Result) []string {
+func geminiGroundingQueries(metadata ojson.Result) []string {
 	if !metadata.Exists() {
 		return nil
 	}
 	return gjsonResultsToStrings(metadata.Get("webSearchQueries").Array())
 }
 
-func geminiGroundingSources(metadata gjson.Result, count int) []Source {
+func geminiGroundingSources(metadata ojson.Result, count int) []Source {
 	if !metadata.Exists() {
 		return nil
 	}
@@ -282,7 +281,7 @@ func geminiGroundingSources(metadata gjson.Result, count int) []Source {
 
 // geminiGroundingCitations pairs each grounding support segment with the
 // chunks it cites so the model can attribute claims.
-func geminiGroundingCitations(metadata gjson.Result) []Citation {
+func geminiGroundingCitations(metadata ojson.Result) []Citation {
 	if !metadata.Exists() {
 		return nil
 	}
@@ -310,7 +309,7 @@ func geminiGroundingUsage(struct{}) SearchUsage {
 	return SearchUsage{}
 }
 
-func gjsonResultsToStrings(results []gjson.Result) []string {
+func gjsonResultsToStrings(results []ojson.Result) []string {
 	out := make([]string, 0, len(results))
 	for _, result := range results {
 		if text := strings.TrimSpace(result.String()); text != "" {
@@ -363,19 +362,19 @@ func (anthropicProvider) Search(ctx context.Context, cfg Config, req SearchReque
 	}
 	tool := []byte(`{"type":"web_search_20250305","name":"web_search"}`)
 	if len(allowed) > 0 {
-		tool, _ = sjson.SetRawBytes(tool, "allowed_domains", domainsJSON(allowed, 10))
+		tool, _ = ojson.SetRawBytes(tool, "allowed_domains", domainsJSON(allowed, 10))
 	} else if len(blocked) > 0 {
-		tool, _ = sjson.SetRawBytes(tool, "blocked_domains", domainsJSON(blocked, 10))
+		tool, _ = ojson.SetRawBytes(tool, "blocked_domains", domainsJSON(blocked, 10))
 	}
 	payload := []byte(`{"model":"","max_tokens":0,"messages":[{"role":"user","content":""}],"tools":[]}`)
-	payload, _ = sjson.SetBytes(payload, "model", model)
-	payload, _ = sjson.SetBytes(payload, "max_tokens", maxTokens)
-	payload, _ = sjson.SetBytes(payload, "messages.0.content", query)
-	payload, _ = sjson.SetRawBytes(payload, "tools", joinRawJSONArray([][]byte{tool}))
+	payload, _ = ojson.SetBytes(payload, "model", model)
+	payload, _ = ojson.SetBytes(payload, "max_tokens", maxTokens)
+	payload, _ = ojson.SetBytes(payload, "messages.0.content", query)
+	payload, _ = ojson.SetRawBytes(payload, "tools", joinRawJSONArray([][]byte{tool}))
 	// Sampling parameters are rejected by the newest Anthropic models, so
 	// temperature is only sent to models that accept it.
 	if req.Temperature > 0 && anthropicModelAcceptsSampling(model) {
-		payload, _ = sjson.SetBytes(payload, "temperature", req.Temperature)
+		payload, _ = ojson.SetBytes(payload, "temperature", req.Temperature)
 	}
 	httpReq, errRequest := newJSONRequest(ctx, http.MethodPost, cfg.AnthropicBaseURL()+"/v1/messages", payload, map[string]string{
 		"x-api-key":         key,
@@ -389,7 +388,7 @@ func (anthropicProvider) Search(ctx context.Context, cfg Config, req SearchReque
 	if errFetch != nil {
 		return SearchResponse{}, &ProviderError{Provider: "Anthropic", Message: errFetch.Error(), Status: status}
 	}
-	root := gjson.ParseBytes(body)
+	root := ojson.ParseBytes(body)
 	response := parseAnthropicResponse(root, model)
 	response.AuthMode = "api_key"
 	// `limit` is the source cap, not the upstream parameter.
@@ -456,7 +455,7 @@ func isAnthropicWebSearchTool(name string) bool {
 // parseAnthropicResponse folds the answer text, the executed search
 // queries, the retrieved sources, and the inline citations out of the
 // Messages API content blocks.
-func parseAnthropicResponse(root gjson.Result, modelID string) SearchResponse {
+func parseAnthropicResponse(root ojson.Result, modelID string) SearchResponse {
 	var answerParts []string
 	var response SearchResponse
 	for _, block := range root.Get("content").Array() {
