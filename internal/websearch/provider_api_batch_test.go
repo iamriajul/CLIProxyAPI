@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tidwall/gjson"
+	"github.com/MoeForge/moego/ojson"
 )
 
 func TestKagiConcatenatesBucketsAndTags(t *testing.T) {
@@ -18,10 +18,10 @@ func TestKagiConcatenatesBucketsAndTags(t *testing.T) {
 			t.Fatalf("auth = %q", got)
 		}
 		body, _ := io.ReadAll(req.Body)
-		if got := gjson.GetBytes(body, "workflow").String(); got != "search" {
+		if got := ojson.GetBytes(body, "workflow").String(); got != "search" {
 			t.Fatalf("workflow = %q", got)
 		}
-		if got := gjson.GetBytes(body, "limit").Int(); got != 10 {
+		if got := ojson.GetBytes(body, "limit").Int(); got != 10 {
 			t.Fatalf("limit = %d", got)
 		}
 		return jsonResponse(200, `{"meta":{"trace":"t1"},
@@ -59,7 +59,7 @@ func TestKagiRecencyBecomesAfterFilter(t *testing.T) {
 	cfg := Config{KagiAPIKey: "k"}.WithDefaults()
 	cfg = cfg.WithDoer(stubDoer{handle: func(req *http.Request) (*http.Response, error) {
 		body, _ := io.ReadAll(req.Body)
-		after := gjson.GetBytes(body, "filters.after").String()
+		after := ojson.GetBytes(body, "filters.after").String()
 		if len(after) != 10 || !strings.HasSuffix(after, "-01-01") && len(after) != 10 {
 			t.Fatalf("after = %q, want a YYYY-MM-DD date", after)
 		}
@@ -77,13 +77,13 @@ func TestFirecrawlKeylessAndQueryReformatting(t *testing.T) {
 			t.Fatalf("keyless mode must not send auth, got %q", got)
 		}
 		body, _ := io.ReadAll(req.Body)
-		if got := gjson.GetBytes(body, "sources.0.type").String(); got != "web" {
+		if got := ojson.GetBytes(body, "sources.0.type").String(); got != "web" {
 			t.Fatalf("sources = %s", body)
 		}
-		if got := gjson.GetBytes(body, "query").String(); !strings.Contains(got, "site:go.dev") || !strings.Contains(got, "filetype:pdf") {
+		if got := ojson.GetBytes(body, "query").String(); !strings.Contains(got, "site:go.dev") || !strings.Contains(got, "filetype:pdf") {
 			t.Fatalf("operators not preserved: %q", got)
 		}
-		if got := gjson.GetBytes(body, "tbs").String(); got != "qdr:d" {
+		if got := ojson.GetBytes(body, "tbs").String(); got != "qdr:d" {
 			t.Fatalf("tbs = %q", got)
 		}
 		// Firecrawl reports its request id at the top level and its list
@@ -134,15 +134,15 @@ func TestKimiRequestShape(t *testing.T) {
 	cfg := Config{KimiAPIKey: "k"}.WithDefaults()
 	cfg = cfg.WithDoer(stubDoer{handle: func(req *http.Request) (*http.Response, error) {
 		body, _ := io.ReadAll(req.Body)
-		if got := gjson.GetBytes(body, "text_query").String(); got != "go" {
+		if got := ojson.GetBytes(body, "text_query").String(); got != "go" {
 			t.Fatalf("text_query = %q", got)
 		}
 		// Page crawling is opt-in; enabling it by default makes every
 		// search fetch full page bodies.
-		if gjson.GetBytes(body, "enable_page_crawling").Bool() {
+		if ojson.GetBytes(body, "enable_page_crawling").Bool() {
 			t.Fatalf("page crawling must default to off: %s", body)
 		}
-		if got := gjson.GetBytes(body, "timeout_seconds").Int(); got != 30 {
+		if got := ojson.GetBytes(body, "timeout_seconds").Int(); got != 30 {
 			t.Fatalf("timeout_seconds = %d", got)
 		}
 		// Kimi reports its list under search_results.
@@ -160,13 +160,13 @@ func TestParallelAuthenticatedShape(t *testing.T) {
 			t.Fatalf("beta header = %q", got)
 		}
 		body, _ := io.ReadAll(req.Body)
-		if got := gjson.GetBytes(body, "mode").String(); got != "fast" {
+		if got := ojson.GetBytes(body, "mode").String(); got != "fast" {
 			t.Fatalf("mode = %q", got)
 		}
-		if got := gjson.GetBytes(body, "max_chars_per_result").Int(); got != 10000 {
+		if got := ojson.GetBytes(body, "max_chars_per_result").Int(); got != 10000 {
 			t.Fatalf("max_chars_per_result = %d", got)
 		}
-		if got := gjson.GetBytes(body, "search_queries.#").Int(); got != 1 {
+		if got := ojson.GetBytes(body, "search_queries.#").Int(); got != 1 {
 			t.Fatalf("search_queries count = %d, want exactly one", got)
 		}
 		return jsonResponse(200, `{"search_id":"s1","results":[{"title":"P","url":"https://p.example"}]}`), nil
@@ -275,7 +275,7 @@ func TestSyntheticAndOllamaShapes(t *testing.T) {
 	ollama := Config{OllamaAPIKey: "k"}.WithDefaults()
 	ollama = ollama.WithDoer(stubDoer{handle: func(req *http.Request) (*http.Response, error) {
 		body, _ := io.ReadAll(req.Body)
-		if got := gjson.GetBytes(body, "max_results").Int(); got != 5 {
+		if got := ojson.GetBytes(body, "max_results").Int(); got != 5 {
 			t.Fatalf("max_results = %d, want the default cap", got)
 		}
 		return jsonResponse(200, `{"results":[{"title":"O","url":"https://o.example"}]}`), nil

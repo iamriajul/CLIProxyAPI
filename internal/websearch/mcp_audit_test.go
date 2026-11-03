@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tidwall/gjson"
+	"github.com/MoeForge/moego/ojson"
 )
 
 // A remote MCP host must see the full streamable-HTTP lifecycle in order:
@@ -19,7 +19,7 @@ func TestMCPSessionHandshakeOrderAndSessionID(t *testing.T) {
 	cfg := Config{}.WithDefaults()
 	cfg = cfg.WithDoer(stubDoer{handle: func(req *http.Request) (*http.Response, error) {
 		body, _ := io.ReadAll(req.Body)
-		methods = append(methods, gjson.GetBytes(body, "method").String())
+		methods = append(methods, ojson.GetBytes(body, "method").String())
 		sessionHeaders = append(sessionHeaders, req.Header.Get("Mcp-Session-Id"))
 		resp := jsonResponse(200, `{"jsonrpc":"2.0","id":1,"result":{}}`)
 		if len(methods) == 1 {
@@ -57,19 +57,19 @@ func TestMCPInitializeCarriesProtocolAndClientInfo(t *testing.T) {
 	cfg := Config{}.WithDefaults()
 	cfg = cfg.WithDoer(stubDoer{handle: func(req *http.Request) (*http.Response, error) {
 		body, _ := io.ReadAll(req.Body)
-		if gjson.GetBytes(body, "method").String() == "initialize" {
+		if ojson.GetBytes(body, "method").String() == "initialize" {
 			initializeBody = body
 		}
 		return jsonResponse(200, `{"jsonrpc":"2.0","id":1,"result":{}}`), nil
 	}})
 	_ = newMCPSession(context.Background(), cfg, "Z.AI", "https://mcp.example/mcp", "tool", nil)
-	if got := gjson.GetBytes(initializeBody, "params.protocolVersion").String(); got != "2025-03-26" {
+	if got := ojson.GetBytes(initializeBody, "params.protocolVersion").String(); got != "2025-03-26" {
 		t.Fatalf("protocolVersion = %q", got)
 	}
-	if got := gjson.GetBytes(initializeBody, "params.clientInfo.name").String(); got != mcpClientName {
+	if got := ojson.GetBytes(initializeBody, "params.clientInfo.name").String(); got != mcpClientName {
 		t.Fatalf("clientInfo.name = %q, want %q", got, mcpClientName)
 	}
-	if got := gjson.GetBytes(initializeBody, "params.clientInfo.version").String(); got != mcpClientVersion {
+	if got := ojson.GetBytes(initializeBody, "params.clientInfo.version").String(); got != mcpClientVersion {
 		t.Fatalf("clientInfo.version = %q", got)
 	}
 }
@@ -159,7 +159,7 @@ func TestSourcesFromJSONParallelShape(t *testing.T) {
 		{"title":"A","url":"https://a.example","excerpts":["first","second"],"publish_date":"2026-01-02"},
 		{"title":"B","url":"https://b.example"}
 	]}`)
-	sources := sourcesFromJSON(gjson.ParseBytes(body), 10)
+	sources := sourcesFromJSON(ojson.ParseBytes(body), 10)
 	if len(sources) != 2 {
 		t.Fatalf("sources = %+v", sources)
 	}
@@ -179,7 +179,7 @@ func TestSourcesFromJSONParallelShape(t *testing.T) {
 // providers would misreport whichever did not match.
 func TestSourcesFromJSONExaHighlights(t *testing.T) {
 	body := []byte(`{"results":[{"title":"A","url":"https://a.example","publishedDate":"2026-01-02","highlights":["h1","h2"]}]}`)
-	sources := sourcesFromJSON(gjson.ParseBytes(body), 10)
+	sources := sourcesFromJSON(ojson.ParseBytes(body), 10)
 	if len(sources) != 1 {
 		t.Fatalf("sources = %+v", sources)
 	}

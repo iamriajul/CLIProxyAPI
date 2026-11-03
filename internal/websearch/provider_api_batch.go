@@ -9,8 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
+	"github.com/MoeForge/moego/ojson"
 )
 
 // tinyFishProvider queries the TinyFish search API. The API has no upstream
@@ -77,8 +76,8 @@ func (tinyFishProvider) Search(ctx context.Context, cfg Config, req SearchReques
 		if errFetch != nil {
 			return SearchResponse{}, &ProviderError{Provider: "TinyFish", Message: errFetch.Error(), Status: status}
 		}
-		results := gjson.GetBytes(body, "results").Array()
-		if !gjson.GetBytes(body, "results").IsArray() {
+		results := ojson.GetBytes(body, "results").Array()
+		if !ojson.GetBytes(body, "results").IsArray() {
 			return SearchResponse{}, &ProviderError{
 				Provider: "TinyFish",
 				Message:  "search API returned an unexpected response shape",
@@ -205,7 +204,7 @@ func (jinaProvider) Search(ctx context.Context, cfg Config, req SearchRequest, p
 		return SearchResponse{}, &ProviderError{Provider: "Jina", Message: errFetch.Error(), Status: status}
 	}
 	return SearchResponse{
-		Sources:  capSources(sourcesFromJSON(gjson.ParseBytes(body), count+1), count),
+		Sources:  capSources(sourcesFromJSON(ojson.ParseBytes(body), count+1), count),
 		AuthMode: "api_key",
 	}, nil
 }
@@ -256,7 +255,7 @@ func (kagiProvider) Search(ctx context.Context, cfg Config, req SearchRequest, p
 	if errFetch != nil {
 		return SearchResponse{}, &ProviderError{Provider: "Kagi", Message: errFetch.Error(), Status: status}
 	}
-	root := gjson.ParseBytes(body)
+	root := ojson.ParseBytes(body)
 	if !root.IsObject() {
 		return SearchResponse{}, &ProviderError{
 			Provider: "Kagi",
@@ -330,7 +329,7 @@ func (kagiProvider) Search(ctx context.Context, cfg Config, req SearchRequest, p
 
 // kagiQuestionOf pulls a related question from an item's props, falling
 // back to its title.
-func kagiQuestionOf(item gjson.Result) string {
+func kagiQuestionOf(item ojson.Result) string {
 	return firstNonEmpty(
 		strings.TrimSpace(item.Get("props.question").String()),
 		strings.TrimSpace(item.Get("props.query").String()),
@@ -340,7 +339,7 @@ func kagiQuestionOf(item gjson.Result) string {
 
 // kagiErrorMessage extracts a diagnostic from the several error shapes
 // Kagi returns.
-func kagiErrorMessage(root gjson.Result) string {
+func kagiErrorMessage(root ojson.Result) string {
 	if message := strings.TrimSpace(root.Get("message").String()); message != "" {
 		return message
 	}
@@ -429,10 +428,10 @@ func (firecrawlProvider) Search(ctx context.Context, cfg Config, req SearchReque
 		}
 	}
 	payload := []byte(`{"query":"","limit":0,"sources":[{"type":"web"}]}`)
-	payload, _ = sjson.SetBytes(payload, "query", query)
-	payload, _ = sjson.SetBytes(payload, "limit", count)
+	payload, _ = ojson.SetBytes(payload, "query", query)
+	payload, _ = ojson.SetBytes(payload, "limit", count)
 	if tbs != "" {
-		payload, _ = sjson.SetBytes(payload, "tbs", tbs)
+		payload, _ = ojson.SetBytes(payload, "tbs", tbs)
 	}
 	headers := map[string]string{"Accept": "application/json", "Content-Type": "application/json"}
 	authMode := "keyless"
@@ -448,9 +447,9 @@ func (firecrawlProvider) Search(ctx context.Context, cfg Config, req SearchReque
 	if errFetch != nil {
 		return SearchResponse{}, &ProviderError{Provider: "Firecrawl", Message: errFetch.Error(), Status: status}
 	}
-	root := gjson.ParseBytes(body)
+	root := ojson.ParseBytes(body)
 	// A 200 can still report failure in the body.
-	if root.Get("success").Type == gjson.False {
+	if root.Get("success").Type == ojson.False {
 		message := strings.TrimSpace(root.Get("error").String())
 		if message == "" {
 			message = "request failed"
@@ -466,7 +465,7 @@ func (firecrawlProvider) Search(ctx context.Context, cfg Config, req SearchReque
 
 // firecrawlWebResults reads the several shapes Firecrawl returns its list
 // in: a bare array, a bucketed object, or the legacy `results` field.
-func firecrawlWebResults(root gjson.Result) []Source {
+func firecrawlWebResults(root ojson.Result) []Source {
 	data := root.Get("data")
 	if data.IsArray() {
 		return firecrawlSources(data.Array())
@@ -482,7 +481,7 @@ func firecrawlWebResults(root gjson.Result) []Source {
 	return nil
 }
 
-func firecrawlSources(items []gjson.Result) []Source {
+func firecrawlSources(items []ojson.Result) []Source {
 	sources := make([]Source, 0, len(items))
 	for _, item := range items {
 		url := strings.TrimSpace(item.Get("url").String())
@@ -548,7 +547,7 @@ func firecrawlTbs(recency Recency) (string, bool) {
 }
 
 func firecrawlRequestID(body []byte) string {
-	return gjson.GetBytes(body, "data.requestId").String()
+	return ojson.GetBytes(body, "data.requestId").String()
 }
 
 // kimiProvider queries the Kimi search service. The Kimi Code search key is
@@ -591,7 +590,7 @@ func (kimiProvider) Search(ctx context.Context, cfg Config, req SearchRequest, p
 	if errFetch != nil {
 		return SearchResponse{}, &ProviderError{Provider: "Kimi", Message: errFetch.Error(), Status: status}
 	}
-	root := gjson.ParseBytes(body)
+	root := ojson.ParseBytes(body)
 	var sources []Source
 	for _, result := range root.Get("search_results").Array() {
 		url := strings.TrimSpace(result.Get("url").String())
@@ -668,9 +667,9 @@ func parallelAuthenticatedSearch(ctx context.Context, cfg Config, key string, re
 		return SearchResponse{}, &ProviderError{Provider: "Parallel", Message: errFetch.Error(), Status: status}
 	}
 	return SearchResponse{
-		Sources:   sourcesFromJSON(gjson.ParseBytes(body), count),
+		Sources:   sourcesFromJSON(ojson.ParseBytes(body), count),
 		AuthMode:  "api_key",
-		RequestID: gjson.GetBytes(body, "search_id").String(),
+		RequestID: ojson.GetBytes(body, "search_id").String(),
 	}, nil
 }
 
@@ -725,7 +724,7 @@ func (syntheticProvider) Search(ctx context.Context, cfg Config, req SearchReque
 	}
 	count := clampCount(EffectiveLimit(cfg, req), 1, 20, 10)
 	return SearchResponse{
-		Sources:  capSources(sourcesFromJSON(gjson.ParseBytes(body), count+1), count),
+		Sources:  capSources(sourcesFromJSON(ojson.ParseBytes(body), count+1), count),
 		AuthMode: "api_key",
 	}, nil
 }
@@ -771,7 +770,7 @@ func (ollamaProvider) Search(ctx context.Context, cfg Config, req SearchRequest,
 		return SearchResponse{}, &ProviderError{Provider: "Ollama", Message: errFetch.Error(), Status: status}
 	}
 	return SearchResponse{
-		Sources:  capSources(sourcesFromJSON(gjson.ParseBytes(body), count+1), count),
+		Sources:  capSources(sourcesFromJSON(ojson.ParseBytes(body), count+1), count),
 		AuthMode: "api_key",
 	}, nil
 }
