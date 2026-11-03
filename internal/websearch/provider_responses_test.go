@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tidwall/gjson"
+	"github.com/MoeForge/moego/ojson"
 )
 
 const responsesSearchFixture = `{
@@ -34,10 +34,10 @@ func TestXAISearchParsesResponsesOutput(t *testing.T) {
 			t.Fatalf("auth = %q", got)
 		}
 		body, _ := io.ReadAll(req.Body)
-		if got := gjson.GetBytes(body, "model").String(); got != DefaultXAISearchModel {
+		if got := ojson.GetBytes(body, "model").String(); got != DefaultXAISearchModel {
 			t.Fatalf("model = %q", got)
 		}
-		if got := gjson.GetBytes(body, "reasoning.effort").String(); got != "low" {
+		if got := ojson.GetBytes(body, "reasoning.effort").String(); got != "low" {
 			t.Fatalf("reasoning effort = %q", got)
 		}
 		return jsonResponse(200, responsesSearchFixture), nil
@@ -61,10 +61,10 @@ func TestCodexSearchSendsDomainFilters(t *testing.T) {
 	cfg := Config{CodexAPIKey: "k"}.WithDefaults()
 	cfg = cfg.WithDoer(stubDoer{handle: func(req *http.Request) (*http.Response, error) {
 		body, _ := io.ReadAll(req.Body)
-		if got := gjson.GetBytes(body, "tools.0.search_context_size").String(); got != "high" {
+		if got := ojson.GetBytes(body, "tools.0.search_context_size").String(); got != "high" {
 			t.Fatalf("context size missing: %s", body)
 		}
-		if got := gjson.GetBytes(body, "tools.0.filters.allowed_domains.0").String(); got != "go.dev" {
+		if got := ojson.GetBytes(body, "tools.0.filters.allowed_domains.0").String(); got != "go.dev" {
 			t.Fatalf("allowed domains missing: %s", body)
 		}
 		return jsonResponse(200, responsesSearchFixture), nil
@@ -81,13 +81,13 @@ func TestXAISearchMapsExcludedDomains(t *testing.T) {
 		body, _ := io.ReadAll(req.Body)
 		// The xAI Responses tool nests domain filters under `filters`;
 		// a top-level field is silently ignored by the backend.
-		if got := gjson.GetBytes(body, "tools.0.filters.excluded_domains.0").String(); got != "spam.example" {
+		if got := ojson.GetBytes(body, "tools.0.filters.excluded_domains.0").String(); got != "spam.example" {
 			t.Fatalf("excluded domains missing: %s", body)
 		}
-		if gjson.GetBytes(body, "tools.0.excluded_domains").Exists() {
+		if ojson.GetBytes(body, "tools.0.excluded_domains").Exists() {
 			t.Fatalf("filters must not be written at the tool top level: %s", body)
 		}
-		if gjson.GetBytes(body, "tools.0.filters.allowed_domains").Exists() {
+		if ojson.GetBytes(body, "tools.0.filters.allowed_domains").Exists() {
 			t.Fatalf("allow and block must be exclusive: %s", body)
 		}
 		return jsonResponse(200, responsesSearchFixture), nil

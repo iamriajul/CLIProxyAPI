@@ -601,14 +601,14 @@ func (h *ClaudeCodeAPIHandler) WriteErrorResponse(c *gin.Context, msg *interface
 			if rec, ok := coreauth.EarliestRecoveryTime(msg.Error); ok && !rec.IsZero() {
 				suffix := coreauth.FormatRetryAfterSuffix(rec)
 				if suffix != "" && !bytes.Contains(body, []byte("RETRY_AFTER:")) {
-					if gjson.GetBytes(body, "error.message").Exists() {
-						msgVal := gjson.GetBytes(body, "error.message").String()
-						if updated, errSet := sjson.SetBytes(body, "error.message", fmt.Sprintf("%s %s", msgVal, suffix)); errSet == nil {
+					if ojson.GetBytes(body, "error.message").Exists() {
+						msgVal := ojson.GetBytes(body, "error.message").String()
+						if updated, errSet := ojson.SetBytes(body, "error.message", fmt.Sprintf("%s %s", msgVal, suffix)); errSet == nil {
 							body = updated
 						}
-					} else if gjson.GetBytes(body, "message").Exists() {
-						msgVal := gjson.GetBytes(body, "message").String()
-						if updated, errSet := sjson.SetBytes(body, "message", fmt.Sprintf("%s %s", msgVal, suffix)); errSet == nil {
+					} else if ojson.GetBytes(body, "message").Exists() {
+						msgVal := ojson.GetBytes(body, "message").String()
+						if updated, errSet := ojson.SetBytes(body, "message", fmt.Sprintf("%s %s", msgVal, suffix)); errSet == nil {
 							body = updated
 						}
 					}

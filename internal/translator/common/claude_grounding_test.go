@@ -4,11 +4,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tidwall/gjson"
+	"github.com/MoeForge/moego/ojson"
 )
 
 func TestBuildClaudeWebSearchContent_KeepsTextWhenCitationHasNoURL(t *testing.T) {
-	grounding := gjson.Parse(`{
+	grounding := ojson.Parse(`{
 		"webSearchQueries": ["q"],
 		"groundingChunks": [{"web": {"uri": "https://example.com", "title": "Example"}}],
 		"groundingSupports": [
@@ -18,7 +18,7 @@ func TestBuildClaudeWebSearchContent_KeepsTextWhenCitationHasNoURL(t *testing.T)
 	}`)
 	out := BuildClaudeWebSearchContent("srvtoolu_test", "Alpha gamma delta.", grounding)
 	var text strings.Builder
-	gjson.ParseBytes(out).ForEach(func(_, block gjson.Result) bool {
+	ojson.ParseBytes(out).ForEach(func(_, block ojson.Result) bool {
 		if block.Get("type").String() == "text" {
 			text.WriteString(block.Get("text").String())
 		}
@@ -27,7 +27,7 @@ func TestBuildClaudeWebSearchContent_KeepsTextWhenCitationHasNoURL(t *testing.T)
 	if got := text.String(); got != "Alpha gamma delta." {
 		t.Fatalf("visible text = %q, body %s", got, out)
 	}
-	cited := gjson.ParseBytes(out).Get(`#(type=="text")#.citations.0.url`)
+	cited := ojson.ParseBytes(out).Get(`#(type=="text")#.citations.0.url`)
 	for _, url := range cited.Array() {
 		if url.String() == "" {
 			t.Fatalf("empty citation url: %s", out)
@@ -36,7 +36,7 @@ func TestBuildClaudeWebSearchContent_KeepsTextWhenCitationHasNoURL(t *testing.T)
 }
 
 func TestBuildClaudeWebSearchContent_NonWebChunkIsUncited(t *testing.T) {
-	grounding := gjson.Parse(`{
+	grounding := ojson.Parse(`{
 		"webSearchQueries": ["q"],
 		"groundingChunks": [{"retrievedContext": {"uri": "rag-doc-1", "title": "Internal"}}],
 		"groundingSupports": [
@@ -44,7 +44,7 @@ func TestBuildClaudeWebSearchContent_NonWebChunkIsUncited(t *testing.T) {
 		]
 	}`)
 	out := BuildClaudeWebSearchContent("srvtoolu_test", "beta", grounding)
-	block := gjson.ParseBytes(out).Get(`#(type=="text")`)
+	block := ojson.ParseBytes(out).Get(`#(type=="text")`)
 	if block.Get("text").String() != "beta" {
 		t.Fatalf("text = %s", out)
 	}

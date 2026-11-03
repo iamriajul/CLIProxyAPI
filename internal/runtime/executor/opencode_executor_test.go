@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
-	"github.com/tidwall/gjson"
 )
 
 type opencodeRoundTripperFunc func(*http.Request) (*http.Response, error)
@@ -89,7 +89,7 @@ func TestOpencodeChatRoundTrip(t *testing.T) {
 		authHeader = req.Header.Get("Authorization")
 		uaHeader = req.Header.Get("User-Agent")
 		body, _ := io.ReadAll(req.Body)
-		upstreamModel = gjson.GetBytes(body, "model").String()
+		upstreamModel = ojson.GetBytes(body, "model").String()
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Header:     http.Header{"Content-Type": []string{"application/json"}},
@@ -117,7 +117,7 @@ func TestOpencodeChatRoundTrip(t *testing.T) {
 	if upstreamModel != "glm-5.2" {
 		t.Fatalf("upstream model = %q", upstreamModel)
 	}
-	if got := gjson.GetBytes(resp.Payload, "choices.0.message.content").String(); got != "hello" {
+	if got := ojson.GetBytes(resp.Payload, "choices.0.message.content").String(); got != "hello" {
 		t.Fatalf("response text = %q", got)
 	}
 }
@@ -146,10 +146,10 @@ func TestOpencodeClaudeSourceTranslates(t *testing.T) {
 		t.Fatalf("Execute() error = %v", err)
 	}
 	// Claude source on a chat-route model goes out as OpenAI upstream.
-	if got := gjson.GetBytes(upstreamBody, "messages.0.role").String(); got != "user" {
+	if got := ojson.GetBytes(upstreamBody, "messages.0.role").String(); got != "user" {
 		t.Fatalf("upstream role = %q", got)
 	}
-	if got := gjson.GetBytes(resp.Payload, "content.0.text").String(); got != "hello" {
+	if got := ojson.GetBytes(resp.Payload, "content.0.text").String(); got != "hello" {
 		t.Fatalf("claude response text = %q (payload %s)", got, resp.Payload)
 	}
 }
@@ -180,10 +180,10 @@ func TestOpencodeAutoToolChoiceKeptOnDeepseek(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if got := gjson.GetBytes(upstreamBody, "tool_choice").String(); got != "auto" {
+	if got := ojson.GetBytes(upstreamBody, "tool_choice").String(); got != "auto" {
 		t.Fatalf("tool_choice = %q, want auto forwarded", got)
 	}
-	if got := gjson.GetBytes(upstreamBody, "tools.0.type").String(); got != "function" {
+	if got := ojson.GetBytes(upstreamBody, "tools.0.type").String(); got != "function" {
 		t.Fatalf("tools type = %q", got)
 	}
 }
@@ -211,7 +211,7 @@ func TestOpencodeToolChoiceKeptOnVisionExp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if got := gjson.GetBytes(upstreamBody, "tool_choice").String(); got != "auto" {
+	if got := ojson.GetBytes(upstreamBody, "tool_choice").String(); got != "auto" {
 		t.Fatalf("tool_choice = %q, want preserved auto on vision-exp", got)
 	}
 }
@@ -315,7 +315,7 @@ func TestOpencodeResponsesSourceOnChatRouteTranslates(t *testing.T) {
 	if upstreamURL != "https://opencode.ai/zen/go/v1/chat/completions" {
 		t.Fatalf("chat-route responses input must ride /chat/completions, got %q", upstreamURL)
 	}
-	if got := gjson.GetBytes(upstreamBody, "messages.0.role").String(); got != "user" {
+	if got := ojson.GetBytes(upstreamBody, "messages.0.role").String(); got != "user" {
 		t.Fatalf("translated role = %q (body %s)", got, upstreamBody)
 	}
 	if len(resp.Payload) == 0 {

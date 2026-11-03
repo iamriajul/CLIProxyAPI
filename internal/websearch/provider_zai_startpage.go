@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/tidwall/gjson"
+	"github.com/MoeForge/moego/ojson"
 )
 
 // zaiProvider answers searches through Z.AI's remote MCP web_search_prime
@@ -56,8 +56,8 @@ func (zaiProvider) Search(ctx context.Context, cfg Config, req SearchRequest, _ 
 // candidate is tried in turn and text that yields no results is kept as
 // answer prose rather than being discarded.
 func zaiPayload(content []byte) (results []Source, answer, requestID string) {
-	root := gjson.ParseBytes(content)
-	candidates := []gjson.Result{root}
+	root := ojson.ParseBytes(content)
+	candidates := []ojson.Result{root}
 	if structured := root.Get("structuredContent"); structured.Exists() {
 		candidates = append(candidates, structured)
 	}
@@ -72,14 +72,14 @@ func zaiPayload(content []byte) (results []Source, answer, requestID string) {
 	// the model is meant to read: the former leads, the latter follows.
 	var prose, summary []string
 	collect := func(text string) {
-		decoded := gjson.Parse(text)
+		decoded := ojson.Parse(text)
 		if !decoded.Exists() {
 			prose = append(prose, text)
 			return
 		}
 		// A JSON string payload is itself an encoded document.
-		if decoded.Type == gjson.String {
-			if inner := gjson.Parse(decoded.String()); inner.Exists() {
+		if decoded.Type == ojson.String {
+			if inner := ojson.Parse(decoded.String()); inner.Exists() {
 				decoded = inner
 			} else {
 				prose = append(prose, text)
@@ -94,8 +94,8 @@ func zaiPayload(content []byte) (results []Source, answer, requestID string) {
 	// mcpToolResult hands over the content array itself, so the text parts
 	// are top-level elements; a document that nests its own content array
 	// is walked as well.
-	collectParts := func(node gjson.Result) {
-		node.ForEach(func(_, item gjson.Result) bool {
+	collectParts := func(node ojson.Result) {
+		node.ForEach(func(_, item ojson.Result) bool {
 			if text := strings.TrimSpace(item.Get("text").String()); text != "" {
 				collect(text)
 			}
@@ -104,7 +104,7 @@ func zaiPayload(content []byte) (results []Source, answer, requestID string) {
 	}
 	collectParts(root)
 	collectParts(root.Get("content"))
-	for _, candidate := range append([]gjson.Result(nil), candidates...) {
+	for _, candidate := range append([]ojson.Result(nil), candidates...) {
 		collectParts(candidate.Get("content"))
 	}
 
@@ -118,7 +118,7 @@ func zaiPayload(content []byte) (results []Source, answer, requestID string) {
 }
 
 // zaiResults reads the result list from the containers Z.AI uses.
-func zaiResults(node gjson.Result) []Source {
+func zaiResults(node ojson.Result) []Source {
 	list := node
 	if !list.IsArray() {
 		for _, path := range []string{"search_result", "results"} {
@@ -148,7 +148,7 @@ func zaiResults(node gjson.Result) []Source {
 	return results
 }
 
-func zaiRequestID(node gjson.Result) string {
+func zaiRequestID(node ojson.Result) string {
 	if !node.IsObject() {
 		return ""
 	}
