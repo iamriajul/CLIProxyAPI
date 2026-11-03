@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tidwall/gjson"
+	"github.com/MoeForge/moego/ojson"
 )
 
 // The Gemini grounding tool is declared as camelCase `googleSearch`; the
@@ -16,10 +16,10 @@ func TestGeminiSearchDeclaresGoogleSearchTool(t *testing.T) {
 	cfg := Config{GeminiAPIKey: "k"}.WithDefaults()
 	cfg = cfg.WithDoer(stubDoer{handle: func(req *http.Request) (*http.Response, error) {
 		body := readBody(t, req)
-		if !gjson.GetBytes(body, "tools.0.googleSearch").Exists() {
+		if !ojson.GetBytes(body, "tools.0.googleSearch").Exists() {
 			t.Fatalf("googleSearch tool missing: %s", body)
 		}
-		if gjson.GetBytes(body, "tools.0.google_search").Exists() {
+		if ojson.GetBytes(body, "tools.0.google_search").Exists() {
 			t.Fatalf("snake_case google_search is ignored by the API: %s", body)
 		}
 		return sseBody(`data: {"candidates":[{"content":{"parts":[{"text":"grounded"}]},"groundingMetadata":{"webSearchQueries":["go"],"groundingChunks":[{"web":{"uri":"https://go.dev","title":"Go"}}]}}]}`), nil
@@ -40,7 +40,7 @@ func TestGeminiSearchCanonicalizesDirectives(t *testing.T) {
 	cfg := Config{GeminiAPIKey: "k"}.WithDefaults()
 	cfg = cfg.WithDoer(stubDoer{handle: func(req *http.Request) (*http.Response, error) {
 		body := readBody(t, req)
-		if got := gjson.GetBytes(body, "contents.0.parts.0.text").String(); got != "release notes site:go.dev" {
+		if got := ojson.GetBytes(body, "contents.0.parts.0.text").String(); got != "release notes site:go.dev" {
 			t.Fatalf("query = %q, want directives canonicalized", got)
 		}
 		return sseBody(`data: {"candidates":[{"content":{"parts":[{"text":"ok"}]},"groundingMetadata":{"webSearchQueries":["q"],"groundingChunks":[{"web":{"uri":"https://go.dev"}}]}}]}`), nil
@@ -60,7 +60,7 @@ func TestAnthropicSearchIdentifiesServerToolByName(t *testing.T) {
 		{"type":"server_tool_use","id":"srvtoolu_2","name":"code_execution","input":{"query":"not a search"}},
 		{"type":"text","text":"Generics landed in Go 1.18."}
 	],"usage":{"server_tool_use":{"web_search_requests":1}}}`)
-	response := parseAnthropicResponse(gjson.ParseBytes(body), "claude-haiku-4-5")
+	response := parseAnthropicResponse(ojson.ParseBytes(body), "claude-haiku-4-5")
 	if len(response.SearchQueries) != 1 || response.SearchQueries[0] != "golang generics" {
 		t.Fatalf("queries = %v, want only the namespaced web_search query", response.SearchQueries)
 	}
@@ -74,7 +74,7 @@ func TestCodexSearchRequestsWebSearchSources(t *testing.T) {
 	cfg := Config{CodexAPIKey: "k"}.WithDefaults()
 	cfg = cfg.WithDoer(stubDoer{handle: func(req *http.Request) (*http.Response, error) {
 		body := readBody(t, req)
-		if got := gjson.GetBytes(body, "include").Array(); len(got) != 1 || got[0].String() != "web_search_call.action.sources" {
+		if got := ojson.GetBytes(body, "include").Array(); len(got) != 1 || got[0].String() != "web_search_call.action.sources" {
 			t.Fatalf("include = %s, want web_search_call.action.sources", body)
 		}
 		return jsonResponse(200, `{"id":"resp_1","output":[
@@ -97,13 +97,13 @@ func TestCodexSearchSendsTypedInputMessage(t *testing.T) {
 	cfg := Config{CodexAPIKey: "k"}.WithDefaults()
 	cfg = cfg.WithDoer(stubDoer{handle: func(req *http.Request) (*http.Response, error) {
 		body := readBody(t, req)
-		if gjson.GetBytes(body, "input").Type == gjson.String {
+		if ojson.GetBytes(body, "input").Type == ojson.String {
 			t.Fatalf("input must not be a bare string: %s", body)
 		}
-		if got := gjson.GetBytes(body, "input.0.content.0.text").String(); got != "go" {
+		if got := ojson.GetBytes(body, "input.0.content.0.text").String(); got != "go" {
 			t.Fatalf("input_text = %q", got)
 		}
-		if got := gjson.GetBytes(body, "input.0.content.0.type").String(); got != "input_text" {
+		if got := ojson.GetBytes(body, "input.0.content.0.type").String(); got != "input_text" {
 			t.Fatalf("part type = %q", got)
 		}
 		return jsonResponse(200, responsesSearchFixture), nil
@@ -128,7 +128,7 @@ func TestResponsesSearchSendsInstructions(t *testing.T) {
 			cfg := provider.cfg
 			cfg = cfg.WithDoer(stubDoer{handle: func(req *http.Request) (*http.Response, error) {
 				body := readBody(t, req)
-				if !strings.Contains(gjson.GetBytes(body, "instructions").String(), "web search") {
+				if !strings.Contains(ojson.GetBytes(body, "instructions").String(), "web search") {
 					t.Fatalf("instructions missing: %s", body)
 				}
 				return jsonResponse(200, responsesSearchFixture), nil
@@ -145,10 +145,10 @@ func TestXAISearchSendsRoleContentInput(t *testing.T) {
 	cfg := Config{XAIAPIKey: "k"}.WithDefaults()
 	cfg = cfg.WithDoer(stubDoer{handle: func(req *http.Request) (*http.Response, error) {
 		body := readBody(t, req)
-		if got := gjson.GetBytes(body, "input.0.role").String(); got != "system" {
+		if got := ojson.GetBytes(body, "input.0.role").String(); got != "system" {
 			t.Fatalf("input.0.role = %q", got)
 		}
-		if got := gjson.GetBytes(body, "input.1.content").String(); got != "go" {
+		if got := ojson.GetBytes(body, "input.1.content").String(); got != "go" {
 			t.Fatalf("input.1.content = %q", got)
 		}
 		return jsonResponse(200, responsesSearchFixture), nil
@@ -164,10 +164,10 @@ func TestXAISearchSendsTopLevelMaxOutputTokens(t *testing.T) {
 	cfg := Config{XAIAPIKey: "k"}.WithDefaults()
 	cfg = cfg.WithDoer(stubDoer{handle: func(req *http.Request) (*http.Response, error) {
 		body := readBody(t, req)
-		if got := gjson.GetBytes(body, "max_output_tokens").Int(); got != 700 {
+		if got := ojson.GetBytes(body, "max_output_tokens").Int(); got != 700 {
 			t.Fatalf("max_output_tokens = %d, want top-level 700", got)
 		}
-		if gjson.GetBytes(body, "tools.0.max_output_tokens").Exists() {
+		if ojson.GetBytes(body, "tools.0.max_output_tokens").Exists() {
 			t.Fatalf("max_output_tokens must not live on the tool: %s", body)
 		}
 		return jsonResponse(200, responsesSearchFixture), nil
@@ -229,7 +229,7 @@ func TestCodexSearchReEmitsDirectivesInQuery(t *testing.T) {
 	cfg := Config{CodexAPIKey: "k"}.WithDefaults()
 	cfg = cfg.WithDoer(stubDoer{handle: func(req *http.Request) (*http.Response, error) {
 		body := readBody(t, req)
-		if got := gjson.GetBytes(body, "input.0.content.0.text").String(); got != "notes site:go.dev" {
+		if got := ojson.GetBytes(body, "input.0.content.0.text").String(); got != "notes site:go.dev" {
 			t.Fatalf("query = %q, want the domain alias rewritten to site:", got)
 		}
 		return jsonResponse(200, responsesSearchFixture), nil
