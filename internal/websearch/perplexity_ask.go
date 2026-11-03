@@ -11,9 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MoeForge/moego/ojson"
 	log "github.com/sirupsen/logrus"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 // Perplexity's consumer `perplexity_ask` endpoint. It is a research
@@ -64,11 +63,11 @@ type perplexityStreamBlock struct {
 
 // perplexityEvent is the accumulated ask stream snapshot.
 type perplexityEvent struct {
-	raw        gjson.Result
+	raw        ojson.Result
 	blocks     map[string]perplexityStreamBlock
 	blockOrder []string
 	sourcesURL []string
-	sourcesRaw []gjson.Result
+	sourcesRaw []ojson.Result
 }
 
 func newPerplexityEvent() perplexityEvent {
@@ -215,61 +214,61 @@ func perplexityAsk(ctx context.Context, cfg Config, req SearchRequest, parsed Pa
 	}
 
 	params := []byte(`{}`)
-	params, _ = sjson.SetBytes(params, "query_str", filters.query)
-	params, _ = sjson.SetBytes(params, "search_focus", "internet")
-	params, _ = sjson.SetBytes(params, "mode", "copilot")
-	params, _ = sjson.SetBytes(params, "model_preference", filters.subscriptionMod)
-	params, _ = sjson.SetRawBytes(params, "sources", []byte(`["web"]`))
-	params, _ = sjson.SetRawBytes(params, "attachments", []byte(`[]`))
-	params, _ = sjson.SetBytes(params, "frontend_uuid", newPerplexityRequestID())
-	params, _ = sjson.SetBytes(params, "frontend_context_uuid", newPerplexityRequestID())
-	params, _ = sjson.SetBytes(params, "version", perplexityAPIVersion)
-	params, _ = sjson.SetBytes(params, "language", "en-US")
-	params, _ = sjson.SetBytes(params, "is_incognito", true)
-	params, _ = sjson.SetBytes(params, "use_schematized_api", true)
+	params, _ = ojson.SetBytes(params, "query_str", filters.query)
+	params, _ = ojson.SetBytes(params, "search_focus", "internet")
+	params, _ = ojson.SetBytes(params, "mode", "copilot")
+	params, _ = ojson.SetBytes(params, "model_preference", filters.subscriptionMod)
+	params, _ = ojson.SetRawBytes(params, "sources", []byte(`["web"]`))
+	params, _ = ojson.SetRawBytes(params, "attachments", []byte(`[]`))
+	params, _ = ojson.SetBytes(params, "frontend_uuid", newPerplexityRequestID())
+	params, _ = ojson.SetBytes(params, "frontend_context_uuid", newPerplexityRequestID())
+	params, _ = ojson.SetBytes(params, "version", perplexityAPIVersion)
+	params, _ = ojson.SetBytes(params, "language", "en-US")
+	params, _ = ojson.SetBytes(params, "is_incognito", true)
+	params, _ = ojson.SetBytes(params, "use_schematized_api", true)
 	// `skip_search_enabled: true` lets the backend classifier skip retrieval
 	// for queries it thinks it can answer from memory, which yields an
 	// ungrounded refusal. We are a search tool, so always retrieve.
-	params, _ = sjson.SetBytes(params, "skip_search_enabled", false)
-	params, _ = sjson.SetBytes(params, "always_search_override", true)
-	params, _ = sjson.SetBytes(params, "prompt_source", "user")
-	params, _ = sjson.SetBytes(params, "source", "default")
-	params, _ = sjson.SetBytes(params, "local_search_enabled", false)
+	params, _ = ojson.SetBytes(params, "skip_search_enabled", false)
+	params, _ = ojson.SetBytes(params, "always_search_override", true)
+	params, _ = ojson.SetBytes(params, "prompt_source", "user")
+	params, _ = ojson.SetBytes(params, "source", "default")
+	params, _ = ojson.SetBytes(params, "local_search_enabled", false)
 	// No tool-approval UI exists here, so never stall waiting for one.
-	params, _ = sjson.SetBytes(params, "should_ask_for_mcp_tool_confirmation", false)
-	params, _ = sjson.SetBytes(params, "supports_tool_approval_modal", false)
-	params, _ = sjson.SetBytes(params, "force_enable_browser_agent", false)
-	params, _ = sjson.SetBytes(params, "is_local_browser_available", false)
-	params, _ = sjson.SetBytes(params, "is_local_browser_allowed", false)
+	params, _ = ojson.SetBytes(params, "should_ask_for_mcp_tool_confirmation", false)
+	params, _ = ojson.SetBytes(params, "supports_tool_approval_modal", false)
+	params, _ = ojson.SetBytes(params, "force_enable_browser_agent", false)
+	params, _ = ojson.SetBytes(params, "is_local_browser_available", false)
+	params, _ = ojson.SetBytes(params, "is_local_browser_allowed", false)
 	// Recency cannot combine with absolute date bounds; explicit bounds win.
 	recency := filters.recency
 	if filters.afterDate != "" || filters.beforeDate != "" {
 		recency = ""
 	}
 	if recency != "" {
-		params, _ = sjson.SetBytes(params, "search_recency_filter", recency)
+		params, _ = ojson.SetBytes(params, "search_recency_filter", recency)
 	} else {
-		params, _ = sjson.SetRawBytes(params, "search_recency_filter", []byte(`null`))
+		params, _ = ojson.SetRawBytes(params, "search_recency_filter", []byte(`null`))
 	}
 	if len(filters.domainFilter) > 0 {
-		params, _ = sjson.SetRawBytes(params, "search_domain_filter", domainsToJSON(filters.domainFilter))
+		params, _ = ojson.SetRawBytes(params, "search_domain_filter", domainsToJSON(filters.domainFilter))
 	}
 	if filters.afterDate != "" {
-		params, _ = sjson.SetBytes(params, "search_after_date_filter", filters.afterDate)
+		params, _ = ojson.SetBytes(params, "search_after_date_filter", filters.afterDate)
 	}
 	if filters.beforeDate != "" {
-		params, _ = sjson.SetBytes(params, "search_before_date_filter", filters.beforeDate)
+		params, _ = ojson.SetBytes(params, "search_before_date_filter", filters.beforeDate)
 	}
 	if len(filters.languageFilter) > 0 {
-		params, _ = sjson.SetRawBytes(params, "search_language_filter", domainsToJSON(filters.languageFilter))
+		params, _ = ojson.SetRawBytes(params, "search_language_filter", domainsToJSON(filters.languageFilter))
 	}
 	if auth.kind == "anonymous" {
-		params, _ = sjson.SetBytes(params, "send_back_text_in_streaming_api", true)
+		params, _ = ojson.SetBytes(params, "send_back_text_in_streaming_api", true)
 	}
 
 	payload := []byte(`{"query_str":"","params":{}}`)
-	payload, _ = sjson.SetBytes(payload, "query_str", filters.query)
-	payload, _ = sjson.SetRawBytes(payload, "params", params)
+	payload, _ = ojson.SetBytes(payload, "query_str", filters.query)
+	payload, _ = ojson.SetRawBytes(payload, "params", params)
 
 	// The ask endpoint intermittently drops the socket before responding.
 	// Retry the transport once; once we hold a response the outcome is final.
@@ -319,7 +318,7 @@ func readPerplexityAskStream(ctx context.Context, resp *http.Response, filters p
 	var model string
 
 	errStream := sseLines(resp.Body, func(data []byte) error {
-		event := gjson.ParseBytes(data)
+		event := ojson.ParseBytes(data)
 		if code := event.Get("error_code").String(); code != "" {
 			message := firstNonEmpty(event.Get("error_message").String(), code)
 			return &ProviderError{
@@ -380,7 +379,7 @@ var errPerplexityStreamDone = &ProviderError{Provider: "Perplexity", Message: "s
 
 // mergePerplexityEvent folds an incoming event snapshot into the merged one,
 // keyed by intended_usage so repeated blocks overwrite rather than duplicate.
-func mergePerplexityEvent(merged *perplexityEvent, event gjson.Result) {
+func mergePerplexityEvent(merged *perplexityEvent, event ojson.Result) {
 	merged.raw = event
 	if list := event.Get("sources_list").Array(); len(list) > 0 {
 		merged.sourcesRaw = list
@@ -421,8 +420,8 @@ func mergePerplexityEvent(merged *perplexityEvent, event gjson.Result) {
 
 // mergePerplexityMarkdown joins streamed answer fragments by their starting
 // offset so out-of-order chunks still reassemble correctly.
-func mergePerplexityMarkdown(existing *perplexityMarkdownBlock, incoming gjson.Result) perplexityMarkdownBlock {
-	// gjson.Result is a value type, so a missing node is the zero value
+func mergePerplexityMarkdown(existing *perplexityMarkdownBlock, incoming ojson.Result) perplexityMarkdownBlock {
+	// ojson.Result is a value type, so a missing node is the zero value
 	// rather than nil; `chunks`/`answer` are optional on the wire.
 	out := perplexityMarkdownBlock{
 		answer:             incoming.Get("answer").String(),
@@ -537,27 +536,27 @@ func perplexityEventSources(event perplexityEvent) []Source {
 
 // perplexityTextPayload unwraps the structured answer some events carry in
 // their text field, which is JSON either directly or under a step's content.
-func perplexityTextPayload(text string) gjson.Result {
+func perplexityTextPayload(text string) ojson.Result {
 	if strings.TrimSpace(text) == "" {
-		return gjson.Result{}
+		return ojson.Result{}
 	}
-	parsed := gjson.Parse(text)
+	parsed := ojson.Parse(text)
 	if parsed.IsObject() {
 		return parsed
 	}
 	if !parsed.IsArray() {
-		return gjson.Result{}
+		return ojson.Result{}
 	}
 	for _, item := range parsed.Array() {
 		answer := item.Get("content.answer").String()
 		if answer == "" {
 			continue
 		}
-		if inner := gjson.Parse(answer); inner.IsObject() {
+		if inner := ojson.Parse(answer); inner.IsObject() {
 			return inner
 		}
 	}
-	return gjson.Result{}
+	return ojson.Result{}
 }
 
 func perplexityTextAnswer(text string) string {
@@ -566,7 +565,7 @@ func perplexityTextAnswer(text string) string {
 			return answer
 		}
 	}
-	parsed := gjson.Parse(text)
+	parsed := ojson.Parse(text)
 	if !parsed.IsArray() {
 		return text
 	}
