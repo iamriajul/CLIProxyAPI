@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tidwall/gjson"
+	"github.com/MoeForge/moego/ojson"
 )
 
 func TestOpenRouterGroundingRequestAndCitations(t *testing.T) {
@@ -21,13 +21,13 @@ func TestOpenRouterGroundingRequestAndCitations(t *testing.T) {
 		body := readBody(t, req)
 		// The web plugin carries its own result cap, defaulting to 5
 		// rather than the generic source limit.
-		if got := gjson.GetBytes(body, "plugins.0.id").String(); got != "web" {
+		if got := ojson.GetBytes(body, "plugins.0.id").String(); got != "web" {
 			t.Fatalf("plugin = %q", got)
 		}
-		if got := gjson.GetBytes(body, "plugins.0.max_results").Int(); got != 5 {
+		if got := ojson.GetBytes(body, "plugins.0.max_results").Int(); got != 5 {
 			t.Fatalf("max_results = %d, want the plugin default", got)
 		}
-		if got := gjson.GetBytes(body, "messages.0.content").String(); got != "go" {
+		if got := ojson.GetBytes(body, "messages.0.content").String(); got != "go" {
 			t.Fatalf("query = %q", got)
 		}
 		return jsonResponse(200, `{

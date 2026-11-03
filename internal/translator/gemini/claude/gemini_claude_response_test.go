@@ -1454,23 +1454,23 @@ func TestConvertGeminiResponseToClaudeNonStream_GroundingBecomesServerSearch(t *
 		"usageMetadata": {"promptTokenCount": 3, "candidatesTokenCount": 4}
 	}`)
 	out := ConvertGeminiResponseToClaudeNonStream(context.Background(), "gemini-search", original, translated, raw, nil)
-	if gjson.GetBytes(out, "content.0.type").String() != "server_tool_use" {
-		t.Fatalf("content.0 = %s", gjson.GetBytes(out, "content.0").Raw)
+	if ojson.GetBytes(out, "content.0.type").String() != "server_tool_use" {
+		t.Fatalf("content.0 = %s", ojson.GetBytes(out, "content.0").Raw)
 	}
-	if gjson.GetBytes(out, "content.0.input.query").String() != "euro 2024 winner" {
-		t.Fatalf("query = %s", gjson.GetBytes(out, "content.0.input").Raw)
+	if ojson.GetBytes(out, "content.0.input.query").String() != "euro 2024 winner" {
+		t.Fatalf("query = %s", ojson.GetBytes(out, "content.0.input").Raw)
 	}
-	if gjson.GetBytes(out, "content.1.type").String() != "web_search_tool_result" {
-		t.Fatalf("content.1 = %s", gjson.GetBytes(out, "content.1").Raw)
+	if ojson.GetBytes(out, "content.1.type").String() != "web_search_tool_result" {
+		t.Fatalf("content.1 = %s", ojson.GetBytes(out, "content.1").Raw)
 	}
-	if gjson.GetBytes(out, "content.1.content.0.url").String() != "https://example.com/euro" {
-		t.Fatalf("result = %s", gjson.GetBytes(out, "content.1.content").Raw)
+	if ojson.GetBytes(out, "content.1.content.0.url").String() != "https://example.com/euro" {
+		t.Fatalf("result = %s", ojson.GetBytes(out, "content.1.content").Raw)
 	}
-	if gjson.GetBytes(out, "content.2.citations.0.url").String() != "https://example.com/euro" {
-		t.Fatalf("citation = %s", gjson.GetBytes(out, "content.2").Raw)
+	if ojson.GetBytes(out, "content.2.citations.0.url").String() != "https://example.com/euro" {
+		t.Fatalf("citation = %s", ojson.GetBytes(out, "content.2").Raw)
 	}
-	if gjson.GetBytes(out, "usage.server_tool_use.web_search_requests").Int() != 1 {
-		t.Fatalf("usage = %s", gjson.GetBytes(out, "usage").Raw)
+	if ojson.GetBytes(out, "usage.server_tool_use.web_search_requests").Int() != 1 {
+		t.Fatalf("usage = %s", ojson.GetBytes(out, "usage").Raw)
 	}
 }
 
@@ -1542,16 +1542,16 @@ func TestConvertGeminiResponseToClaudeNonStream_GroundingKeepsFunctionCall(t *te
 		"usageMetadata": {"promptTokenCount": 3, "candidatesTokenCount": 4}
 	}`)
 	out := ConvertGeminiResponseToClaudeNonStream(context.Background(), "gemini-search", original, translated, raw, nil)
-	if gjson.GetBytes(out, "stop_reason").String() != "tool_use" {
-		t.Fatalf("stop_reason = %s", gjson.GetBytes(out, "stop_reason").Raw)
+	if ojson.GetBytes(out, "stop_reason").String() != "tool_use" {
+		t.Fatalf("stop_reason = %s", ojson.GetBytes(out, "stop_reason").Raw)
 	}
-	if gjson.GetBytes(out, `content.#(type=="tool_use").name`).String() != "lookup" {
+	if ojson.GetBytes(out, `content.#(type=="tool_use").name`).String() != "lookup" {
 		t.Fatalf("tool call dropped: %s", out)
 	}
-	if gjson.GetBytes(out, `content.#(type=="thinking")`).Raw == "" {
+	if ojson.GetBytes(out, `content.#(type=="thinking")`).Raw == "" {
 		t.Fatalf("thinking dropped: %s", out)
 	}
-	if gjson.GetBytes(out, `content.#(type=="server_tool_use")`).Raw == "" {
+	if ojson.GetBytes(out, `content.#(type=="server_tool_use")`).Raw == "" {
 		t.Fatalf("search block missing: %s", out)
 	}
 }
@@ -1671,10 +1671,10 @@ func TestConvertGeminiResponseToClaudeNonStream_GroundingUsageKeepsTokenFields(t
 		}]
 	}`)
 	out := ConvertGeminiResponseToClaudeNonStream(context.Background(), "gemini-search", original, translated, raw, nil)
-	if !gjson.GetBytes(out, "usage.input_tokens").Exists() || !gjson.GetBytes(out, "usage.output_tokens").Exists() {
-		t.Fatalf("usage missing token fields: %s", gjson.GetBytes(out, "usage").Raw)
+	if !ojson.GetBytes(out, "usage.input_tokens").Exists() || !ojson.GetBytes(out, "usage.output_tokens").Exists() {
+		t.Fatalf("usage missing token fields: %s", ojson.GetBytes(out, "usage").Raw)
 	}
-	if gjson.GetBytes(out, "usage.server_tool_use.web_search_requests").Int() != 1 {
-		t.Fatalf("search count: %s", gjson.GetBytes(out, "usage").Raw)
+	if ojson.GetBytes(out, "usage.server_tool_use.web_search_requests").Int() != 1 {
+		t.Fatalf("search count: %s", ojson.GetBytes(out, "usage").Raw)
 	}
 }

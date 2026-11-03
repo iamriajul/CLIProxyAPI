@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
-	"github.com/tidwall/gjson"
 )
 
 type zaiRoundTripperFunc func(*http.Request) (*http.Response, error)
@@ -65,7 +65,7 @@ func TestZaiOpenAIRoundTrip(t *testing.T) {
 		upstreamURL = req.URL.String()
 		authHeader = req.Header.Get("Authorization")
 		body, _ := io.ReadAll(req.Body)
-		upstreamModel = gjson.GetBytes(body, "model").String()
+		upstreamModel = ojson.GetBytes(body, "model").String()
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Header:     http.Header{"Content-Type": []string{"application/json"}},
@@ -90,7 +90,7 @@ func TestZaiOpenAIRoundTrip(t *testing.T) {
 	if upstreamModel != "glm-5.3-flash" {
 		t.Fatalf("upstream model = %q", upstreamModel)
 	}
-	if got := gjson.GetBytes(resp.Payload, "choices.0.message.content").String(); got != "hello" {
+	if got := ojson.GetBytes(resp.Payload, "choices.0.message.content").String(); got != "hello" {
 		t.Fatalf("response text = %q", got)
 	}
 }
@@ -123,7 +123,7 @@ func TestZaiResponsesInputTranslatesToChat(t *testing.T) {
 	if upstreamURL != "https://api.z.ai/api/coding/paas/v4/chat/completions" {
 		t.Fatalf("responses input must ride chat completions (no zai responses endpoint), got %q", upstreamURL)
 	}
-	if got := gjson.GetBytes(upstreamBody, "messages.0.role").String(); got != "user" {
+	if got := ojson.GetBytes(upstreamBody, "messages.0.role").String(); got != "user" {
 		t.Fatalf("translated role = %q (body %s)", got, upstreamBody)
 	}
 	if len(resp.Payload) == 0 {
@@ -204,7 +204,7 @@ func TestZaiClaudeLaneSendsVerbatimKey(t *testing.T) {
 	if authHeader != "ak-123.sk-456" {
 		t.Fatalf("Authorization = %q, want raw key without Bearer", authHeader)
 	}
-	if got := gjson.GetBytes(upstreamBody, "model").String(); got != "glm-5.3" {
+	if got := ojson.GetBytes(upstreamBody, "model").String(); got != "glm-5.3" {
 		t.Fatalf("upstream model = %q", got)
 	}
 	if len(resp.Payload) == 0 {
@@ -239,7 +239,7 @@ func TestZaiClaudeSourceStaysNative(t *testing.T) {
 	if authHeader != "ak-123.sk-456" {
 		t.Fatalf("Authorization = %q, want raw key", authHeader)
 	}
-	if got := gjson.GetBytes(resp.Payload, "content.0.text").String(); got != "hello" {
+	if got := ojson.GetBytes(resp.Payload, "content.0.text").String(); got != "hello" {
 		t.Fatalf("claude response text = %q (payload %s)", got, resp.Payload)
 	}
 }

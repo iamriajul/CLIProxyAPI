@@ -11,9 +11,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/MoeForge/moego/ojson"
 	log "github.com/sirupsen/logrus"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 func logMCPCloseError(err error) {
@@ -57,9 +56,9 @@ func newMCPSession(ctx context.Context, cfg Config, label, endpoint, toolName st
 		client:   doerFor(cfg),
 	}
 	initialize := []byte(`{"protocolVersion":"","capabilities":{},"clientInfo":{"name":"","version":""}}`)
-	initialize, _ = sjson.SetBytes(initialize, "protocolVersion", mcpProtocolVersion)
-	initialize, _ = sjson.SetBytes(initialize, "clientInfo.name", mcpClientName)
-	initialize, _ = sjson.SetBytes(initialize, "clientInfo.version", mcpClientVersion)
+	initialize, _ = ojson.SetBytes(initialize, "protocolVersion", mcpProtocolVersion)
+	initialize, _ = ojson.SetBytes(initialize, "clientInfo.name", mcpClientName)
+	initialize, _ = ojson.SetBytes(initialize, "clientInfo.version", mcpClientVersion)
 	// A failed initialize must not abort the call: fall back to a bare
 	// tools/call, which several servers accept.
 	if _, errInit := session.post(ctx, label, "initialize", initialize, true); errInit == nil {
@@ -72,10 +71,10 @@ func newMCPSession(ctx context.Context, cfg Config, label, endpoint, toolName st
 func (s *mcpSession) post(ctx context.Context, label, method string, params []byte, expectResponse bool) ([]byte, error) {
 	s.requestID++
 	payload := []byte(`{"jsonrpc":"2.0","method":"","params":{}}`)
-	payload, _ = sjson.SetBytes(payload, "method", method)
-	payload, _ = sjson.SetRawBytes(payload, "params", params)
+	payload, _ = ojson.SetBytes(payload, "method", method)
+	payload, _ = ojson.SetRawBytes(payload, "params", params)
 	if expectResponse {
-		payload, _ = sjson.SetBytes(payload, "id", s.requestID)
+		payload, _ = ojson.SetBytes(payload, "id", s.requestID)
 	}
 	headers := map[string]string{"Accept": "application/json, text/event-stream"}
 	for key, value := range s.headers {
@@ -123,8 +122,8 @@ func (s *mcpSession) callTool(ctx context.Context, label, toolName string, argsV
 	var lastErr error
 	for _, args := range argsVariants {
 		call := []byte(`{"name":"","arguments":{}}`)
-		call, _ = sjson.SetBytes(call, "name", toolName)
-		call, _ = sjson.SetRawBytes(call, "arguments", args)
+		call, _ = ojson.SetBytes(call, "name", toolName)
+		call, _ = ojson.SetRawBytes(call, "arguments", args)
 		body, errCall := s.post(ctx, label, "tools/call", call, true)
 		if errCall != nil {
 			lastErr = errCall
@@ -153,7 +152,7 @@ func (s *mcpSession) callTool(ctx context.Context, label, toolName string, argsV
 // `result.isError` tool failure into a provider error so the caller can
 // decide whether to retry the argument shape.
 func mcpToolResult(body []byte, label string) ([]byte, error) {
-	root := gjson.ParseBytes(body)
+	root := ojson.ParseBytes(body)
 	// A remote MCP host may answer with a non-enveloped failure: Z.AI's
 	// {code, msg, success:false} envelope, or a bare error object. Both must
 	// surface as a provider error rather than as an empty result, or a
@@ -178,7 +177,7 @@ func mcpToolResult(body []byte, label string) ([]byte, error) {
 	}
 	if result.Get("isError").Bool() {
 		var text strings.Builder
-		result.Get("content").ForEach(func(_, item gjson.Result) bool {
+		result.Get("content").ForEach(func(_, item ojson.Result) bool {
 			if value := strings.TrimSpace(item.Get("text").String()); value != "" {
 				if text.Len() > 0 {
 					text.WriteString("\n")
@@ -206,7 +205,7 @@ func mcpToolResult(body []byte, label string) ([]byte, error) {
 
 // mcpDirectErrorMessage reads the non-enveloped error text a remote host
 // may put at the top level of its reply.
-func mcpDirectErrorMessage(root gjson.Result) string {
+func mcpDirectErrorMessage(root ojson.Result) string {
 	return firstNonEmpty(
 		root.Get("msg").String(),
 		root.Get("message").String(),
@@ -363,7 +362,7 @@ func sseLines(body io.Reader, fn func(data []byte) error) error {
 // mcpText flattens MCP text content blocks into a single string.
 func mcpText(content []byte) string {
 	var parts []string
-	gjson.ParseBytes(content).ForEach(func(_, item gjson.Result) bool {
+	ojson.ParseBytes(content).ForEach(func(_, item ojson.Result) bool {
 		if item.Get("type").String() == "text" {
 			if text := strings.TrimSpace(item.Get("text").String()); text != "" {
 				parts = append(parts, text)
@@ -381,7 +380,7 @@ func mcpTextSources(content []byte, count int) []Source {
 	if text == "" {
 		return nil
 	}
-	parsed := gjson.Parse(text)
+	parsed := ojson.Parse(text)
 	if !parsed.Exists() {
 		return nil
 	}
@@ -391,7 +390,7 @@ func mcpTextSources(content []byte, count int) []Source {
 // sourcesFromJSON pulls normalized sources out of a JSON document whose
 // shape is not fixed. It walks result-shaped and list-shaped containers so
 // one parser serves Exa, Z.AI, Parallel, Kimi, and Synthetic replies.
-func sourcesFromJSON(root gjson.Result, count int) []Source {
+func sourcesFromJSON(root ojson.Result, count int) []Source {
 	var sources []Source
 	add := func(title, url, snippet, published string) {
 		url = strings.TrimSpace(url)
@@ -405,8 +404,8 @@ func sourcesFromJSON(root gjson.Result, count int) []Source {
 			Published: strings.TrimSpace(published),
 		})
 	}
-	var visit func(node gjson.Result, depth int)
-	visit = func(node gjson.Result, depth int) {
+	var visit func(node ojson.Result, depth int)
+	visit = func(node ojson.Result, depth int) {
 		if len(sources) >= count || depth > 5 {
 			return
 		}
@@ -421,7 +420,7 @@ func sourcesFromJSON(root gjson.Result, count int) []Source {
 		if !node.IsArray() {
 			return
 		}
-		node.ForEach(func(_, item gjson.Result) bool {
+		node.ForEach(func(_, item ojson.Result) bool {
 			if len(sources) >= count {
 				return false
 			}
@@ -469,12 +468,12 @@ func sourcesFromJSON(root gjson.Result, count int) []Source {
 // The separator is the caller's: Parallel joins its `excerpts[]` with a
 // blank line, while Exa joins `highlights[]` with a single space, so a
 // single separator for both would misreport one of the two providers.
-func parallelExcerpts(node gjson.Result, separator string) string {
+func parallelExcerpts(node ojson.Result, separator string) string {
 	if !node.IsArray() {
 		return ""
 	}
 	var parts []string
-	node.ForEach(func(_, item gjson.Result) bool {
+	node.ForEach(func(_, item ojson.Result) bool {
 		if text := strings.TrimSpace(item.String()); text != "" {
 			parts = append(parts, text)
 		}
@@ -484,18 +483,18 @@ func parallelExcerpts(node gjson.Result, separator string) string {
 }
 
 // nodeKeys lists the top-level keys of a JSON object.
-func nodeKeys(node gjson.Result) []string {
+func nodeKeys(node ojson.Result) []string {
 	if !node.IsObject() {
 		return nil
 	}
 	var keys []string
-	node.ForEach(func(key, _ gjson.Result) bool {
+	node.ForEach(func(key, _ ojson.Result) bool {
 		keys = append(keys, key.String())
 		return true
 	})
 	return keys
 }
 
-func isJSONArray(node gjson.Result) bool {
-	return node.IsArray() || (node.Type == gjson.JSON && len(node.Array()) > 0)
+func isJSONArray(node ojson.Result) bool {
+	return node.IsArray() || (node.Type == ojson.JSON && len(node.Array()) > 0)
 }

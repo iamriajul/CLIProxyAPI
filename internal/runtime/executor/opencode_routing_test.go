@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
-	"github.com/tidwall/gjson"
 )
 
 const museResponsesFixture = `{"id":"resp_1","object":"response","created_at":1,"status":"completed","model":"muse-spark-1.3-contributor","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hello"}]}],"usage":{"input_tokens":5,"output_tokens":3,"total_tokens":8}}`
@@ -79,16 +79,16 @@ func TestOpencodeResponsesOnlyLaneTranslatesEveryCaller(t *testing.T) {
 		check  func(payload []byte) bool
 	}{
 		{"chat caller", "muse-spark-1.3-contributor", sdktranslator.FormatOpenAI, func(p []byte) bool {
-			return gjson.GetBytes(p, "choices.0.message.content").String() == "hello"
+			return ojson.GetBytes(p, "choices.0.message.content").String() == "hello"
 		}},
 		{"claude caller", "muse-spark-1.3-contributor", sdktranslator.FormatClaude, func(p []byte) bool {
-			return gjson.GetBytes(p, "type").String() == "message" && gjson.GetBytes(p, "content.0.text").String() == "hello"
+			return ojson.GetBytes(p, "type").String() == "message" && ojson.GetBytes(p, "content.0.text").String() == "hello"
 		}},
 		{"unreleased revision", "muse-spark-1.4-contributor", sdktranslator.FormatOpenAI, func(p []byte) bool {
-			return gjson.GetBytes(p, "choices.0.message.content").String() == "hello"
+			return ojson.GetBytes(p, "choices.0.message.content").String() == "hello"
 		}},
 		{"openai upstream lane", "gpt-6-luna", sdktranslator.FormatOpenAI, func(p []byte) bool {
-			return gjson.GetBytes(p, "choices.0.message.content").String() == "hello"
+			return ojson.GetBytes(p, "choices.0.message.content").String() == "hello"
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -103,7 +103,7 @@ func TestOpencodeResponsesOnlyLaneTranslatesEveryCaller(t *testing.T) {
 			if capture.url != "https://opencode.ai/zen/go/v1/responses" {
 				t.Fatalf("responses-only lane must ride /responses, got %q", capture.url)
 			}
-			if !gjson.GetBytes(capture.body, "input").IsArray() || gjson.GetBytes(capture.body, "model").String() != tc.model {
+			if !ojson.GetBytes(capture.body, "input").IsArray() || ojson.GetBytes(capture.body, "model").String() != tc.model {
 				t.Fatalf("upstream body is not a Responses request for %s: %s", tc.model, capture.body)
 			}
 			if !tc.check(resp.Payload) {
@@ -202,10 +202,10 @@ func TestOpencodeMessagesOnlyLaneTranslatesChatCaller(t *testing.T) {
 	if !strings.HasPrefix(capture.url, "https://opencode.ai/zen/go/v1/messages") {
 		t.Fatalf("messages-only lane must ride /messages, got %q", capture.url)
 	}
-	if got := gjson.GetBytes(capture.body, "messages.0.role").String(); got != "user" || !gjson.GetBytes(capture.body, "max_tokens").Exists() {
+	if got := ojson.GetBytes(capture.body, "messages.0.role").String(); got != "user" || !ojson.GetBytes(capture.body, "max_tokens").Exists() {
 		t.Fatalf("upstream body is not a Messages request: %s", capture.body)
 	}
-	if got := gjson.GetBytes(resp.Payload, "choices.0.message.content").String(); got != "hello" {
+	if got := ojson.GetBytes(resp.Payload, "choices.0.message.content").String(); got != "hello" {
 		t.Fatalf("reply not translated back to chat completions: %s", resp.Payload)
 	}
 }
@@ -280,10 +280,10 @@ func TestOpencodeForcedToolChoiceBecomesAuto(t *testing.T) {
 			cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatOpenAI}); err != nil {
 			t.Fatalf("%s: Execute() error = %v", tc.name, err)
 		}
-		if got := gjson.GetBytes(capture.body, "tool_choice").String(); got != tc.want {
+		if got := ojson.GetBytes(capture.body, "tool_choice").String(); got != tc.want {
 			t.Errorf("%s: upstream tool_choice = %q, want %q (body %s)", tc.name, got, tc.want, capture.body)
 		}
-		if !gjson.GetBytes(capture.body, "tools.0").Exists() {
+		if !ojson.GetBytes(capture.body, "tools.0").Exists() {
 			t.Errorf("%s: tools must stay available", tc.name)
 		}
 	}
@@ -309,10 +309,10 @@ func TestOpencodeAutoOnlyLaneToolChoice(t *testing.T) {
 			cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatOpenAIResponse}); err != nil {
 			t.Fatalf("%s: Execute() error = %v", tc.choice, err)
 		}
-		if got := gjson.GetBytes(capture.body, "tool_choice").String(); got != tc.want {
+		if got := ojson.GetBytes(capture.body, "tool_choice").String(); got != tc.want {
 			t.Errorf("%s: upstream tool_choice = %q, want %q", tc.choice, got, tc.want)
 		}
-		if got := gjson.GetBytes(capture.body, "tools.0").Exists(); got != tc.wantTools {
+		if got := ojson.GetBytes(capture.body, "tools.0").Exists(); got != tc.wantTools {
 			t.Errorf("%s: tools present = %v, want %v (body %s)", tc.choice, got, tc.wantTools, capture.body)
 		}
 	}
@@ -340,17 +340,17 @@ func TestOpencodeMessagesLaneForcedToolChoiceBecomesAuto(t *testing.T) {
 			cliproxyexecutor.Options{SourceFormat: tc.source, OriginalRequest: []byte(tc.payload)}); err != nil {
 			t.Fatalf("%s: Execute() error = %v", tc.model, err)
 		}
-		if got := gjson.GetBytes(capture.body, "tool_choice.type").String(); got != "auto" {
-			t.Errorf("%s: upstream tool_choice = %s, want type auto", tc.model, gjson.GetBytes(capture.body, "tool_choice").Raw)
+		if got := ojson.GetBytes(capture.body, "tool_choice.type").String(); got != "auto" {
+			t.Errorf("%s: upstream tool_choice = %s, want type auto", tc.model, ojson.GetBytes(capture.body, "tool_choice").Raw)
 		}
-		if gjson.GetBytes(capture.body, "tool_choice.name").Exists() {
+		if ojson.GetBytes(capture.body, "tool_choice.name").Exists() {
 			t.Errorf("%s: tool name must be dropped with the forced choice", tc.model)
 		}
-		if !gjson.GetBytes(capture.body, "tools.0").Exists() {
+		if !ojson.GetBytes(capture.body, "tools.0").Exists() {
 			t.Errorf("%s: tools must stay available", tc.model)
 		}
 	}
-	if got := gjson.GetBytes(normalizeOpencodeClaudeToolChoice([]byte(`{"tool_choice":{"type":"any","disable_parallel_tool_use":true}}`)), "tool_choice.disable_parallel_tool_use").Bool(); !got {
+	if got := ojson.GetBytes(normalizeOpencodeClaudeToolChoice([]byte(`{"tool_choice":{"type":"any","disable_parallel_tool_use":true}}`)), "tool_choice.disable_parallel_tool_use").Bool(); !got {
 		t.Error("disable_parallel_tool_use must survive the rewrite")
 	}
 }
@@ -427,7 +427,7 @@ func TestOpencodeReasoningReplayFilter(t *testing.T) {
 			t.Fatalf("%s: Execute() error = %v", tc.model, err)
 		}
 		reasoning := 0
-		for _, item := range gjson.GetBytes(capture.body, "input").Array() {
+		for _, item := range ojson.GetBytes(capture.body, "input").Array() {
 			if item.Get("type").String() == "reasoning" {
 				reasoning++
 				if item.Get("encrypted_content").String() != "enc-1" {
@@ -438,10 +438,10 @@ func TestOpencodeReasoningReplayFilter(t *testing.T) {
 		if reasoning != tc.wantReasoning {
 			t.Errorf("%s: %d reasoning items replayed, want %d (body %s)", tc.model, reasoning, tc.wantReasoning, capture.body)
 		}
-		if got := strings.Contains(gjson.GetBytes(capture.body, "include").Raw, "reasoning.encrypted_content"); got != tc.wantInclude {
+		if got := strings.Contains(ojson.GetBytes(capture.body, "include").Raw, "reasoning.encrypted_content"); got != tc.wantInclude {
 			t.Errorf("%s: encrypted reasoning requested = %v, want %v", tc.model, got, tc.wantInclude)
 		}
-		if n := len(gjson.GetBytes(capture.body, "input").Array()); n != 3+tc.wantReasoning {
+		if n := len(ojson.GetBytes(capture.body, "input").Array()); n != 3+tc.wantReasoning {
 			t.Errorf("%s: %d input items, want the user turn and tool exchange kept", tc.model, n)
 		}
 	}
@@ -454,7 +454,7 @@ func TestOpencodeReasoningReplayFilter(t *testing.T) {
 func TestOpencodeTranslatedCallerReasoningNotReplayed(t *testing.T) {
 	body := []byte(`{"input":[{"type":"message","role":"user","content":"hi"},{"type":"reasoning","summary":[],"encrypted_content":"enc-1"},{"type":"function_call","call_id":"c1","name":"get_time","arguments":"{}"},{"type":"function_call_output","call_id":"c1","output":"12:00"}]}`)
 	count := func(b []byte) (reasoning, total int) {
-		for _, item := range gjson.GetBytes(b, "input").Array() {
+		for _, item := range ojson.GetBytes(b, "input").Array() {
 			total++
 			if item.Get("type").String() == "reasoning" {
 				reasoning++
@@ -492,7 +492,7 @@ func TestOpencodeCountTokensStaysLocalInCallerShape(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: CountTokens() error = %v", tc.source, err)
 		}
-		if gjson.GetBytes(resp.Payload, tc.path).Int() <= 0 {
+		if ojson.GetBytes(resp.Payload, tc.path).Int() <= 0 {
 			t.Errorf("%s: count missing at %s: %s", tc.source, tc.path, resp.Payload)
 		}
 	}

@@ -3,7 +3,7 @@ package responses
 import (
 	"testing"
 
-	"github.com/tidwall/gjson"
+	"github.com/MoeForge/moego/ojson"
 )
 
 // A Responses client that declares a `namespace` tool and forces one of its
@@ -21,7 +21,7 @@ func TestNamespaceForcedToolChoiceSurvivesConversion(t *testing.T) {
 	}`)
 	out, _ := ConvertOpenAIResponsesRequestToClaude("claude-test", raw, false)
 
-	choice := gjson.GetBytes(out, "tool_choice")
+	choice := ojson.GetBytes(out, "tool_choice")
 	if !choice.Exists() {
 		t.Fatalf("forced namespace tool_choice was dropped: %s", out)
 	}
@@ -30,7 +30,7 @@ func TestNamespaceForcedToolChoiceSurvivesConversion(t *testing.T) {
 	}
 	// The emitted name must be the qualified name Claude actually sees.
 	declared := map[string]bool{}
-	gjson.GetBytes(out, "tools").ForEach(func(_, tool gjson.Result) bool {
+	ojson.GetBytes(out, "tools").ForEach(func(_, tool ojson.Result) bool {
 		declared[tool.Get("name").String()] = true
 		return true
 	})
@@ -50,14 +50,14 @@ func TestClientFunctionNamedWebSearchDoesNotShadowServerSearch(t *testing.T) {
 		"tool_choice":{"type":"web_search"}
 	}`)
 	out, _ := ConvertOpenAIResponsesRequestToClaude("claude-test", raw, false)
-	tools := gjson.GetBytes(out, "tools").Array()
+	tools := ojson.GetBytes(out, "tools").Array()
 	if len(tools) != 1 {
 		t.Fatalf("expected the server tool to win the name outright, got %d tools: %s", len(tools), out)
 	}
 	if got := tools[0].Get("type").String(); got != "web_search_20250305" {
 		t.Fatalf("surviving tool type = %q, want the server tool: %s", got, out)
 	}
-	if choice := gjson.GetBytes(out, "tool_choice"); choice.Get("type").String() == "tool" {
+	if choice := ojson.GetBytes(out, "tool_choice"); choice.Get("type").String() == "tool" {
 		t.Fatalf("tool_choice = %s, want no forced tool: %s", choice.Raw, out)
 	}
 }
