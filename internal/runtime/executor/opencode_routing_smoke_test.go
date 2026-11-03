@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
-	"github.com/tidwall/gjson"
 )
 
 // End-to-end smoke test for the reported failure: the exact shape of the
@@ -53,10 +53,10 @@ func TestSmokeReportedFailureNowRoutesToResponses(t *testing.T) {
 		t.Fatalf("wire = %q, want /responses (chat triggers ModelProtocolUnsupported)", gotURL)
 	}
 	// 2. Body is genuinely Responses-shaped, not an untranslated chat payload.
-	if !gjson.GetBytes(gotBody, "input").IsArray() {
+	if !ojson.GetBytes(gotBody, "input").IsArray() {
 		t.Fatalf("body was not translated to Responses: %s", gotBody)
 	}
-	if got := gjson.GetBytes(gotBody, "input.0.role").String(); got != "user" {
+	if got := ojson.GetBytes(gotBody, "input.0.role").String(); got != "user" {
 		t.Fatalf("translated input lost the user turn: %s", gotBody)
 	}
 	// 3. The caller's message actually survived the translation.
@@ -64,7 +64,7 @@ func TestSmokeReportedFailureNowRoutesToResponses(t *testing.T) {
 		t.Fatalf("caller content lost in translation: %s", gotBody)
 	}
 	// 4. Model id preserved on the wire.
-	if got := gjson.GetBytes(gotBody, "model").String(); got != "muse-spark-1.3-contributor" {
+	if got := ojson.GetBytes(gotBody, "model").String(); got != "muse-spark-1.3-contributor" {
 		t.Fatalf("wire model = %q", got)
 	}
 	// 5. Session header set: prompt-cache alignment depends on it, so this is
@@ -74,10 +74,10 @@ func TestSmokeReportedFailureNowRoutesToResponses(t *testing.T) {
 	}
 	// 6. The reply reaches the caller in its own chat-completions shape, not as
 	// a raw Responses object it cannot parse.
-	if got := gjson.GetBytes(resp.Payload, "object").String(); got != "chat.completion" {
+	if got := ojson.GetBytes(resp.Payload, "object").String(); got != "chat.completion" {
 		t.Fatalf("response not translated back to chat completions: %s", resp.Payload)
 	}
-	if got := gjson.GetBytes(resp.Payload, "choices.0.message.content").String(); got != "hi" {
+	if got := ojson.GetBytes(resp.Payload, "choices.0.message.content").String(); got != "hi" {
 		t.Fatalf("assistant text lost on the way back: %s", resp.Payload)
 	}
 }
@@ -85,7 +85,7 @@ func TestSmokeEncryptedReasoningIsStripped(t *testing.T) {
 	// A prior turn returned an encrypted reasoning item bound to the gateway's
 	// own caller; replaying it verbatim is exactly what #11928 rejects.
 	replay := `{"model":"muse-spark-1.3-contributor","input":[{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"not-issued-to-this-caller"},{"type":"message","role":"user","content":[{"type":"input_text","text":"next step"}]}]}`
-	if !gjson.GetBytes([]byte(replay), "input.0.encrypted_content").Exists() {
+	if !ojson.GetBytes([]byte(replay), "input.0.encrypted_content").Exists() {
 		t.Fatal("sanity: fixture must carry encrypted_content")
 	}
 

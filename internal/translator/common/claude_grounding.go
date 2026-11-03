@@ -6,8 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
+	"github.com/MoeForge/moego/ojson"
 )
 
 // GroundingSupport is one cited span from Gemini groundingMetadata.
@@ -27,7 +26,7 @@ type citedTextBlock struct {
 
 // HasWebGrounding reports whether groundingMetadata carries a real web search.
 // An empty object, or chunks that are not web pages, does not count.
-func HasWebGrounding(groundingMetadata gjson.Result) bool {
+func HasWebGrounding(groundingMetadata ojson.Result) bool {
 	if !groundingMetadata.Exists() {
 		return false
 	}
@@ -51,14 +50,14 @@ func NewClaudeWebSearchToolUseID() string {
 	return fmt.Sprintf("srvtoolu_%d", time.Now().UnixNano())
 }
 
-func webSearchQueryFromGrounding(groundingMetadata gjson.Result) string {
+func webSearchQueryFromGrounding(groundingMetadata ojson.Result) string {
 	if queries := groundingMetadata.Get("webSearchQueries"); queries.IsArray() && len(queries.Array()) > 0 {
 		return queries.Array()[0].String()
 	}
 	return ""
 }
 
-func webSearchResultsFromGrounding(groundingMetadata gjson.Result) []byte {
+func webSearchResultsFromGrounding(groundingMetadata ojson.Result) []byte {
 	results := []byte(`[]`)
 	chunks := groundingMetadata.Get("groundingChunks")
 	if !chunks.IsArray() {
@@ -80,15 +79,15 @@ func webSearchResultsFromGrounding(groundingMetadata gjson.Result) []byte {
 		seen[uri] = struct{}{}
 		result := []byte(`{"type":"web_search_result","page_age":null}`)
 		if title := web.Get("title"); title.Exists() {
-			result, _ = sjson.SetBytes(result, "title", title.String())
+			result, _ = ojson.SetBytes(result, "title", title.String())
 		}
-		result, _ = sjson.SetBytes(result, "url", uri)
-		results, _ = sjson.SetRawBytes(results, "-1", result)
+		result, _ = ojson.SetBytes(result, "url", uri)
+		results, _ = ojson.SetRawBytes(results, "-1", result)
 	}
 	return results
 }
 
-func parseGroundingSupports(groundingMetadata gjson.Result) []groundingSupport {
+func parseGroundingSupports(groundingMetadata ojson.Result) []groundingSupport {
 	chunksResult := groundingMetadata.Get("groundingChunks")
 	if !chunksResult.IsArray() {
 		return nil
@@ -199,31 +198,31 @@ func citedTextBlocks(textContent string, supports []groundingSupport) []citedTex
 // BuildClaudeWebSearchContent turns Gemini grounding into the Claude blocks
 // a client renders for a server web search: the search call, the results, and
 // the answer text with citations.
-func BuildClaudeWebSearchContent(toolUseID, textContent string, groundingMetadata gjson.Result) []byte {
+func BuildClaudeWebSearchContent(toolUseID, textContent string, groundingMetadata ojson.Result) []byte {
 	content := []byte(`[]`)
 	serverToolUse := []byte(`{"type":"server_tool_use","id":"","name":"web_search","input":{}}`)
-	serverToolUse, _ = sjson.SetBytes(serverToolUse, "id", toolUseID)
+	serverToolUse, _ = ojson.SetBytes(serverToolUse, "id", toolUseID)
 	if query := webSearchQueryFromGrounding(groundingMetadata); query != "" {
-		serverToolUse, _ = sjson.SetBytes(serverToolUse, "input.query", query)
+		serverToolUse, _ = ojson.SetBytes(serverToolUse, "input.query", query)
 	}
-	content, _ = sjson.SetRawBytes(content, "-1", serverToolUse)
+	content, _ = ojson.SetRawBytes(content, "-1", serverToolUse)
 
 	toolResult := []byte(`{"type":"web_search_tool_result","tool_use_id":"","content":[]}`)
-	toolResult, _ = sjson.SetBytes(toolResult, "tool_use_id", toolUseID)
-	toolResult, _ = sjson.SetRawBytes(toolResult, "content", webSearchResultsFromGrounding(groundingMetadata))
-	content, _ = sjson.SetRawBytes(content, "-1", toolResult)
+	toolResult, _ = ojson.SetBytes(toolResult, "tool_use_id", toolUseID)
+	toolResult, _ = ojson.SetRawBytes(toolResult, "content", webSearchResultsFromGrounding(groundingMetadata))
+	content, _ = ojson.SetRawBytes(content, "-1", toolResult)
 
 	for _, block := range citedTextBlocks(textContent, parseGroundingSupports(groundingMetadata)) {
 		if block.Text == "" {
 			continue
 		}
 		textBlock := []byte(`{"type":"text","text":""}`)
-		textBlock, _ = sjson.SetBytes(textBlock, "text", block.Text)
+		textBlock, _ = ojson.SetBytes(textBlock, "text", block.Text)
 		if len(block.Citations) > 0 {
 			citationsJSON, _ := json.Marshal(block.Citations)
-			textBlock, _ = sjson.SetRawBytes(textBlock, "citations", citationsJSON)
+			textBlock, _ = ojson.SetRawBytes(textBlock, "citations", citationsJSON)
 		}
-		content, _ = sjson.SetRawBytes(content, "-1", textBlock)
+		content, _ = ojson.SetRawBytes(content, "-1", textBlock)
 	}
 	return content
 }
@@ -231,21 +230,21 @@ func BuildClaudeWebSearchContent(toolUseID, textContent string, groundingMetadat
 // AppendClaudeWebSearchStreamBlocks emits the same blocks as
 // BuildClaudeWebSearchContent, as Claude SSE events. It returns the next
 // content block index.
-func AppendClaudeWebSearchStreamBlocks(appendEvent func(event, payload string), startIndex int, toolUseID, textContent string, groundingMetadata gjson.Result) int {
+func AppendClaudeWebSearchStreamBlocks(appendEvent func(event, payload string), startIndex int, toolUseID, textContent string, groundingMetadata ojson.Result) int {
 	contentIndex := startIndex
 	serverStart := fmt.Sprintf(`{"type":"content_block_start","index":%d,"content_block":{"type":"server_tool_use","id":"%s","name":"web_search","input":{}}}`, contentIndex, toolUseID)
 	appendEvent("content_block_start", serverStart)
 	if query := webSearchQueryFromGrounding(groundingMetadata); query != "" {
-		queryJSON, _ := sjson.Set(`{}`, "query", query)
+		queryJSON, _ := ojson.Set(`{}`, "query", query)
 		inputDelta := fmt.Sprintf(`{"type":"content_block_delta","index":%d,"delta":{"type":"input_json_delta","partial_json":""}}`, contentIndex)
-		inputDelta, _ = sjson.Set(inputDelta, "delta.partial_json", queryJSON)
+		inputDelta, _ = ojson.Set(inputDelta, "delta.partial_json", queryJSON)
 		appendEvent("content_block_delta", inputDelta)
 	}
 	appendEvent("content_block_stop", fmt.Sprintf(`{"type":"content_block_stop","index":%d}`, contentIndex))
 	contentIndex++
 
 	resultStart := fmt.Sprintf(`{"type":"content_block_start","index":%d,"content_block":{"type":"web_search_tool_result","tool_use_id":"%s","content":[]}}`, contentIndex, toolUseID)
-	resultStart, _ = sjson.SetRaw(resultStart, "content_block.content", string(webSearchResultsFromGrounding(groundingMetadata)))
+	resultStart, _ = ojson.SetRaw(resultStart, "content_block.content", string(webSearchResultsFromGrounding(groundingMetadata)))
 	appendEvent("content_block_start", resultStart)
 	appendEvent("content_block_stop", fmt.Sprintf(`{"type":"content_block_stop","index":%d}`, contentIndex))
 	contentIndex++
@@ -266,7 +265,7 @@ func AppendClaudeWebSearchStreamBlocks(appendEvent func(event, payload string), 
 		}
 		for _, chunk := range splitRunes(block.Text, 50) {
 			textDelta := fmt.Sprintf(`{"type":"content_block_delta","index":%d,"delta":{"type":"text_delta","text":""}}`, contentIndex)
-			textDelta, _ = sjson.Set(textDelta, "delta.text", chunk)
+			textDelta, _ = ojson.Set(textDelta, "delta.text", chunk)
 			appendEvent("content_block_delta", textDelta)
 		}
 		appendEvent("content_block_stop", fmt.Sprintf(`{"type":"content_block_stop","index":%d}`, contentIndex))

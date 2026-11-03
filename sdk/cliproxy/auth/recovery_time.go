@@ -7,8 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
+	"github.com/MoeForge/moego/ojson"
 )
 
 // RecoveryTimeProvider represents an error that reports an earliest recovery timestamp.
@@ -97,28 +96,28 @@ func (e *recoveryTimeCarrierError) Error() string {
 		if suffix != "" {
 			trimmed := strings.TrimSpace(text)
 			if trimmed != "" && json.Valid([]byte(trimmed)) {
-				if gjson.GetBytes([]byte(trimmed), "error.message").Exists() {
-					msgVal := gjson.GetBytes([]byte(trimmed), "error.message").String()
-					if updated, errSet := sjson.SetBytes([]byte(trimmed), "error.message", fmt.Sprintf("%s %s", msgVal, suffix)); errSet == nil {
+				if ojson.GetBytes([]byte(trimmed), "error.message").Exists() {
+					msgVal := ojson.GetBytes([]byte(trimmed), "error.message").String()
+					if updated, errSet := ojson.SetBytes([]byte(trimmed), "error.message", fmt.Sprintf("%s %s", msgVal, suffix)); errSet == nil {
 						return string(updated)
 					}
-				} else if gjson.GetBytes([]byte(trimmed), "message").Exists() {
-					msgVal := gjson.GetBytes([]byte(trimmed), "message").String()
-					if updated, errSet := sjson.SetBytes([]byte(trimmed), "message", fmt.Sprintf("%s %s", msgVal, suffix)); errSet == nil {
+				} else if ojson.GetBytes([]byte(trimmed), "message").Exists() {
+					msgVal := ojson.GetBytes([]byte(trimmed), "message").String()
+					if updated, errSet := ojson.SetBytes([]byte(trimmed), "message", fmt.Sprintf("%s %s", msgVal, suffix)); errSet == nil {
 						return string(updated)
 					}
-				} else if gjson.GetBytes([]byte(trimmed), "error").Type == gjson.String {
-					msgVal := gjson.GetBytes([]byte(trimmed), "error").String()
-					if updated, errSet := sjson.SetBytes([]byte(trimmed), "error", fmt.Sprintf("%s %s", msgVal, suffix)); errSet == nil {
+				} else if ojson.GetBytes([]byte(trimmed), "error").Type == ojson.String {
+					msgVal := ojson.GetBytes([]byte(trimmed), "error").String()
+					if updated, errSet := ojson.SetBytes([]byte(trimmed), "error", fmt.Sprintf("%s %s", msgVal, suffix)); errSet == nil {
 						return string(updated)
 					}
-				} else if gjson.GetBytes([]byte(trimmed), "detail").Exists() {
-					msgVal := gjson.GetBytes([]byte(trimmed), "detail").String()
-					if updated, errSet := sjson.SetBytes([]byte(trimmed), "detail", fmt.Sprintf("%s %s", msgVal, suffix)); errSet == nil {
+				} else if ojson.GetBytes([]byte(trimmed), "detail").Exists() {
+					msgVal := ojson.GetBytes([]byte(trimmed), "detail").String()
+					if updated, errSet := ojson.SetBytes([]byte(trimmed), "detail", fmt.Sprintf("%s %s", msgVal, suffix)); errSet == nil {
 						return string(updated)
 					}
 				} else {
-					if updated, errSet := sjson.SetBytes([]byte(trimmed), "message", suffix); errSet == nil {
+					if updated, errSet := ojson.SetBytes([]byte(trimmed), "message", suffix); errSet == nil {
 						return string(updated)
 					}
 				}

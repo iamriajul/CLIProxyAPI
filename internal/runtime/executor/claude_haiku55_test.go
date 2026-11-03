@@ -8,12 +8,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
-	"github.com/tidwall/gjson"
 )
 
 func TestClaudeHaiku55Capabilities(t *testing.T) {
@@ -34,7 +34,7 @@ func TestClaudeHaiku55Capabilities(t *testing.T) {
 					t.Errorf("unsupported beta %s: %s", beta, betas)
 				}
 			}
-			if gjson.GetBytes(applyClaudeCloakThinkingDisplay(body, false), "thinking.display").Exists() {
+			if ojson.GetBytes(applyClaudeCloakThinkingDisplay(body, false), "thinking.display").Exists() {
 				t.Fatal("unexpected progress display")
 			}
 		})
@@ -51,7 +51,7 @@ func TestClaudeHaiku55Sampling(t *testing.T) {
 			body := []byte(`{"model":"claude-haiku-5-5","temperature":1,"top_p":0.99,"top_k":10,"thinking":{"type":"` + thinking + `"}}`)
 			out := normalizeClaudeSamplingForUpstream(body, native)
 			for _, field := range []string{"temperature", "top_p", "top_k"} {
-				if gjson.GetBytes(out, field).Exists() {
+				if ojson.GetBytes(out, field).Exists() {
 					t.Errorf("native=%v thinking=%s retained %s", native, thinking, field)
 				}
 			}
@@ -103,7 +103,7 @@ func TestClaudeHaiku55SamplingPayloadBarrier(t *testing.T) {
 					}
 				}
 				for field, value := range map[string]float64{"temperature": 0.5, "top_p": 0.8, "top_k": 7} {
-					got := gjson.GetBytes(captured, field)
+					got := ojson.GetBytes(captured, field)
 					if override {
 						if !got.Exists() || got.Float() != value {
 							t.Errorf("payload override lost for %s: %s", field, captured)
@@ -126,10 +126,10 @@ func TestClaudeHaiku55ThinkingNormalization(t *testing.T) {
 		if errThinking != nil {
 			t.Fatal(errThinking)
 		}
-		if gjson.GetBytes(out, "thinking.type").String() != tc.wantType || gjson.GetBytes(out, "thinking.budget_tokens").Exists() {
+		if ojson.GetBytes(out, "thinking.type").String() != tc.wantType || ojson.GetBytes(out, "thinking.budget_tokens").Exists() {
 			t.Fatalf("invalid normalized thinking: %s", out)
 		}
-		if tc.wantType == "disabled" && gjson.GetBytes(out, "output_config.effort").Exists() {
+		if tc.wantType == "disabled" && ojson.GetBytes(out, "output_config.effort").Exists() {
 			t.Fatalf("disabled thinking retained incompatible effort: %s", out)
 		}
 	}

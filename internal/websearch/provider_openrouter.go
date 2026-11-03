@@ -6,8 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
+	"github.com/MoeForge/moego/ojson"
 )
 
 // openrouterProvider answers searches through OpenRouter's `web` plugin,
@@ -42,14 +41,14 @@ func (openrouterProvider) Search(ctx context.Context, cfg Config, req SearchRequ
 	count := clampCount(req.ResultCount(), 1, 25, openrouterDefaultResults)
 
 	plugin := []byte(`{"id":"web","max_results":0}`)
-	plugin, _ = sjson.SetBytes(plugin, "max_results", count)
+	plugin, _ = ojson.SetBytes(plugin, "max_results", count)
 	payload := []byte(`{"model":"","plugins":[],"messages":[]}`)
-	payload, _ = sjson.SetBytes(payload, "model", model)
-	payload, _ = sjson.SetRawBytes(payload, "plugins", joinRawJSONArray([][]byte{plugin}))
-	payload, _ = sjson.SetRawBytes(payload, "messages", joinRawJSONArray([][]byte{
+	payload, _ = ojson.SetBytes(payload, "model", model)
+	payload, _ = ojson.SetRawBytes(payload, "plugins", joinRawJSONArray([][]byte{plugin}))
+	payload, _ = ojson.SetRawBytes(payload, "messages", joinRawJSONArray([][]byte{
 		[]byte(`{"role":"user","content":""}`),
 	}))
-	payload, _ = sjson.SetBytes(payload, "messages.0.content", req.Query)
+	payload, _ = ojson.SetBytes(payload, "messages.0.content", req.Query)
 
 	httpReq, errRequest := newJSONRequest(ctx, http.MethodPost, cfg.OpenRouterBaseURL()+"/chat/completions", payload, map[string]string{
 		"Authorization": "Bearer " + key,
@@ -87,7 +86,7 @@ func (openrouterProvider) Search(ctx context.Context, cfg Config, req SearchRequ
 // isOpenRouterResponse validates the chat-completion shape before any field
 // is trusted, so a proxy error page cannot masquerade as an answer.
 func isOpenRouterResponse(body []byte) bool {
-	root := gjson.ParseBytes(body)
+	root := ojson.ParseBytes(body)
 	if !root.IsObject() {
 		return false
 	}
@@ -112,7 +111,7 @@ func isOpenRouterResponse(body []byte) bool {
 // and usage into the unified shape. Each citation yields both a source and a
 // citation, deduplicated by URL with the first occurrence winning.
 func parseOpenRouterResponse(body []byte, modelID string) SearchResponse {
-	root := gjson.ParseBytes(body)
+	root := ojson.ParseBytes(body)
 	message := root.Get("choices.0.message")
 	var response SearchResponse
 	response.Answer = openRouterContent(message.Get("content"))
@@ -146,8 +145,8 @@ func parseOpenRouterResponse(body []byte, modelID string) SearchResponse {
 
 // openRouterContent accepts either a plain string or an array of content
 // parts, joining the non-blank text of the parts.
-func openRouterContent(content gjson.Result) string {
-	if content.Type == gjson.String {
+func openRouterContent(content ojson.Result) string {
+	if content.Type == ojson.String {
 		return strings.TrimSpace(content.String())
 	}
 	if !content.IsArray() {

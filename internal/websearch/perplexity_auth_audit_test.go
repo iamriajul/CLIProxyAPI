@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tidwall/gjson"
+	"github.com/MoeForge/moego/ojson"
 )
 
 // perplexityOKBody is an ask-endpoint reply carrying one web result so the
@@ -91,22 +91,22 @@ func TestPerplexityAPIKeySendsNativeFilters(t *testing.T) {
 	cfg := Config{PerplexityAPIKey: "k"}.WithDefaults()
 	cfg = cfg.WithDoer(stubDoer{handle: func(req *http.Request) (*http.Response, error) {
 		body, _ := io.ReadAll(req.Body)
-		domains := gjson.GetBytes(body, "search_domain_filter").Array()
+		domains := ojson.GetBytes(body, "search_domain_filter").Array()
 		if len(domains) != 2 || domains[0].String() != "github.com" || domains[1].String() != "-golang.org" {
 			t.Fatalf("search_domain_filter = %v, want bare hosts with a -deny entry", domains)
 		}
-		if got := gjson.GetBytes(body, "search_after_date_filter").String(); got != "3/1/2025" {
+		if got := ojson.GetBytes(body, "search_after_date_filter").String(); got != "3/1/2025" {
 			t.Fatalf("search_after_date_filter = %q, want %%m/%%d/%%Y", got)
 		}
-		if got := gjson.GetBytes(body, "search_before_date_filter").String(); got != "4/1/2025" {
+		if got := ojson.GetBytes(body, "search_before_date_filter").String(); got != "4/1/2025" {
 			t.Fatalf("search_before_date_filter = %q", got)
 		}
-		if got := gjson.GetBytes(body, "search_language_filter.0").String(); got != "en" {
+		if got := ojson.GetBytes(body, "search_language_filter.0").String(); got != "en" {
 			t.Fatalf("search_language_filter = %q, want the ISO 639-1 code", got)
 		}
 		// The site: directive is carried by the filter, so it must not also
 		// appear in the query text.
-		if query := gjson.GetBytes(body, "messages.0.content").String(); strings.Contains(query, "site:") {
+		if query := ojson.GetBytes(body, "messages.0.content").String(); strings.Contains(query, "site:") {
 			t.Fatalf("query still carries site:: %q", query)
 		}
 		return jsonResponse(200, `{"choices":[{"message":{"content":"a"}}],"citations":["https://a.example"]}`), nil
