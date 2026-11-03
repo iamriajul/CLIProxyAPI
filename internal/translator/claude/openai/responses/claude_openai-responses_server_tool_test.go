@@ -661,13 +661,13 @@ func TestVersionedWebSearchToolMapsToClaude(t *testing.T) {
 			"tools":[{"type":"` + toolType + `"}],
 			"tool_choice":{"type":"` + toolType + `"}}`)
 		out, _ := ConvertOpenAIResponsesRequestToClaude("claude-test", raw, false)
-		if got := gjson.GetBytes(out, "tools.0.type").String(); got != "web_search_20250305" {
+		if got := ojson.GetBytes(out, "tools.0.type").String(); got != "web_search_20250305" {
 			t.Fatalf("%s: tools.0.type = %q: %s", toolType, got, out)
 		}
-		if got := gjson.GetBytes(out, "tools.0.name").String(); got != "web_search" {
+		if got := ojson.GetBytes(out, "tools.0.name").String(); got != "web_search" {
 			t.Fatalf("%s: tools.0.name = %q: %s", toolType, got, out)
 		}
-		if choice := gjson.GetBytes(out, "tool_choice"); choice.Exists() {
+		if choice := ojson.GetBytes(out, "tool_choice"); choice.Exists() {
 			t.Fatalf("%s: tool_choice = %s, want none: %s", toolType, choice.Raw, out)
 		}
 	}
