@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tidwall/gjson"
+	"github.com/MoeForge/moego/ojson"
 )
 
 func TestZAIArgumentLadder(t *testing.T) {
@@ -37,7 +37,7 @@ func TestZAIAllShapesRejected(t *testing.T) {
 	calls := 0
 	cfg := Config{ZAIAPIKey: "k"}.WithDefaults()
 	cfg = cfg.WithDoer(stubDoer{handle: func(req *http.Request) (*http.Response, error) {
-		if gjson.GetBytes(readBody(t, req), "method").String() == "tools/call" {
+		if ojson.GetBytes(readBody(t, req), "method").String() == "tools/call" {
 			calls++
 		}
 		return jsonResponse(400, `{"error":{"message":"invalid arguments"}}`), nil
@@ -58,7 +58,7 @@ func TestZAILadderAdvancesOnIsErrorResult(t *testing.T) {
 	cfg := Config{ZAIAPIKey: "k"}.WithDefaults()
 	cfg = cfg.WithDoer(stubDoer{handle: func(req *http.Request) (*http.Response, error) {
 		body := readBody(t, req)
-		if gjson.GetBytes(body, "method").String() != "tools/call" {
+		if ojson.GetBytes(body, "method").String() != "tools/call" {
 			return jsonResponse(200, `{"result":{"content":[{"type":"text","text":"ok"}]}}`), nil
 		}
 		calls++
@@ -86,7 +86,7 @@ func TestZAIEmptyResultDoesNotAdvanceLadder(t *testing.T) {
 	cfg := Config{ZAIAPIKey: "k"}.WithDefaults()
 	cfg = cfg.WithDoer(stubDoer{handle: func(req *http.Request) (*http.Response, error) {
 		body := readBody(t, req)
-		if gjson.GetBytes(body, "method").String() != "tools/call" {
+		if ojson.GetBytes(body, "method").String() != "tools/call" {
 			return jsonResponse(200, `{"result":{"content":[{"type":"text","text":"ok"}]}}`), nil
 		}
 		calls++

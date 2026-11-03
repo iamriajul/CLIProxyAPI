@@ -106,7 +106,7 @@ func AllowsResponsesWebSearchToolChoice(root ojson.Result) bool {
 // ResponsesSearchToolNames returns the names of declared typed search
 // tools. A nameless one defaults to "web_search", the name the translator
 // assigns it, so a choice naming it still resolves.
-func ResponsesSearchToolNames(root gjson.Result) map[string]bool {
+func ResponsesSearchToolNames(root ojson.Result) map[string]bool {
 	names := map[string]bool{}
 	for _, tool := range root.Get("tools").Array() {
 		if !isResponsesWebSearchToolType(tool.Get("type").String()) {
@@ -123,7 +123,7 @@ func ResponsesSearchToolNames(root gjson.Result) map[string]bool {
 
 // choiceToolName reads the forced tool name from the choice shapes the
 // Responses API accepts.
-func choiceToolName(choice gjson.Result) string {
+func choiceToolName(choice ojson.Result) string {
 	for _, path := range []string{"name", "function.name", "custom.name"} {
 		if name := strings.TrimSpace(choice.Get(path).String()); name != "" {
 			return name
@@ -136,7 +136,7 @@ func choiceToolName(choice gjson.Result) string {
 // search tool by name. Such a choice must not become a function-calling
 // constraint: the tool is translated to a grounding block, so the named
 // function was never declared.
-func forcesResponsesSearchTool(choice, root gjson.Result) bool {
+func forcesResponsesSearchTool(choice, root ojson.Result) bool {
 	if !choice.IsObject() {
 		return false
 	}

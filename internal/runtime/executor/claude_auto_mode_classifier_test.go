@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
-	"github.com/tidwall/gjson"
 )
 
 // Claude Code's auto mode asks the server to review an action as part of the
@@ -42,7 +42,7 @@ const autoModeClassifierSSE = "event: message_start\n" +
 // gateway and sends the full Anthropic request shape.
 func autoModeClassifierHeaders() http.Header {
 	return http.Header{
-		"User-Agent":                  {"claude-cli/2.1.280 (external, cli)"},
+		"User-Agent":                  {"claude-cli/" + helps.DefaultClaudeVersion(nil) + " (external, cli)"},
 		"X-App":                       {"cli"},
 		"Anthropic-Beta":              {"claude-code-20250219,oauth-2025-04-20,dangerous-tool-use-2026-09-03"},
 		"X-Claude-Code-Request-Class": {"auxiliary"},
@@ -104,7 +104,7 @@ func TestClaudeExecutor_AutoModeClassifierPassesThroughAnthropicUpstream(t *test
 		downstream.Write(chunk.Payload)
 	}
 
-	if got := gjson.GetBytes(seenBody, "safeguards").Raw; got != `[{"type":"bash","command":"ls -la"}]` {
+	if got := ojson.GetBytes(seenBody, "safeguards").Raw; got != `[{"type":"bash","command":"ls -la"}]` {
 		t.Errorf("upstream safeguards = %q, want the caller's review request unchanged; body: %s", got, seenBody)
 	}
 	if betas := helps.HeaderValueCaseInsensitive(seenHeaders, "Anthropic-Beta"); !strings.Contains(betas, "dangerous-tool-use-2026-09-03") {
@@ -205,10 +205,10 @@ func TestClaudeExecutor_AutoModeClassifierStripsSafeguardsForNonAnthropicUpstrea
 		}
 	}
 
-	if gjson.GetBytes(seenBody, "safeguards").Exists() {
+	if ojson.GetBytes(seenBody, "safeguards").Exists() {
 		t.Errorf("non-Anthropic upstream received Anthropic-only safeguards: %s", seenBody)
 	}
-	if got := gjson.GetBytes(seenBody, "messages.0.content.0.text").String(); got != "<transcript>user: run ls</transcript>" {
+	if got := ojson.GetBytes(seenBody, "messages.0.content.0.text").String(); got != "<transcript>user: run ls</transcript>" {
 		t.Errorf("non-Anthropic upstream lost the caller's action payload: %q", got)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/MoeForge/moego/ojson"
 	opencodeauth "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/opencode"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/buildinfo"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
@@ -21,8 +22,6 @@ import (
 	cliproxysession "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/session"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 	log "github.com/sirupsen/logrus"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 // OpenCodeExecutor is a stateless executor for the OpenCode Zen Go gateway.
@@ -157,7 +156,7 @@ func (e *OpenCodeExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth,
 	originalTranslated := helps.TranslateRequestWithCodexMultiAgentV2(ctx, opts.Headers, e.cfg, from, to, baseModel, originalPayload, false)
 	body := helps.TranslateRequestWithCodexMultiAgentV2(ctx, opts.Headers, e.cfg, from, to, baseModel, bytes.Clone(req.Payload), false)
 
-	body, err = sjson.SetBytes(body, "model", baseModel)
+	body, err = ojson.SetBytes(body, "model", baseModel)
 	if err != nil {
 		return resp, fmt.Errorf("opencode executor: failed to set model in payload: %w", err)
 	}
@@ -271,7 +270,7 @@ func (e *OpenCodeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth
 	originalTranslated := helps.TranslateRequestWithCodexMultiAgentV2(ctx, opts.Headers, e.cfg, from, to, baseModel, originalPayload, true)
 	body := helps.TranslateRequestWithCodexMultiAgentV2(ctx, opts.Headers, e.cfg, from, to, baseModel, bytes.Clone(req.Payload), true)
 
-	body, err = sjson.SetBytes(body, "model", baseModel)
+	body, err = ojson.SetBytes(body, "model", baseModel)
 	if err != nil {
 		return nil, fmt.Errorf("opencode executor: failed to set model in payload: %w", err)
 	}
@@ -281,7 +280,7 @@ func (e *OpenCodeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth
 		return nil, err
 	}
 
-	body, err = sjson.SetBytes(body, "stream_options.include_usage", true)
+	body, err = ojson.SetBytes(body, "stream_options.include_usage", true)
 	if err != nil {
 		return nil, fmt.Errorf("opencode executor: failed to set stream_options in payload: %w", err)
 	}
@@ -585,11 +584,11 @@ func isOpencodeMuseLane(model string) bool {
 // muse-spark lane, which accepts only "auto" ("only `auto` is supported for
 // `tool_choice`"), drops the tools so the model still cannot call one.
 func normalizeOpencodeToolChoice(body []byte, model string) []byte {
-	choice := gjson.GetBytes(body, "tool_choice")
+	choice := ojson.GetBytes(body, "tool_choice")
 	if !choice.Exists() {
 		return body
 	}
-	if choice.Type == gjson.String {
+	if choice.Type == ojson.String {
 		switch strings.ToLower(strings.TrimSpace(choice.String())) {
 		case "auto":
 			return body
@@ -598,7 +597,7 @@ func normalizeOpencodeToolChoice(body []byte, model string) []byte {
 				return body
 			}
 			for _, path := range []string{"tool_choice", "tools"} {
-				if updated, err := sjson.DeleteBytes(body, path); err == nil {
+				if updated, err := ojson.DeleteBytes(body, path); err == nil {
 					body = updated
 				}
 			}
@@ -606,7 +605,7 @@ func normalizeOpencodeToolChoice(body []byte, model string) []byte {
 		}
 	}
 	// "required", a named function, or any other selector forces a tool call.
-	if updated, err := sjson.SetBytes(body, "tool_choice", "auto"); err == nil {
+	if updated, err := ojson.SetBytes(body, "tool_choice", "auto"); err == nil {
 		body = updated
 	}
 	return body
@@ -616,15 +615,15 @@ func normalizeOpencodeToolChoice(body []byte, model string) []byte {
 // Claude Messages body sent on /messages lanes: "any" and named-tool choices
 // become "auto", keeping disable_parallel_tool_use.
 func normalizeOpencodeClaudeToolChoice(body []byte) []byte {
-	switch gjson.GetBytes(body, "tool_choice.type").String() {
+	switch ojson.GetBytes(body, "tool_choice.type").String() {
 	case "any", "tool":
 	default:
 		return body
 	}
-	if updated, err := sjson.SetBytes(body, "tool_choice.type", "auto"); err == nil {
+	if updated, err := ojson.SetBytes(body, "tool_choice.type", "auto"); err == nil {
 		body = updated
 	}
-	if updated, err := sjson.DeleteBytes(body, "tool_choice.name"); err == nil {
+	if updated, err := ojson.DeleteBytes(body, "tool_choice.name"); err == nil {
 		body = updated
 	}
 	return body
@@ -649,7 +648,7 @@ func normalizeOpencodeClaudeToolChoice(body []byte) []byte {
 // Elsewhere, reasoning items that carry nothing to replay (no encrypted
 // content, summary or text) are still dropped.
 func filterOpencodeReasoningReplay(body []byte, model string, translated bool) []byte {
-	input := gjson.GetBytes(body, "input")
+	input := ojson.GetBytes(body, "input")
 	muse := isOpencodeMuseLane(model)
 	if muse {
 		body = dropOpencodeEncryptedReasoningInclude(body)
@@ -670,13 +669,13 @@ func filterOpencodeReasoningReplay(body []byte, model string, translated bool) [
 	if !dropped {
 		return body
 	}
-	if updated, err := sjson.SetRawBytes(body, "input", helps.JoinRawJSONStrings(kept)); err == nil {
+	if updated, err := ojson.SetRawBytes(body, "input", helps.JoinRawJSONStrings(kept)); err == nil {
 		body = updated
 	}
 	return body
 }
 
-func opencodeReasoningItemIsEmpty(item gjson.Result) bool {
+func opencodeReasoningItemIsEmpty(item ojson.Result) bool {
 	if strings.TrimSpace(item.Get("encrypted_content").String()) != "" {
 		return false
 	}
@@ -689,7 +688,7 @@ func opencodeReasoningItemIsEmpty(item gjson.Result) bool {
 }
 
 func dropOpencodeEncryptedReasoningInclude(body []byte) []byte {
-	include := gjson.GetBytes(body, "include")
+	include := ojson.GetBytes(body, "include")
 	if !include.IsArray() {
 		return body
 	}
@@ -702,7 +701,7 @@ func dropOpencodeEncryptedReasoningInclude(body []byte) []byte {
 	if len(kept) == len(include.Array()) {
 		return body
 	}
-	if updated, err := sjson.SetRawBytes(body, "include", helps.JoinRawJSONStrings(kept)); err == nil {
+	if updated, err := ojson.SetRawBytes(body, "include", helps.JoinRawJSONStrings(kept)); err == nil {
 		body = updated
 	}
 	return body
@@ -748,25 +747,25 @@ func (e *OpenCodeExecutor) prepareAnthropicDelegation(auth *cliproxyauth.Auth, r
 // normalizeOpencodeTools converts `custom` tools to `function` tools, inlines
 // local $refs, and rewrites tool_choice selectors the gateway would refuse.
 func normalizeOpencodeTools(body []byte, model string) []byte {
-	if len(body) == 0 || !gjson.ValidBytes(body) {
+	if len(body) == 0 || !ojson.ValidBytes(body) {
 		return body
 	}
-	items := gjson.GetBytes(body, "tools")
+	items := ojson.GetBytes(body, "tools")
 	if items.Exists() && items.IsArray() && len(items.Array()) > 0 {
 		updatedItems := make([]string, 0, len(items.Array()))
 		changed := false
 		for _, item := range items.Array() {
 			raw := item.Raw
 			if strings.EqualFold(strings.TrimSpace(item.Get("type").String()), "custom") {
-				if updated, err := sjson.SetBytes([]byte(raw), "type", "function"); err == nil {
+				if updated, err := ojson.SetBytes([]byte(raw), "type", "function"); err == nil {
 					raw = string(updated)
 					changed = true
 				}
 			}
-			if params := gjson.GetBytes([]byte(raw), "function.parameters"); params.Exists() && params.IsObject() {
+			if params := ojson.GetBytes([]byte(raw), "function.parameters"); params.Exists() && params.IsObject() {
 				inlined := util.InlineLocalRefs(params.Raw)
 				if inlined != params.Raw {
-					if updated, err := sjson.SetRawBytes([]byte(raw), "function.parameters", []byte(inlined)); err == nil {
+					if updated, err := ojson.SetRawBytes([]byte(raw), "function.parameters", []byte(inlined)); err == nil {
 						raw = string(updated)
 						changed = true
 					}
@@ -775,7 +774,7 @@ func normalizeOpencodeTools(body []byte, model string) []byte {
 			updatedItems = append(updatedItems, raw)
 		}
 		if changed {
-			if updated, err := sjson.SetRawBytes(body, "tools", helps.JoinRawJSONStrings(updatedItems)); err == nil {
+			if updated, err := ojson.SetRawBytes(body, "tools", helps.JoinRawJSONStrings(updatedItems)); err == nil {
 				body = updated
 			}
 		}
@@ -809,7 +808,7 @@ func (e *OpenCodeExecutor) executeResponses(ctx context.Context, auth *cliproxya
 			sdktranslator.FormatCodex, baseModel, bytes.Clone(req.Payload), false)
 	}
 	var errSet error
-	body, errSet = sjson.SetBytes(body, "model", baseModel)
+	body, errSet = ojson.SetBytes(body, "model", baseModel)
 	if errSet != nil {
 		return resp, fmt.Errorf("opencode executor: failed to set model in payload: %w", errSet)
 	}
@@ -901,10 +900,10 @@ func (e *OpenCodeExecutor) executeResponses(ctx context.Context, auth *cliproxya
 		// through the same pair (codex -> caller). Those converters read the
 		// terminal stream event, so the plain Responses object is wrapped in one.
 		eventType := "response.completed"
-		if gjson.GetBytes(data, "status").String() == "incomplete" {
+		if ojson.GetBytes(data, "status").String() == "incomplete" {
 			eventType = "response.incomplete"
 		}
-		event, errEvent := sjson.SetRawBytes([]byte(`{"type":"`+eventType+`"}`), "response", data)
+		event, errEvent := ojson.SetRawBytes([]byte(`{"type":"`+eventType+`"}`), "response", data)
 		if errEvent != nil {
 			return resp, fmt.Errorf("opencode executor: wrap responses payload: %w", errEvent)
 		}
@@ -935,7 +934,7 @@ func (e *OpenCodeExecutor) executeResponsesStream(ctx context.Context, auth *cli
 			sdktranslator.FormatCodex, baseModel, bytes.Clone(req.Payload), true)
 	}
 	var errSet error
-	body, errSet = sjson.SetBytes(body, "model", baseModel)
+	body, errSet = ojson.SetBytes(body, "model", baseModel)
 	if errSet != nil {
 		return nil, fmt.Errorf("opencode executor: failed to set model in payload: %w", errSet)
 	}
@@ -1046,7 +1045,7 @@ func (e *OpenCodeExecutor) executeResponsesStream(ctx context.Context, auth *cli
 
 			if bytes.HasPrefix(line, dataTag) {
 				dataBytes := bytes.TrimSpace(line[len(dataTag):])
-				eventType := gjson.GetBytes(dataBytes, "type").String()
+				eventType := ojson.GetBytes(dataBytes, "type").String()
 				if eventType == "response.completed" || eventType == "response.incomplete" || eventType == "response.done" {
 					if usage, ok := helps.ParseCodexUsage(dataBytes); ok && (usage.TotalTokens > 0 || usage.InputTokens > 0) {
 						reporter.Publish(ctx, usage)

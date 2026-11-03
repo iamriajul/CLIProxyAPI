@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tidwall/gjson"
+	"github.com/MoeForge/moego/ojson"
 )
 
 // Exa has no `snippet` field. The old reader looked for one, so a result
@@ -41,13 +41,13 @@ func TestExaReadsHighlightsWhenNoSummaryOrText(t *testing.T) {
 // The upstream chain is summary → text → highlights, in that order.
 func TestExaSnippetPrefersSummaryThenTextThenHighlights(t *testing.T) {
 	all := `{"summary":"S","text":"T","highlights":["H"]}`
-	if got := exaSnippet(gjson.Parse(all)); got != "S" {
+	if got := exaSnippet(ojson.Parse(all)); got != "S" {
 		t.Fatalf("snippet = %q, want the summary to win", got)
 	}
-	if got := exaSnippet(gjson.Parse(`{"text":"T","highlights":["H"]}`)); got != "T" {
+	if got := exaSnippet(ojson.Parse(`{"text":"T","highlights":["H"]}`)); got != "T" {
 		t.Fatalf("snippet = %q, want the text to win over highlights", got)
 	}
-	if got := exaSnippet(gjson.Parse(`{"highlights":["H1","H2"]}`)); got != "H1 H2" {
+	if got := exaSnippet(ojson.Parse(`{"highlights":["H1","H2"]}`)); got != "H1 H2" {
 		t.Fatalf("snippet = %q, want joined highlights", got)
 	}
 }
@@ -59,24 +59,24 @@ func TestExaMapsDirectivesOntoNativeFields(t *testing.T) {
 	cfg := Config{ExaAPIKey: "k"}.WithDefaults()
 	cfg = cfg.WithDoer(stubDoer{handle: func(req *http.Request) (*http.Response, error) {
 		body := readBody(t, req)
-		if got := gjson.GetBytes(body, "includeDomains.0").String(); got != "go.dev" {
-			t.Fatalf("includeDomains = %s", gjson.GetBytes(body, "includeDomains").Raw)
+		if got := ojson.GetBytes(body, "includeDomains.0").String(); got != "go.dev" {
+			t.Fatalf("includeDomains = %s", ojson.GetBytes(body, "includeDomains").Raw)
 		}
-		if got := gjson.GetBytes(body, "excludeDomains.0").String(); got != "spam.example" {
-			t.Fatalf("excludeDomains = %s", gjson.GetBytes(body, "excludeDomains").Raw)
+		if got := ojson.GetBytes(body, "excludeDomains.0").String(); got != "spam.example" {
+			t.Fatalf("excludeDomains = %s", ojson.GetBytes(body, "excludeDomains").Raw)
 		}
-		if got := gjson.GetBytes(body, "startPublishedDate").String(); got != "2024-01-01" {
+		if got := ojson.GetBytes(body, "startPublishedDate").String(); got != "2024-01-01" {
 			t.Fatalf("startPublishedDate = %q", got)
 		}
-		if got := gjson.GetBytes(body, "endPublishedDate").String(); got != "2025-01-01" {
+		if got := ojson.GetBytes(body, "endPublishedDate").String(); got != "2025-01-01" {
 			t.Fatalf("endPublishedDate = %q", got)
 		}
-		if query := gjson.GetBytes(body, "query").String(); strings.Contains(query, "site:") ||
+		if query := ojson.GetBytes(body, "query").String(); strings.Contains(query, "site:") ||
 			strings.Contains(query, "after:") {
 			t.Fatalf("query = %q, want constraints kept out of the query text", query)
 		}
 		// The per-result summary is what feeds the synthesized answer.
-		if !gjson.GetBytes(body, "contents.summary.query").Exists() {
+		if !ojson.GetBytes(body, "contents.summary.query").Exists() {
 			t.Fatalf("contents.summary missing: %s", body)
 		}
 		return jsonResponse(200, `{"results":[{"title":"T","url":"https://t.example","text":"body"}]}`), nil
@@ -131,10 +131,10 @@ func TestSearXNGReadsBothFieldSpellings(t *testing.T) {
 	body := []byte(`{"results":[
 		{"title":"T","url":"https://a.example","content":"body text","publishedDate":"2026-01-02"},
 		{"url":"https://b.example","snippet":"alt text","published_date":"2026-01-03"}]}`)
-	if got := firstNonEmpty(gjson.GetBytes(body, "results.0.content").String(), gjson.GetBytes(body, "results.0.snippet").String()); got != "body text" {
+	if got := firstNonEmpty(ojson.GetBytes(body, "results.0.content").String(), ojson.GetBytes(body, "results.0.snippet").String()); got != "body text" {
 		t.Fatalf("content = %q", got)
 	}
-	second := gjson.GetBytes(body, "results.1")
+	second := ojson.GetBytes(body, "results.1")
 	snippet := firstNonEmpty(second.Get("content").String(), second.Get("snippet").String())
 	if snippet != "alt text" {
 		t.Fatalf("snippet fallback = %q, want the alternate spelling read", snippet)
