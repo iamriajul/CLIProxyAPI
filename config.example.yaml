@@ -260,7 +260,9 @@ web-search:
   # duckduckgo, ecosia, google, mojeek) run out of the box. Setting any
   # grounded provider key adds a stronger option ahead of them, and a
   # provider you have already logged into through the proxy lends its
-  # session to search when no key is configured here.
+  # session to search when no key is configured here. Antigravity routes
+  # whose model grounds natively search Google on their own accounts first,
+  # one search-only request per query, before this chain.
   # Search provider order. First available provider wins per query.
   # Built-ins (all 24, OMP-compatible):
   #   LLM-grounded: perplexity, gemini, anthropic, codex, xai, openrouter, zai
