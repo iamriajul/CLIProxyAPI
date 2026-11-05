@@ -43,7 +43,13 @@ func (h *BaseAPIHandler) runWebSearchLoop(ctx context.Context, providers []strin
 		execCtx = enrichContextWithSessionHierarchy(execCtx, opts.Headers, payload, opts.Metadata)
 		attempt := req
 		attempt.Payload = payload
-		resp, errExec := h.AuthManager.Execute(execCtx, providers, attempt, opts)
+		// Each attempt is a new request: search tools rewritten to
+		// functions, earlier results appended. Executors that translate
+		// from OriginalRequest (Antigravity) would otherwise re-read the
+		// client's typed search tool and drop the proxy function.
+		attemptOpts := opts
+		attemptOpts.OriginalRequest = payload
+		resp, errExec := h.AuthManager.Execute(execCtx, providers, attempt, attemptOpts)
 		if errExec != nil {
 			return nil, errExec
 		}
