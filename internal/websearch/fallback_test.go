@@ -374,8 +374,22 @@ func TestRunResponsesLoop(t *testing.T) {
 	if errRun != nil {
 		t.Fatalf("Run error = %v", errRun)
 	}
-	if got := ojson.GetBytes(body, "output.0.content.0.text").String(); got != "answer" {
+	// The proxy search is reported ahead of the answer the way hosted
+	// search is, so clients can show the query and the pages read.
+	if got := ojson.GetBytes(body, "output.0.type").String(); got != "web_search_call" {
+		t.Fatalf("output.0 is not the search call: %s", body)
+	}
+	if got := ojson.GetBytes(body, "output.0.action.query").String(); got != "go" {
+		t.Fatalf("search call query = %q: %s", got, body)
+	}
+	if got := ojson.GetBytes(body, "output.0.action.sources.0.url").String(); got != "https://example.com/a" {
+		t.Fatalf("search call sources = %q: %s", got, body)
+	}
+	if got := ojson.GetBytes(body, "output.1.content.0.text").String(); got != "answer" {
 		t.Fatalf("final body = %s", body)
+	}
+	if got := len(ojson.GetBytes(body, "output").Array()); got != 2 {
+		t.Fatalf("output items = %d: %s", got, body)
 	}
 }
 
