@@ -452,6 +452,13 @@ func isAnthropicWebSearchTool(name string) bool {
 	return name == anthropicWebSearchToolName
 }
 
+// ParseClaudeSearchResponse reads a Messages API response that ran the
+// hosted web search tool: the executed queries, the retrieved pages, the
+// answer text, and its citations.
+func ParseClaudeSearchResponse(body []byte, model string) SearchResponse {
+	return parseAnthropicResponse(ojson.ParseBytes(body), model)
+}
+
 // parseAnthropicResponse folds the answer text, the executed search
 // queries, the retrieved sources, and the inline citations out of the
 // Messages API content blocks.
