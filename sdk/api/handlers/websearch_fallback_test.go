@@ -36,6 +36,9 @@ func websearchStubSearchConfig() websearch.Config {
 
 type websearchFakeExecutor struct {
 	provider string
+	// fromOriginal makes the fake translate from opts.OriginalRequest when
+	// set, the way the Antigravity executor does.
+	fromOriginal bool
 
 	mu       sync.Mutex
 	calls    int
@@ -45,7 +48,10 @@ type websearchFakeExecutor struct {
 
 func (e *websearchFakeExecutor) Identifier() string { return e.provider }
 
-func (e *websearchFakeExecutor) Execute(_ context.Context, _ *coreauth.Auth, req coreexecutor.Request, _ coreexecutor.Options) (coreexecutor.Response, error) {
+func (e *websearchFakeExecutor) Execute(_ context.Context, _ *coreauth.Auth, req coreexecutor.Request, opts coreexecutor.Options) (coreexecutor.Response, error) {
+	if e.fromOriginal && len(opts.OriginalRequest) > 0 {
+		req.Payload = opts.OriginalRequest
+	}
 	e.mu.Lock()
 	e.calls++
 	call := e.calls
@@ -216,6 +222,105 @@ func TestWebsearchFallbackDisabledByDefault(t *testing.T) {
 	}
 	if got := ojson.GetBytes(body, "content.0.text").String(); got != "passthrough" {
 		t.Fatalf("body = %s", body)
+	}
+}
+
+// Codex-style Responses request: the hosted search tool next to an ordinary
+// function tool, which is what pushes Antigravity onto the proxy loop.
+const websearchResponsesMixedRequest = `{
+	"model":"%s",
+	"stream":true,
+	"tools":[{"type":"web_search"},{"type":"function","name":"exec_command","parameters":{"type":"object","properties":{"cmd":{"type":"string"}}}}],
+	"input":[{"role":"user","content":[{"type":"input_text","text":"latest go release?"}]}]
+}`
+
+func TestWebsearchFallbackResponsesThroughOriginalRequestExecutor(t *testing.T) {
+	model := "ws-fallback-original-request-model"
+	executor := &websearchFakeExecutor{fromOriginal: true, execute: func(call int, req coreexecutor.Request) ([]byte, error) {
+		tools := ojson.GetBytes(req.Payload, "tools").Raw
+		if call == 1 {
+			if !strings.Contains(tools, `"name":"web_search"`) || strings.Contains(tools, `"type":"web_search"`) {
+				t.Errorf("first attempt does not carry the proxy search function: %s", tools)
+			}
+			return []byte(`{"id":"resp_1","object":"response","model":"` + model + `","status":"completed",
+				"output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"web_search","arguments":"{\"query\":\"golang\"}"}],
+				"usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}`), nil
+		}
+		if got := ojson.GetBytes(req.Payload, "input.#(type==\"function_call_output\").call_id").String(); got != "call_1" {
+			t.Errorf("second attempt is missing the search result: %s", req.Payload)
+		}
+		return []byte(`{"id":"resp_2","object":"response","model":"` + model + `","status":"completed",
+			"output":[{"id":"msg_1","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Go 1.26.","annotations":[]}]}],
+			"usage":{"input_tokens":50,"output_tokens":8,"total_tokens":58}}`), nil
+	}}
+	cfg := &sdkconfig.SDKConfig{}
+	searchCfg := websearch.Config{Enabled: true, Order: []string{"searxng"}, SearXNGEndpoint: "http://searxng.test"}
+	cfg.WebSearch = searchCfg.WithDefaults().WithDoer(websearchStubDoer{handle: func(*http.Request) (*http.Response, error) {
+		page := `{"results":[{"url":"https://example.com/a","title":"Title A","content":"snippet a"}]}`
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(page))}, nil
+	}})
+	handler := newWebsearchHandler(t, model, "antigravity", executor, cfg)
+
+	dataChan, _, errChan := handler.ExecuteStreamWithAuthManager(context.Background(), "openai-response", model, []byte(sprintfModel(websearchResponsesMixedRequest, model)), "")
+	var chunks []string
+	for chunk := range dataChan {
+		chunks = append(chunks, string(chunk))
+	}
+	for errMsg := range errChan {
+		t.Fatalf("stream error = %#v", errMsg)
+	}
+	if executor.calls != 2 {
+		t.Fatalf("upstream calls = %d, want 2 (search, then answer)", executor.calls)
+	}
+	joined := strings.Join(chunks, "\n")
+	for _, want := range []string{
+		`"type":"web_search_call"`,
+		"event: response.web_search_call.completed",
+		`"query":"golang"`,
+		`"url":"https://example.com/a"`,
+		"Go 1.26.",
+		"event: response.completed",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing %q in:\n%s", want, joined)
+		}
+	}
+}
+
+func TestWebsearchFallbackClaudeThroughOriginalRequestExecutor(t *testing.T) {
+	model := "ws-fallback-original-request-claude-model"
+	executor := &websearchFakeExecutor{fromOriginal: true, execute: func(call int, req coreexecutor.Request) ([]byte, error) {
+		if call == 1 {
+			if got := ojson.GetBytes(req.Payload, "tools.0.input_schema.required.0").String(); got != "query" {
+				t.Errorf("first attempt does not carry the proxy search function: %s", req.Payload)
+			}
+			return []byte(`{"id":"msg_1","type":"message","role":"assistant","model":"` + model + `",
+				"content":[{"type":"tool_use","id":"toolu_1","name":"web_search","input":{"query":"golang"}}],
+				"stop_reason":"tool_use","usage":{"input_tokens":10,"output_tokens":5}}`), nil
+		}
+		if got := ojson.GetBytes(req.Payload, "messages.2.content.0.type").String(); got != "tool_result" {
+			t.Errorf("second attempt is missing the search result: %s", req.Payload)
+		}
+		return []byte(`{"id":"msg_2","type":"message","role":"assistant","model":"` + model + `",
+			"content":[{"type":"text","text":"Go is great."}],
+			"stop_reason":"end_turn","usage":{"input_tokens":50,"output_tokens":8}}`), nil
+	}}
+	cfg := &sdkconfig.SDKConfig{}
+	cfg.WebSearch = websearchStubSearchConfig()
+	handler := newWebsearchHandler(t, model, "antigravity", executor, cfg)
+	request := `{"model":"` + model + `","tools":[{"type":"web_search_20250305","name":"web_search"},` +
+		`{"name":"Bash","input_schema":{"type":"object","properties":{"command":{"type":"string"}}}}],` +
+		`"messages":[{"role":"user","content":"search go"}]}`
+
+	body, _, errMsg := handler.ExecuteWithAuthManager(context.Background(), "claude", model, []byte(request), "")
+	if errMsg != nil {
+		t.Fatalf("ExecuteWithAuthManager error = %#v", errMsg)
+	}
+	if got := ojson.GetBytes(body, "content.0.text").String(); got != "Go is great." {
+		t.Fatalf("body = %s", body)
+	}
+	if executor.calls != 2 {
+		t.Fatalf("upstream calls = %d, want 2 (search, then answer)", executor.calls)
 	}
 }
 
