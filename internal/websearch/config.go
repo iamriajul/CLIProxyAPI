@@ -1,6 +1,7 @@
 package websearch
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"strings"
@@ -149,7 +150,8 @@ type Config struct {
 	// Empty honors ProxyFromEnvironment.
 	ProxyURL string `yaml:"proxy-url,omitempty" json:"-"`
 
-	doer Doer
+	doer        Doer
+	routeSearch RouteSearcher
 }
 
 // Doer abstracts the HTTP transport so tests can stub it.
@@ -160,6 +162,18 @@ type Doer interface {
 // WithDoer overrides the HTTP transport. Used by tests.
 func (c Config) WithDoer(doer Doer) Config {
 	c.doer = doer
+	return c
+}
+
+// RouteSearcher answers one proxy search query on the request's own model
+// route, for routes that ground searches natively but cannot combine that
+// with function tools in one request.
+type RouteSearcher func(ctx context.Context, query string) (SearchResponse, error)
+
+// WithRouteSearch makes the proxy search loop try the route's own grounded
+// search before the configured provider chain.
+func (c Config) WithRouteSearch(search RouteSearcher) Config {
+	c.routeSearch = search
 	return c
 }
 

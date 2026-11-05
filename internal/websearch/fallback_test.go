@@ -2,6 +2,7 @@ package websearch
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -536,4 +537,89 @@ func byteSlicesToStrings(chunks [][]byte) []string {
 		out = append(out, string(chunk))
 	}
 	return out
+}
+
+// responsesSearchThenAnswer is a two-step Responses upstream: one proxy
+// search call, then an answer. It hands the search output to check.
+func responsesSearchThenAnswer(t *testing.T, check func(output string)) Executor {
+	t.Helper()
+	calls := 0
+	return func(_ context.Context, request []byte) ([]byte, error) {
+		calls++
+		if calls == 1 {
+			return []byte(`{"id":"resp_1","object":"response","status":"completed","model":"m",
+				"output":[{"type":"function_call","id":"fc_1","call_id":"call_1","name":"web_search","arguments":"{\"query\":\"go\"}"}]}`), nil
+		}
+		check(ojson.GetBytes(request, `input.#(type=="function_call_output").output`).String())
+		return []byte(`{"id":"resp_2","object":"response","status":"completed","model":"m",
+			"output":[{"type":"message","id":"msg_1","status":"completed","role":"assistant",
+			"content":[{"type":"output_text","text":"answer","annotations":[]}]}]}`), nil
+	}
+}
+
+func TestRunPrefersGroundedRouteSearch(t *testing.T) {
+	chainCalls := 0
+	cfg := Config{Enabled: true, Order: []string{"searxng"}, SearXNGEndpoint: "http://searxng.test"}.WithDefaults()
+	cfg = cfg.WithDoer(stubDoer{handle: func(*http.Request) (*http.Response, error) {
+		chainCalls++
+		return jsonResponse(200, `{"results":[{"url":"https://chain.example/a","title":"chain"}]}`), nil
+	}})
+	var routeQuery string
+	cfg = cfg.WithRouteSearch(func(_ context.Context, query string) (SearchResponse, error) {
+		routeQuery = query
+		return SearchResponse{
+			Provider: "antigravity",
+			Answer:   "Go 1.26 is current.",
+			Sources:  []Source{{Title: "Go releases", URL: "https://go.dev/doc/devel/release"}},
+		}, nil
+	})
+	payload := []byte(`{"model":"m","tools":[{"type":"web_search"},{"type":"function","name":"exec","parameters":{}}],"input":[{"role":"user","content":"hi"}]}`)
+	body, errRun := Run(context.Background(), cfg, "openai-response", payload, responsesSearchThenAnswer(t, func(output string) {
+		if !strings.Contains(output, "Go 1.26 is current.") || !strings.Contains(output, "go.dev") {
+			t.Fatalf("search output is not the grounded route answer: %q", output)
+		}
+	}))
+	if errRun != nil {
+		t.Fatalf("Run error = %v", errRun)
+	}
+	if routeQuery != "go" {
+		t.Fatalf("route query = %q, want the model's query", routeQuery)
+	}
+	if chainCalls != 0 {
+		t.Fatalf("provider chain ran %d times despite a grounded route answer", chainCalls)
+	}
+	if got := ojson.GetBytes(body, "output.0.action.sources.0.url").String(); got != "https://go.dev/doc/devel/release" {
+		t.Fatalf("web_search_call sources = %q: %s", got, body)
+	}
+}
+
+func TestRunFallsBackToChainWhenRouteSearchIsNotGrounded(t *testing.T) {
+	for name, route := range map[string]RouteSearcher{
+		"error": func(context.Context, string) (SearchResponse, error) {
+			return SearchResponse{}, fmt.Errorf("quota exhausted")
+		},
+		// An answer with no sources is the model talking, not a search.
+		"ungrounded": func(context.Context, string) (SearchResponse, error) {
+			return SearchResponse{Answer: "Go 1.24, from memory."}, nil
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg := Config{Enabled: true, Order: []string{"searxng"}, SearXNGEndpoint: "http://searxng.test"}.WithDefaults()
+			cfg = cfg.WithDoer(stubDoer{handle: func(*http.Request) (*http.Response, error) {
+				return jsonResponse(200, `{"results":[{"url":"https://chain.example/a","title":"chain","content":"chain snippet"}]}`), nil
+			}}).WithRouteSearch(route)
+			payload := []byte(`{"model":"m","tools":[{"type":"web_search"}],"input":[{"role":"user","content":"hi"}]}`)
+			body, errRun := Run(context.Background(), cfg, "openai-response", payload, responsesSearchThenAnswer(t, func(output string) {
+				if !strings.Contains(output, "chain.example") || strings.Contains(output, "from memory") {
+					t.Fatalf("search output did not come from the provider chain: %q", output)
+				}
+			}))
+			if errRun != nil {
+				t.Fatalf("Run error = %v", errRun)
+			}
+			if got := ojson.GetBytes(body, "output.0.action.sources.0.url").String(); got != "https://chain.example/a" {
+				t.Fatalf("web_search_call sources = %q: %s", got, body)
+			}
+		})
+	}
 }

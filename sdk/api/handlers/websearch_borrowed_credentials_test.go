@@ -150,20 +150,22 @@ func TestBorrowedCredentialsMatchRouteNames(t *testing.T) {
 	}
 }
 
-// Antigravity sessions ground through Gemini, so they fill the Gemini key.
-func TestBorrowedCredentialsRouteAntigravityToGemini(t *testing.T) {
+// An Antigravity session is an OAuth token, which the Gemini API rejects
+// as an API key, so it must not fill the Gemini search key. Antigravity
+// routes ground through their own accounts instead.
+func TestBorrowedCredentialsSkipAntigravityForGeminiKey(t *testing.T) {
 	dir := t.TempDir()
 	credential := filepath.Join(dir, "ag.json")
-	if errWrite := os.WriteFile(credential, []byte(`{"type":"antigravity","access_token":"ag-token"}`), 0o600); errWrite != nil {
+	if errWrite := os.WriteFile(credential, []byte(`{"type":"antigravity","access_token":"ya29.ag-token"}`), 0o600); errWrite != nil {
 		t.Fatalf("write credential: %v", errWrite)
 	}
 	manager := borrowedManager(&coreauth.Auth{ID: "ag-1", Provider: "antigravity", FileName: credential})
 	cfg := websearch.Config{}
-	if !applyBorrowedSearchCredentials(&cfg, manager, []string{"antigravity"}) {
-		t.Fatal("expected the antigravity session to be borrowed")
+	if applyBorrowedSearchCredentials(&cfg, manager, []string{"antigravity"}) {
+		t.Fatal("an antigravity session must not be borrowed")
 	}
-	if cfg.GeminiAPIKey != "ag-token" {
-		t.Fatalf("gemini key = %q, want the antigravity session token", cfg.GeminiAPIKey)
+	if cfg.GeminiAPIKey != "" {
+		t.Fatalf("gemini key = %q, want it left empty", cfg.GeminiAPIKey)
 	}
 }
 
