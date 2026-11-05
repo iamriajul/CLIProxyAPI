@@ -398,3 +398,47 @@ grep -q '"/last-request-stats"' internal/api/server_routes.go
 go test ./internal/tps/
 go test ./internal/api/ -run 'TestHandleLastRequestStats|TestLastRequestStatsSchemaParity'
 ```
+
+## claude-structured-outputs
+
+**An OpenAI json_schema reaches Claude as native structured output**
+
+Upstream turns a Chat Completions `response_format` or a Responses
+`text.format` of type `json_schema` into a system-prompt instruction for
+Claude (`BuildClaudeStructuredOutputInstruction`). An instruction only asks
+for the shape: Claude can answer in prose, and a client holding the reply to
+a strict schema then fails to parse it. On a Claude sign-in the cloaking
+moves that instruction into the first user turn as a `<system-reminder>`,
+which makes a prose answer likelier still.
+
+The fork also sends the schema the way Anthropic's own SDKs do (RubyLLM's
+Anthropic provider is one example):
+`output_config: {format: {type: "json_schema", schema}}`. Claude Code sends
+the same field on subscription sign-ins, so both an API key and a sign-in
+take it. The format's `description`, which a native format has no field for,
+travels as the schema's own top-level `description` when the schema has
+none.
+
+Upstream's prompt instruction is kept alongside the native format, as the
+last system block, on every model. The native format is what holds the reply
+to the schema; the instruction is redundant there but harmless. Until v8.0.67
+the fork sent the native format *instead of* the instruction, which saved the
+instruction's tokens and was right while upstream pinned nothing about it.
+Upstream v8.0.67 pins the instruction as the last system block for
+json_schema requests on Claude models
+(`claude_openai-responses_system_placement_test.go`), so the fork now adds
+rather than replaces. Where native output is not known to work, the
+instruction is the only mechanism: `json_object`, a format with no schema,
+Claude 3 and the first Opus 4 / Sonnet 4 releases, and any model a
+Claude-compatible endpoint serves under its own name (GLM, Kimi, ...). The
+Antigravity path is untouched: it builds Gemini-shaped requests, and its
+Claude 5.5 schema-to-prompt fallback (router-for-me/CLIProxyAPI#7000) still
+applies there.
+
+```bash
+grep -q 'ClaudeOutputFormatSchema' internal/translator/claude/openai/chat-completions/claude_openai_request.go
+grep -q 'ClaudeOutputFormatSchema' internal/translator/claude/openai/responses/claude_openai-responses_request.go
+go test ./internal/translator/common/ -run 'TestClaudeModelTakesStructuredOutputs|TestClaudeOutputFormatSchema'
+go test ./internal/translator/claude/openai/... -run 'JSONSchemaAlsoRidesNativeOutputFormat|JSONSchemaOnAnOlderModelStaysPromptOnly|TestResponsesSystemItemPlacement|TestResponsesStructuredOutput'
+go test ./internal/runtime/executor/ -run 'TestClaudeExecutor_ChatCompletionsJSONSchemaReachesClaudeAsOutputFormat|TestClaudeExecutor_Issue7000'
+```
