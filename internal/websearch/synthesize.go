@@ -342,6 +342,15 @@ func synthesizeResponsesItem(item ojson.Result, outputIndex int, sequence *int) 
 		delta, _ = ojson.SetBytes(delta, "output_index", outputIndex)
 		delta, _ = ojson.SetBytes(delta, "delta", arguments)
 		chunks = append(chunks, sseFramed("response.function_call_arguments.delta", delta, 0))
+	case "web_search_call":
+		for _, event := range []string{"response.web_search_call.in_progress", "response.web_search_call.searching", "response.web_search_call.completed"} {
+			progress := []byte(`{"type":"","sequence_number":0,"output_index":0,"item_id":""}`)
+			progress, _ = ojson.SetBytes(progress, "type", event)
+			progress, _ = ojson.SetBytes(progress, "sequence_number", nextSeq())
+			progress, _ = ojson.SetBytes(progress, "output_index", outputIndex)
+			progress, _ = ojson.SetBytes(progress, "item_id", itemID)
+			chunks = append(chunks, sseFramed(event, progress, 0))
+		}
 	}
 
 	done := []byte(`{"type":"response.output_item.done","sequence_number":0,"output_index":0,"item":{}}`)
