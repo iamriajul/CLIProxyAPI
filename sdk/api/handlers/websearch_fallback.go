@@ -35,9 +35,13 @@ func (h *BaseAPIHandler) websearchConfigFor(opts coreexecutor.Options, providers
 }
 
 // runWebSearchLoop runs the proxy-side search fallback: server search tools
-// are rewritten to function calls, each model-issued search runs through the
-// configured provider chain, and results feed back until the model answers.
+// are rewritten to function calls, each model-issued search runs on the
+// route's own grounded search when it has one, else through the configured
+// provider chain, and results feed back until the model answers.
 func (h *BaseAPIHandler) runWebSearchLoop(ctx context.Context, providers []string, req coreexecutor.Request, opts coreexecutor.Options, searchCfg websearch.Config) (coreexecutor.Response, error) {
+	if routeSearch := h.antigravityRouteSearch(ctx, providers, req.Model); routeSearch != nil {
+		searchCfg = searchCfg.WithRouteSearch(routeSearch)
+	}
 	var last coreexecutor.Response
 	exec := func(execCtx context.Context, payload []byte) ([]byte, error) {
 		execCtx = enrichContextWithSessionHierarchy(execCtx, opts.Headers, payload, opts.Metadata)
