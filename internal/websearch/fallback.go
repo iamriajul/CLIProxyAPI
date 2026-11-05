@@ -144,6 +144,10 @@ func Run(ctx context.Context, cfg Config, format string, payload []byte, exec Ex
 	current := rewritten
 	searches := 0
 	var totals usageTotals
+	var performed []performedSearch
+	finish := func(body []byte) []byte {
+		return withSearchCalls(format, withUsage(format, body, totals), performed)
+	}
 	for iteration := 0; ; iteration++ {
 		body, errExec := exec(ctx, current)
 		if errExec != nil {
@@ -152,7 +156,7 @@ func Run(ctx context.Context, cfg Config, format string, payload []byte, exec Ex
 		totals.add(parseUsage(format, body))
 		calls := ExtractProxyCalls(format, body, nameSet)
 		if len(calls) == 0 {
-			return withUsage(format, body, totals), nil
+			return finish(body), nil
 		}
 		if searches >= cfg.MaxSearches || iteration > cfg.MaxSearches+1 {
 			final, errFinal := exec(ctx, StripProxyTools(format, current, nameSet))
@@ -160,7 +164,7 @@ func Run(ctx context.Context, cfg Config, format string, payload []byte, exec Ex
 				return nil, errFinal
 			}
 			totals.add(parseUsage(format, final))
-			return withUsage(format, final, totals), nil
+			return finish(final), nil
 		}
 		outputs := make([]string, 0, len(calls))
 		for _, call := range calls {
@@ -169,24 +173,54 @@ func Run(ctx context.Context, cfg Config, format string, payload []byte, exec Ex
 				continue
 			}
 			searches++
-			outputs = append(outputs, runSingleSearch(ctx, cfg, call.Query))
+			output, urls := runSingleSearch(ctx, cfg, call.Query)
+			outputs = append(outputs, output)
+			performed = append(performed, performedSearch{Query: call.Query, URLs: urls})
 		}
 		current = AppendSearchResults(format, current, body, calls, outputs)
 	}
 }
 
-func runSingleSearch(ctx context.Context, cfg Config, query string) string {
+// performedSearch is one proxy-executed search, reported back to the
+// client so it can show what was searched and which pages were read.
+type performedSearch struct {
+	Query string
+	URLs  []string
+}
+
+func runSingleSearch(ctx context.Context, cfg Config, query string) (string, []string) {
 	if strings.TrimSpace(query) == "" {
-		return "Error: empty search query; provide a query string."
+		return "Error: empty search query; provide a query string.", nil
 	}
 	response, errSearch := Execute(ctx, cfg, SearchRequest{Query: query})
 	if errSearch != nil {
-		return "Error: " + errSearch.Error()
+		return "Error: " + errSearch.Error(), nil
 	}
 	if text := FormatForLLM(response); strings.TrimSpace(text) != "" {
-		return text
+		return text, sourceURLs(response)
 	}
-	return "Error: no search results."
+	return "Error: no search results.", nil
+}
+
+// sourceURLs lists the distinct pages a search returned or cited.
+func sourceURLs(response SearchResponse) []string {
+	seen := map[string]bool{}
+	var urls []string
+	add := func(url string) {
+		url = strings.TrimSpace(url)
+		if url == "" || seen[url] {
+			return
+		}
+		seen[url] = true
+		urls = append(urls, url)
+	}
+	for _, source := range response.Sources {
+		add(source.URL)
+	}
+	for _, citation := range response.Citations {
+		add(citation.URL)
+	}
+	return urls
 }
 
 func normalizeFallbackFormat(format string) string {
