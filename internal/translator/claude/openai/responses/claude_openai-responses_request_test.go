@@ -2412,20 +2412,17 @@ func TestConvertOpenAIResponsesRequestToClaude_TextFormatStructuredOutput(t *tes
 				}
 			}
 		}`)
+		// Fork (claude-structured-outputs): held natively, not asked for in the
+		// system prompt.
 		out, _ := ConvertOpenAIResponsesRequestToClaude("claude-sonnet-4-6", input, false)
-		system := ojson.GetBytesNoCopy(out, "system")
-		if !system.Exists() || len(system.Array()) == 0 {
-			t.Fatalf("system blocks missing. Output: %s", string(out))
+		if got := ojson.GetBytesNoCopy(out, "output_config.format.type").String(); got != "json_schema" {
+			t.Fatalf("output_config.format.type = %q, want json_schema. Output: %s", got, string(out))
 		}
-		found := false
-		for _, block := range system.Array() {
-			if strings.Contains(block.Get("text").String(), "facts") {
-				found = true
-				break
-			}
+		if got := ojson.GetBytesNoCopy(out, "output_config.format.schema.required.0").String(); got != "facts" {
+			t.Fatalf("output_config.format.schema lost the request schema. Output: %s", string(out))
 		}
-		if !found {
-			t.Fatalf("expected structured schema instruction in system prompt. Output: %s", string(out))
+		if strings.Contains(ojson.GetBytesNoCopy(out, "system").Raw, "facts") {
+			t.Fatalf("schema also sent as a system instruction. Output: %s", string(out))
 		}
 	})
 
@@ -2473,28 +2470,18 @@ func TestConvertOpenAIResponsesRequestToClaude_TextFormatStructuredOutput(t *tes
 				"type": "json_object"
 			}
 		}`)
+		// Fork (claude-structured-outputs): text.format still wins over
+		// response_format, now as the native format, with its description.
 		out, _ := ConvertOpenAIResponsesRequestToClaude("claude-sonnet-4-6", input, false)
-		system := ojson.GetBytesNoCopy(out, "system")
-		if !system.Exists() || len(system.Array()) < 2 {
-			t.Fatalf("expected at least 2 system blocks. Output: %s", string(out))
+		if got := ojson.GetBytesNoCopy(out, "output_config.format.schema.properties.item.type").String(); got != "string" {
+			t.Fatalf("output_config.format is not the winning schema. Output: %s", string(out))
 		}
-		hasInstructions := false
-		hasWinningSchema := false
-		hasFallbackObject := false
-		for _, block := range system.Array() {
-			text := block.Get("text").String()
-			if strings.Contains(text, "Be concise.") {
-				hasInstructions = true
-			}
-			if strings.Contains(text, "winning_schema") && strings.Contains(text, "Primary facts") && strings.Contains(text, "item") {
-				hasWinningSchema = true
-			}
-			if strings.Contains(text, "valid JSON object") {
-				hasFallbackObject = true
-			}
+		if got := ojson.GetBytesNoCopy(out, "output_config.format.schema.description").String(); got != "Primary facts" {
+			t.Fatalf("the format's description = %q, want it on the schema. Output: %s", got, string(out))
 		}
-		if !hasInstructions || !hasWinningSchema || hasFallbackObject {
-			t.Fatalf("expected instructions and winning schema without fallback. Output: %s", string(out))
+		system := ojson.GetBytesNoCopy(out, "system").Raw
+		if !strings.Contains(system, "Be concise.") || strings.Contains(system, "valid JSON object") {
+			t.Fatalf("expected the instructions kept and no json_object fallback. Output: %s", string(out))
 		}
 	})
 }

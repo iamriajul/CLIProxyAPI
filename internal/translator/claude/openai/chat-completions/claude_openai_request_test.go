@@ -960,22 +960,30 @@ func TestConvertOpenAIRequestToClaude_ResponseFormatJSONSchema(t *testing.T) {
 		}
 	}`)
 
+	// Fork (claude-structured-outputs): the schema is held natively, not asked
+	// for in the system prompt.
 	out, _ := ConvertOpenAIRequestToClaude("claude-sonnet-4-6", inputJSON, false)
-	system := ojson.GetBytesNoCopy(out, "system")
-	if !system.Exists() || !system.IsArray() || len(system.Array()) == 0 {
-		t.Fatalf("system blocks missing or empty. Output: %s", string(out))
+	if got := ojson.GetBytesNoCopy(out, "output_config.format.type").String(); got != "json_schema" {
+		t.Fatalf("output_config.format.type = %q, want json_schema. Output: %s", got, string(out))
 	}
+	if got := ojson.GetBytesNoCopy(out, "output_config.format.schema.required.0").String(); got != "facts" {
+		t.Fatalf("output_config.format.schema lost the request schema. Output: %s", string(out))
+	}
+	if strings.Contains(ojson.GetBytesNoCopy(out, "system").Raw, "facts") {
+		t.Fatalf("schema also sent as a system instruction. Output: %s", string(out))
+	}
+}
 
-	foundSchemaInstruction := false
-	for _, block := range system.Array() {
-		text := block.Get("text").String()
-		if strings.Contains(text, "JSON") && strings.Contains(text, "facts") {
-			foundSchemaInstruction = true
-			break
-		}
+// A model without native structured outputs keeps the prompt instruction.
+func TestConvertOpenAIRequestToClaude_ResponseFormatJSONSchemaOnAnOlderModel(t *testing.T) {
+	inputJSON := []byte(`{"model":"claude-3-7-sonnet-20250219","messages":[{"role":"user","content":"Extract facts."}],` +
+		`"response_format":{"type":"json_schema","json_schema":{"name":"extracted_facts","schema":{"type":"object","properties":{"facts":{"type":"array","items":{"type":"string"}}},"required":["facts"]}}}}`)
+	out, _ := ConvertOpenAIRequestToClaude("claude-3-7-sonnet-20250219", inputJSON, false)
+	if ojson.GetBytesNoCopy(out, "output_config.format").Exists() {
+		t.Fatalf("output_config.format sent to a model without structured outputs. Output: %s", string(out))
 	}
-	if !foundSchemaInstruction {
-		t.Fatalf("expected structured output instructions containing schema in system prompt. Output: %s", string(out))
+	if !strings.Contains(ojson.GetBytesNoCopy(out, "system").Raw, "facts") {
+		t.Fatalf("expected the schema instruction in the system prompt. Output: %s", string(out))
 	}
 }
 

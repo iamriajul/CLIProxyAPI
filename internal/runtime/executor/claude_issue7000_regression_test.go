@@ -168,11 +168,18 @@ func TestClaudeExecutor_Issue7000OpenAITranslation(t *testing.T) {
 					if ojson.GetBytes(body, "tool_choice.name").Exists() {
 						t.Errorf("forced tool name survived: %s", body)
 					}
-					if withSchema && (!strings.Contains(ojson.GetBytes(body, "system").Raw, "issue7000_title") || !strings.Contains(ojson.GetBytes(body, "system").Raw, "JSON")) {
-						t.Errorf("existing schema prompt fallback missing: %s", body)
+					// Fork (claude-structured-outputs): a translated schema reaches
+					// Claude as native output_config.format, beside the normalized
+					// tool choice and the effort, as a native client's does
+					// (TestClaudeExecutor_Issue7000KeepsNativeOutputFormat).
+					if withSchema && (ojson.GetBytes(body, "output_config.format.type").String() != "json_schema" || ojson.GetBytes(body, "output_config.format.schema").Raw != schema) {
+						t.Errorf("translated schema missing from output_config.format: %s", body)
 					}
-					if ojson.GetBytes(body, "output_config.format").Exists() {
-						t.Errorf("translated schema should retain prompt fallback, not native output format: %s", body)
+					if !withSchema && ojson.GetBytes(body, "output_config.format").Exists() {
+						t.Errorf("output_config.format without a schema: %s", body)
+					}
+					if strings.Contains(ojson.GetBytes(body, "system").Raw, "issue7000_title") {
+						t.Errorf("schema sent as a prompt instruction too: %s", body)
 					}
 				})
 			}
