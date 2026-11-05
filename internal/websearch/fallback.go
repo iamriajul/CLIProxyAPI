@@ -192,6 +192,18 @@ func runSingleSearch(ctx context.Context, cfg Config, query string) (string, []s
 	if strings.TrimSpace(query) == "" {
 		return "Error: empty search query; provide a query string.", nil
 	}
+	if cfg.routeSearch != nil {
+		response, errRoute := cfg.routeSearch(ctx, query)
+		if errRoute == nil {
+			urls := sourceURLs(response)
+			// A route answer without sources was not grounded, so it is
+			// the model talking, not search results.
+			if text := FormatForLLM(response); strings.TrimSpace(text) != "" && len(urls) > 0 {
+				return text, urls
+			}
+		}
+		log.WithError(errRoute).Debug("websearch: route search returned no grounded result, using the provider chain")
+	}
 	response, errSearch := Execute(ctx, cfg, SearchRequest{Query: query})
 	if errSearch != nil {
 		return "Error: " + errSearch.Error(), nil
