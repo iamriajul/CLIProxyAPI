@@ -25,6 +25,11 @@ type borrowedCredential struct {
 // Borrowing is a last resort: an explicitly configured search key always
 // wins, and this only fills in for deployments that already logged in to
 // the model provider and would otherwise get no grounded search at all.
+//
+// Antigravity is not listed. Its session is an OAuth token, which the Gemini
+// API rejects as an API key (API_KEY_INVALID), so lending it to the Gemini
+// provider only produced a failed search per query. Antigravity routes get
+// Google grounding through their own accounts instead (websearch_route_search.go).
 var routeSearchProviders = []struct {
 	// route matches the prefix of the request's provider list entry.
 	route string
@@ -37,7 +42,6 @@ var routeSearchProviders = []struct {
 	// entry must come after every namespaced variant it would otherwise
 	// shadow.
 	{route: "anthropic", auth: "claude", apply: func(cfg *websearch.Config, token string) bool { return fillIfEmpty(&cfg.AnthropicAPIKey, token) }},
-	{route: "antigravity", auth: "antigravity", apply: func(cfg *websearch.Config, token string) bool { return fillIfEmpty(&cfg.GeminiAPIKey, token) }},
 	{route: "claude", auth: "claude", apply: func(cfg *websearch.Config, token string) bool { return fillIfEmpty(&cfg.AnthropicAPIKey, token) }},
 	{route: "codex", auth: "codex", apply: func(cfg *websearch.Config, token string) bool { return fillIfEmpty(&cfg.CodexAPIKey, token) }},
 	{route: "gemini", auth: "gemini", apply: func(cfg *websearch.Config, token string) bool { return fillIfEmpty(&cfg.GeminiAPIKey, token) }},

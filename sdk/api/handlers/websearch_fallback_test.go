@@ -86,6 +86,12 @@ func (e *websearchFakeExecutor) HttpRequest(context.Context, *coreauth.Auth, *ht
 
 func newWebsearchHandler(t *testing.T, model, provider string, executor *websearchFakeExecutor, cfg *sdkconfig.SDKConfig) *BaseAPIHandler {
 	t.Helper()
+	return newWebsearchHandlerForModel(t, &registry.ModelInfo{ID: model}, provider, executor, cfg)
+}
+
+func newWebsearchHandlerForModel(t *testing.T, info *registry.ModelInfo, provider string, executor *websearchFakeExecutor, cfg *sdkconfig.SDKConfig) *BaseAPIHandler {
+	t.Helper()
+	model := info.ID
 	executor.provider = provider
 	manager := coreauth.NewManager(nil, nil, nil)
 	manager.RegisterExecutor(executor)
@@ -97,7 +103,7 @@ func newWebsearchHandler(t *testing.T, model, provider string, executor *websear
 	if _, errRegister := manager.Register(context.Background(), auth); errRegister != nil {
 		t.Fatalf("manager.Register(): %v", errRegister)
 	}
-	registry.GetGlobalRegistry().RegisterClient(auth.ID, provider, []*registry.ModelInfo{{ID: model}})
+	registry.GetGlobalRegistry().RegisterClient(auth.ID, provider, []*registry.ModelInfo{info})
 	t.Cleanup(func() { registry.GetGlobalRegistry().UnregisterClient(auth.ID) })
 	return NewBaseAPIHandlers(cfg, manager)
 }
@@ -321,6 +327,69 @@ func TestWebsearchFallbackClaudeThroughOriginalRequestExecutor(t *testing.T) {
 	}
 	if executor.calls != 2 {
 		t.Fatalf("upstream calls = %d, want 2 (search, then answer)", executor.calls)
+	}
+}
+
+// An Antigravity model that grounds searches natively gets Google Search
+// for a request that mixes the hosted search tool with function tools: each
+// model-issued search runs as a search-only request on the same route, and
+// the configured provider chain is never consulted.
+func TestWebsearchFallbackGroundsSearchOnAntigravityRoute(t *testing.T) {
+	model := "ws-route-grounded-model"
+	var searchRequests [][]byte
+	executor := &websearchFakeExecutor{fromOriginal: true, execute: func(_ int, req coreexecutor.Request) ([]byte, error) {
+		// The route search is a Claude-format request whose only tool is
+		// the hosted web search, the shape Antigravity grounds natively.
+		if ojson.GetBytes(req.Payload, "tools.0.type").String() == "web_search_20250305" {
+			searchRequests = append(searchRequests, cloneBytes(req.Payload))
+			return []byte(`{"id":"msg_s","type":"message","role":"assistant","model":"` + model + `",
+				"content":[{"type":"server_tool_use","id":"srvtoolu_1","name":"web_search","input":{"query":"golang"}},
+				{"type":"web_search_tool_result","tool_use_id":"srvtoolu_1","content":[{"type":"web_search_result","url":"https://go.dev/doc/devel/release","title":"Go releases"}]},
+				{"type":"text","text":"Go 1.26 is the latest release.","citations":[{"type":"web_search_result_location","url":"https://go.dev/doc/devel/release","title":"Go releases","cited_text":"Go 1.26"}]}],
+				"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":7}}`), nil
+		}
+		if output := ojson.GetBytes(req.Payload, `input.#(type=="function_call_output").output`).String(); output != "" {
+			if !strings.Contains(output, "Go 1.26 is the latest release.") || !strings.Contains(output, "go.dev") {
+				t.Errorf("model did not receive the grounded result: %q", output)
+			}
+			return []byte(`{"id":"resp_2","object":"response","model":"` + model + `","status":"completed",
+				"output":[{"id":"msg_1","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Go 1.26.","annotations":[]}]}],
+				"usage":{"input_tokens":50,"output_tokens":8,"total_tokens":58}}`), nil
+		}
+		return []byte(`{"id":"resp_1","object":"response","model":"` + model + `","status":"completed",
+			"output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"web_search","arguments":"{\"query\":\"golang\"}"}],
+			"usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}`), nil
+	}}
+	cfg := &sdkconfig.SDKConfig{}
+	searchCfg := websearch.Config{Enabled: true, Order: []string{"searxng"}, SearXNGEndpoint: "http://searxng.test"}
+	cfg.WebSearch = searchCfg.WithDefaults().WithDoer(websearchStubDoer{handle: func(req *http.Request) (*http.Response, error) {
+		t.Errorf("provider chain was called for a grounded route: %s", req.URL)
+		return &http.Response{StatusCode: 500, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+	}})
+	handler := newWebsearchHandlerForModel(t, &registry.ModelInfo{ID: model, SupportsWebSearch: true}, "antigravity", executor, cfg)
+
+	dataChan, _, errChan := handler.ExecuteStreamWithAuthManager(context.Background(), "openai-response", model, []byte(sprintfModel(websearchResponsesMixedRequest, model)), "")
+	var chunks []string
+	for chunk := range dataChan {
+		chunks = append(chunks, string(chunk))
+	}
+	for errMsg := range errChan {
+		t.Fatalf("stream error = %#v", errMsg)
+	}
+	if len(searchRequests) != 1 {
+		t.Fatalf("route search requests = %d, want 1", len(searchRequests))
+	}
+	if got := ojson.GetBytes(searchRequests[0], "messages.0.content").String(); got != "golang" {
+		t.Fatalf("route search query = %q, want the model's query: %s", got, searchRequests[0])
+	}
+	if got := len(ojson.GetBytes(searchRequests[0], "tools").Array()); got != 1 {
+		t.Fatalf("route search must carry only the search tool, got %d tools: %s", got, searchRequests[0])
+	}
+	joined := strings.Join(chunks, "\n")
+	for _, want := range []string{`"type":"web_search_call"`, `"url":"https://go.dev/doc/devel/release"`, "Go 1.26.", "event: response.completed"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing %q in:\n%s", want, joined)
+		}
 	}
 }
 
