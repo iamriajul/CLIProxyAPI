@@ -3,6 +3,7 @@ package websearch
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/MoeForge/moego/ojson"
 )
@@ -1082,4 +1083,42 @@ func dropEmptyToolChoice(payload []byte, toolsPath string) []byte {
 	out, _ := ojson.DeleteBytes(payload, "tools")
 	out, _ = ojson.DeleteBytes(out, "tool_choice")
 	return out
+}
+
+// withSearchCalls reports the proxy-executed searches in the final response
+// the way native hosted search does. Responses clients get one
+// web_search_call item per search, ahead of the answer, carrying the query
+// and the pages it returned. Other formats are returned unchanged.
+func withSearchCalls(format string, body []byte, performed []performedSearch) []byte {
+	if len(performed) == 0 {
+		return body
+	}
+	switch normalizeFallbackFormat(format) {
+	case FallbackFormatOpenAIResponse, FallbackFormatCodex:
+	default:
+		return body
+	}
+	doc := ojson.NewDoc(body)
+	items := make([][]byte, 0, len(performed)+len(doc.Get("output").Array()))
+	// Clients replay these items next turn, so ids must not repeat across
+	// responses.
+	batch := time.Now().UnixNano()
+	for index, search := range performed {
+		item := ojson.NewDocString(`{"id":"","type":"web_search_call","status":"completed","action":{"type":"search","query":""}}`)
+		_ = item.Set("id", fmt.Sprintf("ws_proxy_%d_%d", batch, index))
+		_ = item.Set("action.query", search.Query)
+		if len(search.URLs) > 0 {
+			sources := make([]map[string]string, 0, len(search.URLs))
+			for _, url := range search.URLs {
+				sources = append(sources, map[string]string{"type": "url", "url": url})
+			}
+			_ = item.Set("action.sources", sources)
+		}
+		items = append(items, item.Bytes())
+	}
+	for _, existing := range doc.Get("output").Array() {
+		items = append(items, []byte(existing.Raw))
+	}
+	_ = doc.SetRawBytes("output", joinRawJSONArray(items))
+	return doc.Bytes()
 }
