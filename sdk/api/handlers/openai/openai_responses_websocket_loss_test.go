@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -241,6 +242,15 @@ func TestResponsesWebsocketIdleUpstreamEOFIsSilent(t *testing.T) {
 		read()
 		_ = c.WriteMessage(websocket.TextMessage, []byte(lossCompleted))
 		if index == 1 {
+			// Signal only once the proxy has seen the EOF: it records the loss before it
+			// closes its side, so a continuation sent after this cannot reach this socket.
+			raw := c.UnderlyingConn()
+			if errCloseWrite := raw.(*net.TCPConn).CloseWrite(); errCloseWrite != nil {
+				t.Error(errCloseWrite)
+			}
+			if _, errRead := raw.Read(make([]byte, 1)); !errors.Is(errRead, io.EOF) {
+				t.Errorf("upstream read after half-close = %v, want EOF from the proxy closing", errRead)
+			}
 			close(closed)
 			return
 		}
