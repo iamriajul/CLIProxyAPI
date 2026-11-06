@@ -399,6 +399,34 @@ go test ./internal/tps/
 go test ./internal/api/ -run 'TestHandleLastRequestStats|TestLastRequestStatsSchemaParity'
 ```
 
+## session-route-endpoint
+**Session route endpoint (`GET /v1/session-route`) names the account serving a session**
+
+A client running agents through the proxy (Paseo) shows which account serves
+an agent's session and notices when the router moves it. The usage record
+already carries the canonical session id and the serving credential, but the
+only read of it, the management usage queue, pops records and would take them
+from dashboards; `/v1/quota` lists accounts without saying which serves whom.
+`internal/sessionroute` subscribes to the usage record bus (the same shape as
+`internal/tps`) and keeps, per session, the current credential and its last 8
+switches, each with a cause: a 429 in the session or a quota-exceeded account
+is `quota`, a cooling account is `cooldown`, another failure is `error`, and a
+move with no observed cause is `rebind`. The server wires the auth manager in
+as the state lookup, because a session often leaves an account that a
+different session cooled down. Memory is bounded at 4096 sessions and expires
+a session idle for an hour. Labels reuse the `/v1/quota` masking, never auth
+ids or emails. The lookup takes the canonical id (`claude:<id>`,
+`codex:<id>`, `affinity:<id>`) exactly, since the prefix is how the router
+keeps client families apart. Machine contract:
+api/v1-session-route.schema.json, enforced by TestSessionRouteSchemaParity.
+
+```bash
+grep -q '"/session-route"' internal/api/server_routes.go
+grep -q 'sessionroute.Default().SetAuthState' internal/api/server.go
+go test ./internal/sessionroute/
+go test ./internal/api/ -run 'TestSessionRoute'
+```
+
 ## claude-structured-outputs
 
 **An OpenAI json_schema reaches Claude as native structured output**
