@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cliproxyapi.local/schemas/v1-session-route.json",
+  "title": "SessionRoute",
+  "description": "GET /v1/session-route?session=<id> — the account currently serving one client session, and its recent account switches. Auth: inference API key (Bearer). 'session' is required and is the canonical session id the router derives from the client's headers: 'claude:<X-Claude-Code-Session-Id>', 'codex:<session_id>', 'affinity:<X-Opencode-Session>'; only an exact match resolves. Account labels carry the same exposure as GET /v1/quota (masked name, provider, type, plan), never tokens, emails or auth ids. Data is in-process history fed by the usage record bus, so reading it consumes nothing and makes no upstream calls; a client UI can poll it. Only generating requests count; a failed request alone never names a serving account. Retention: at most 4096 sessions, 8 switches each (newest kept), and a session idle for an hour expires. Status codes: 200 (this schema), 400 no session given, 401 bad key, 404 session never served or expired. Errors are {\"error\": string} (see $defs/error). Compatibility: additive-only under /v1 — new optional fields may appear, existing fields never change type or meaning; clients MUST ignore unknown properties and tolerate unknown reason values.",
+  "type": "object",
+  "required": ["session", "account", "since", "last_seen", "switches"],
+  "additionalProperties": true,
+  "properties": {
+    "session": {"type": "string", "description": "Canonical session id that was looked up."},
+    "account": {"$ref": "#/$defs/account", "description": "Account serving the session's newest request."},
+    "model": {"type": "string", "description": "Upstream model of the session's newest request."},
+    "since": {"type": "string", "format": "date-time", "description": "When the current account first served the session."},
+    "last_seen": {"type": "string", "format": "date-time", "description": "Start of the session's newest successful request."},
+    "switches": {
+      "type": "array",
+      "description": "Recent account switches, oldest first, at most 8. Always an array.",
+      "items": {"$ref": "#/$defs/switch"}
+    }
+  },
+  "$defs": {
+    "account": {
+      "type": "object",
+      "required": ["provider", "in_cooldown"],
+      "additionalProperties": true,
+      "properties": {
+        "provider": {"type": "string", "description": "Raw provider key, as in /v1/quota."},
+        "provider_name": {"type": "string", "description": "Display provider name."},
+        "name": {"type": "string", "description": "Masked account label, as in /v1/quota. Absent once the account was removed from the proxy."},
+        "type": {"type": "string", "description": "'oauth' or 'api'."},
+        "plan": {"type": "string", "description": "Plan label when known; vocabulary not guaranteed."},
+        "in_cooldown": {"type": "boolean", "description": "Whether the account is blocked right now."}
+      }
+    },
+    "switch": {
+      "type": "object",
+      "required": ["at", "from", "to", "reason"],
+      "additionalProperties": true,
+      "properties": {
+        "at": {"type": "string", "format": "date-time", "description": "Start of the first request the new account served."},
+        "from": {"$ref": "#/$defs/account"},
+        "to": {"$ref": "#/$defs/account"},
+        "reason": {"type": "string", "description": "'quota' (429 in this session, or the account is quota-exceeded), 'cooldown' (the account is cooling down), 'error' (another failure in this session), 'rebind' (no cause observed: affinity expiry, rebind policy, or no affinity). Clients MUST tolerate other values."},
+        "status_code": {"type": "integer", "description": "Upstream status behind the switch, when one was observed in this session."}
+      }
+    },
+    "error": {
+      "type": "object",
+      "required": ["error"],
+      "additionalProperties": false,
+      "properties": {"error": {"type": "string"}}
+    }
+  }
+}
