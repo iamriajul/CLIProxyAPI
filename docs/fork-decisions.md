@@ -398,3 +398,23 @@ grep -q '"/last-request-stats"' internal/api/server_routes.go
 go test ./internal/tps/
 go test ./internal/api/ -run 'TestHandleLastRequestStats|TestLastRequestStatsSchemaParity'
 ```
+
+## quota-retry-after
+
+**Proxy-built errors end with `RETRY_AFTER:<UTC>` when recovery is known**
+
+Clients (Paseo) parse one machine-readable instant out of a quota or cooldown
+error instead of guessing from provider-specific prose. The contract —
+format, pool scope, and which bodies carry it — lives in
+[harness-quota-retry-after.md](harness-quota-retry-after.md). Upstream's own
+` (reset after <delay>)` text on Claude cooldowns is kept; the suffix goes
+after it. Direct responses, raw executor errors, and the Claude body of a
+pool-cooldown terminal 429 stay verbatim, as upstream pins (the last since
+v8.0.72; its `Retry-After` header still carries the pool's recovery).
+
+```bash
+go test ./sdk/cliproxy/auth/ -run 'TestManager_SingleCredentialKeepsUpstreamRecovery|RetryAfter|PoolEarliest'
+go test ./sdk/api/handlers/ -run 'RetryAfter'
+go test ./sdk/api/handlers/claude/ -run 'TestClaudeCooldown|TestWriteClaudeErrorResponse_IncludesRetryAfter|TestClaudeLastCredential429AppendsPoolResetTime'
+go test ./internal/runtime/executor/ -run 'TestXAIExecutorExecuteReturnsTerminalStreamFailures'
+```
