@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -42,15 +44,6 @@ func EarliestRecoveryTime(err error) (time.Time, bool) {
 			return time.Now().Add(*ra).UTC(), true
 		}
 	}
-	type retryAfterGetter interface {
-		RetryAfter() *time.Duration
-	}
-	var rag retryAfterGetter
-	if errors.As(err, &rag) && rag != nil {
-		if ra := rag.RetryAfter(); ra != nil && *ra > 0 {
-			return time.Now().Add(*ra).UTC(), true
-		}
-	}
 	return time.Time{}, false
 }
 
@@ -66,6 +59,8 @@ func FormatRetryAfterSuffix(recoverAt time.Time) string {
 	}
 	return fmt.Sprintf("RETRY_AFTER:%s", rec.Format(time.RFC3339))
 }
+
+var retryAfterSuffixPattern = regexp.MustCompile(`RETRY_AFTER:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})`)
 
 type recoveryTimeCarrierError struct {
 	error
@@ -86,12 +81,33 @@ func (e *recoveryTimeCarrierError) EarliestRecoveryTime() (time.Time, bool) {
 	return e.recoverAt, true
 }
 
+// StatusCode keeps the wrapped error's status visible without errors.As.
+func (e *recoveryTimeCarrierError) StatusCode() int {
+	if e == nil {
+		return 0
+	}
+	return statusCodeFromError(e.error)
+}
+
+// SafeResponseHeaders exposes the carried instant as a Retry-After header.
+func (e *recoveryTimeCarrierError) SafeResponseHeaders() http.Header {
+	if e == nil || e.recoverAt.IsZero() {
+		return nil
+	}
+	return safeRetryAfterHeader(time.Until(e.recoverAt))
+}
+
 func (e *recoveryTimeCarrierError) Error() string {
 	if e == nil || e.error == nil {
 		return ""
 	}
 	text := e.error.Error()
-	if !e.recoverAt.IsZero() && !strings.Contains(text, "RETRY_AFTER:") {
+	// The carrier's instant is authoritative, so it replaces any RETRY_AFTER
+	// an upstream or per-credential error already wrote into the text.
+	if !e.recoverAt.IsZero() && strings.Contains(text, "RETRY_AFTER:") {
+		return retryAfterSuffixPattern.ReplaceAllString(text, FormatRetryAfterSuffix(e.recoverAt))
+	}
+	if !e.recoverAt.IsZero() {
 		suffix := FormatRetryAfterSuffix(e.recoverAt)
 		if suffix != "" {
 			trimmed := strings.TrimSpace(text)

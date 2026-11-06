@@ -442,3 +442,22 @@ go test ./internal/translator/common/ -run 'TestClaudeModelTakesStructuredOutput
 go test ./internal/translator/claude/openai/... -run 'JSONSchemaAlsoRidesNativeOutputFormat|JSONSchemaOnAnOlderModelStaysPromptOnly|TestResponsesSystemItemPlacement|TestResponsesStructuredOutput'
 go test ./internal/runtime/executor/ -run 'TestClaudeExecutor_ChatCompletionsJSONSchemaReachesClaudeAsOutputFormat|TestClaudeExecutor_Issue7000'
 ```
+
+## quota-retry-after
+
+**Proxy-built errors end with `RETRY_AFTER:<UTC>` when recovery is known**
+
+Clients (Paseo) parse one machine-readable instant out of a quota or cooldown
+error instead of guessing from provider-specific prose. The contract —
+format, pool scope, and which bodies carry it — lives in
+[harness-quota-retry-after.md](harness-quota-retry-after.md). Upstream's own
+` (reset after <delay>)` text on Claude cooldowns is kept; the suffix goes
+after it. Direct responses and raw executor errors stay verbatim, as upstream
+pins.
+
+```bash
+go test ./sdk/cliproxy/auth/ -run 'TestManager_SingleCredentialKeepsUpstreamRecovery|RetryAfter|PoolEarliest'
+go test ./sdk/api/handlers/ -run 'RetryAfter'
+go test ./sdk/api/handlers/claude/ -run 'TestClaudeCooldown|TestWriteClaudeErrorResponse_IncludesRetryAfter'
+go test ./internal/runtime/executor/ -run 'TestXAIExecutorExecuteReturnsTerminalStreamFailures'
+```
