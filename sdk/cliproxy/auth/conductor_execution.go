@@ -677,7 +677,7 @@ func (m *Manager) executeMixedOnce(ctx context.Context, providers []string, req 
 	for {
 		if maxRetryCredentials > 0 && len(attempted) >= maxRetryCredentials {
 			if lastErr != nil {
-				return cliproxyexecutor.Response{}, preferredExecutionAttemptError(lastErr, upstreamErr)
+				return cliproxyexecutor.Response{}, m.withPoolRecoveryTime(ctx, providers, routeModel, opts, preferredExecutionAttemptError(lastErr, upstreamErr), nil)
 			}
 			return cliproxyexecutor.Response{}, &Error{Code: "auth_not_found", Message: "no auth available"}
 		}
@@ -695,10 +695,7 @@ func (m *Manager) executeMixedOnce(ctx context.Context, providers []string, req 
 		if errPick != nil {
 			if shouldReturnLastErrorOnPickFailure(homeMode, lastErr, errPick) {
 				pickErr := roundPickFailureError(lastErr, upstreamErr, errPick)
-				if rec, ok := EarliestRecoveryTime(errPick); ok && !rec.IsZero() {
-					pickErr = WithErrorRecoveryTime(pickErr, rec)
-				}
-				return cliproxyexecutor.Response{}, pickErr
+				return cliproxyexecutor.Response{}, m.withPoolRecoveryTime(ctx, providers, routeModel, pickOpts, pickErr, errPick)
 			}
 			return cliproxyexecutor.Response{}, errPick
 		}
@@ -902,7 +899,7 @@ func (m *Manager) executeCountMixedOnce(ctx context.Context, providers []string,
 	for {
 		if maxRetryCredentials > 0 && len(attempted) >= maxRetryCredentials {
 			if lastErr != nil {
-				return cliproxyexecutor.Response{}, preferredExecutionAttemptError(lastErr, upstreamErr)
+				return cliproxyexecutor.Response{}, m.withPoolRecoveryTime(ctx, providers, routeModel, opts, preferredExecutionAttemptError(lastErr, upstreamErr), nil)
 			}
 			return cliproxyexecutor.Response{}, &Error{Code: "auth_not_found", Message: "no auth available"}
 		}
@@ -920,10 +917,7 @@ func (m *Manager) executeCountMixedOnce(ctx context.Context, providers []string,
 		if errPick != nil {
 			if shouldReturnLastErrorOnPickFailure(homeMode, lastErr, errPick) {
 				pickErr := roundPickFailureError(lastErr, upstreamErr, errPick)
-				if rec, ok := EarliestRecoveryTime(errPick); ok && !rec.IsZero() {
-					pickErr = WithErrorRecoveryTime(pickErr, rec)
-				}
-				return cliproxyexecutor.Response{}, pickErr
+				return cliproxyexecutor.Response{}, m.withPoolRecoveryTime(ctx, providers, routeModel, pickOpts, pickErr, errPick)
 			}
 			return cliproxyexecutor.Response{}, errPick
 		}
@@ -1143,7 +1137,7 @@ func (m *Manager) executeStreamMixedOnce(ctx context.Context, providers []string
 				if homeMode {
 					return nil, markHomeRetryRoundExhausted(preferredErr, roundTiming.RetryAfter(), true)
 				}
-				return nil, preferredErr
+				return nil, m.withPoolRecoveryTime(ctx, providers, routeModel, opts, preferredErr, nil)
 			}
 			return nil, &Error{Code: "auth_not_found", Message: "no auth available"}
 		}
@@ -1185,10 +1179,7 @@ func (m *Manager) executeStreamMixedOnce(ctx context.Context, providers []string
 					return nil, markHomeRetryRoundExhausted(preferredErr, roundTiming.RetryAfter(), isHomeNextRoundImmediatelyAvailable(errPick))
 				}
 				pickErr := roundPickFailureError(lastErr, upstreamErr, errPick)
-				if rec, ok := EarliestRecoveryTime(errPick); ok && !rec.IsZero() {
-					pickErr = WithErrorRecoveryTime(pickErr, rec)
-				}
-				return nil, pickErr
+				return nil, m.withPoolRecoveryTime(ctx, providers, routeModel, pickOpts, pickErr, errPick)
 			}
 			return nil, errPick
 		}
