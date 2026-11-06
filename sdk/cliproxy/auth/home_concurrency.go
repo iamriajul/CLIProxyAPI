@@ -296,6 +296,14 @@ func SafeResponseHeaders(err error) http.Header {
 	if errors.As(err, &poolCooldown) && poolCooldown != nil {
 		return poolCooldown.SafeResponseHeaders()
 	}
+	// A recovery carrier holds the instant the client is told in the body, so
+	// the header must agree with it rather than with one attempt's hint.
+	var carrier *recoveryTimeCarrierError
+	if errors.As(err, &carrier) && carrier != nil {
+		if header := carrier.SafeResponseHeaders(); header != nil {
+			return header
+		}
+	}
 	var trusted *trustedRetryAfterError
 	if errors.As(err, &trusted) && trusted != nil {
 		return trusted.SafeResponseHeaders()
