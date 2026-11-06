@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/clienterror"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
@@ -193,24 +192,6 @@ func writeDirectErrorResponse(c *gin.Context, status int, msg *interfaces.ErrorM
 		}
 	}
 	body := bytes.Clone(msg.Body)
-	if msg != nil && msg.Error != nil {
-		if rec, ok := coreauth.EarliestRecoveryTime(msg.Error); ok && !rec.IsZero() {
-			suffix := coreauth.FormatRetryAfterSuffix(rec)
-			if suffix != "" && !bytes.Contains(body, []byte("RETRY_AFTER:")) {
-				if ojson.GetBytes(body, "error.message").Exists() {
-					msgVal := ojson.GetBytes(body, "error.message").String()
-					if updated, errSet := ojson.SetBytes(body, "error.message", fmt.Sprintf("%s %s", msgVal, suffix)); errSet == nil {
-						body = updated
-					}
-				} else if ojson.GetBytes(body, "message").Exists() {
-					msgVal := ojson.GetBytes(body, "message").String()
-					if updated, errSet := ojson.SetBytes(body, "message", fmt.Sprintf("%s %s", msgVal, suffix)); errSet == nil {
-						body = updated
-					}
-				}
-			}
-		}
-	}
 	appendAPIResponse(c, body)
 	if !c.Writer.Written() && c.Writer.Header().Get("Content-Type") == "" {
 		c.Writer.Header().Set("Content-Type", "application/json")

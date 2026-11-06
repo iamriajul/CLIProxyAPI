@@ -642,24 +642,6 @@ func (h *ClaudeCodeAPIHandler) WriteErrorResponse(c *gin.Context, msg *interface
 			}
 		}
 		body := bytes.Clone(msg.Body)
-		if msg != nil && msg.Error != nil {
-			if rec, ok := coreauth.EarliestRecoveryTime(msg.Error); ok && !rec.IsZero() {
-				suffix := coreauth.FormatRetryAfterSuffix(rec)
-				if suffix != "" && !bytes.Contains(body, []byte("RETRY_AFTER:")) {
-					if ojson.GetBytes(body, "error.message").Exists() {
-						msgVal := ojson.GetBytes(body, "error.message").String()
-						if updated, errSet := ojson.SetBytes(body, "error.message", fmt.Sprintf("%s %s", msgVal, suffix)); errSet == nil {
-							body = updated
-						}
-					} else if ojson.GetBytes(body, "message").Exists() {
-						msgVal := ojson.GetBytes(body, "message").String()
-						if updated, errSet := ojson.SetBytes(body, "message", fmt.Sprintf("%s %s", msgVal, suffix)); errSet == nil {
-							body = updated
-						}
-					}
-				}
-			}
-		}
 		if clienterror.IsClaudeThreadNotFound(status, errors.New(string(body))) {
 			if markedBody, errMarshal := json.Marshal(h.toClaudeError(&interfaces.ErrorMessage{
 				StatusCode: status,
