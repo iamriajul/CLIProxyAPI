@@ -54,11 +54,13 @@ type inferenceQuotaAccount struct {
 	ProviderName string `json:"provider_name,omitempty"`
 	// Name carries only the masked account email. When no email is stored,
 	// it falls back to the masked auth filename stem (.json excluded).
-	Name              string                      `json:"name,omitempty"`
-	Type              string                      `json:"type"`
-	Plan              string                      `json:"plan,omitempty"`
-	Description       string                      `json:"description,omitempty"`
-	InCooldown        bool                        `json:"in_cooldown"`
+	Name        string `json:"name,omitempty"`
+	Type        string `json:"type"`
+	Plan        string `json:"plan,omitempty"`
+	Description string `json:"description,omitempty"`
+	InCooldown  bool   `json:"in_cooldown"`
+	// CooldownUntil is when the cooldown ends, when the account is cooling and the end is known.
+	CooldownUntil     *time.Time                  `json:"cooldown_until,omitempty"`
 	WindowsObservedAt *time.Time                  `json:"windows_observed_at,omitempty"`
 	Windows           []inferenceQuotaWindow      `json:"windows"`
 	ResetCredits      []inferenceQuotaResetCredit `json:"reset_credits,omitempty"`
@@ -160,7 +162,7 @@ func (s *Server) handleInferenceQuota(c *gin.Context) {
 
 func buildInferenceQuotaAccount(auth *coreauth.Auth, model string, now time.Time, live *quota.Snapshot) inferenceQuotaAccount {
 	modelState := inferenceQuotaModelState(auth, model)
-	inCooldown, _ := inferenceQuotaCooldown(auth, modelState, now)
+	inCooldown, recoverAt := inferenceQuotaCooldown(auth, modelState, now)
 	plan := inferenceQuotaPlan(auth)
 	observedAt := inferenceQuotaObservedAt(auth.Quota, modelState)
 	windows := inferenceQuotaAccountWindows(auth.Provider, auth.Quota, modelState)
@@ -185,6 +187,7 @@ func buildInferenceQuotaAccount(auth *coreauth.Auth, model string, now time.Time
 		Type:              inferenceQuotaAccountType(auth),
 		Plan:              plan,
 		InCooldown:        inCooldown,
+		CooldownUntil:     cooldownUntil(inCooldown, recoverAt),
 		WindowsObservedAt: observedAt,
 		Windows:           windows,
 		ResetCredits:      resets,
