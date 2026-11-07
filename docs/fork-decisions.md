@@ -420,11 +420,18 @@ ids or emails. The lookup takes the canonical id (`claude:<id>`,
 keeps client families apart. Machine contract:
 api/v1-session-route.schema.json, enforced by TestSessionRouteSchemaParity.
 
+Both this endpoint and `/v1/quota` report `cooldown_until` on a cooling account
+whose recovery time is known (the same recovery time `in_cooldown` is computed
+from), so a client can say until when an account is blocked; Paseo uses it to
+pause cache warm-up with an end time. It is omitted while the account is healthy
+or the end is unknown.
+
 ```bash
 grep -q '"/session-route"' internal/api/server_routes.go
 grep -q 'sessionroute.Default().SetAuthState' internal/api/server.go
 go test ./internal/sessionroute/
 go test ./internal/api/ -run 'TestSessionRoute'
+grep -q 'CooldownUntil: cooldownUntil(inCooldown, recoverAt)' internal/api/server_session_route.go
 ```
 
 ## claude-structured-outputs
