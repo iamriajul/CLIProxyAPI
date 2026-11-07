@@ -29,7 +29,8 @@
         "name": {"type": "string", "description": "Masked account label, as in /v1/quota. Absent once the account was removed from the proxy."},
         "type": {"type": "string", "description": "'oauth' or 'api'."},
         "plan": {"type": "string", "description": "Plan label when known; vocabulary not guaranteed."},
-        "in_cooldown": {"type": "boolean", "description": "Whether the account is blocked right now."}
+        "in_cooldown": {"type": "boolean", "description": "Whether the account is blocked right now."},
+        "cooldown_until": {"type": "string", "format": "date-time", "description": "When the cooldown ends (UTC). Present only while in_cooldown is true and the end is known."}
       }
     },
     "switch": {
