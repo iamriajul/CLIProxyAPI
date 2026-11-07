@@ -50,6 +50,8 @@ type sessionRouteAccount struct {
 	Type         string `json:"type,omitempty"`
 	Plan         string `json:"plan,omitempty"`
 	InCooldown   bool   `json:"in_cooldown"`
+	// CooldownUntil is when the cooldown ends, when the account is cooling and the end is known.
+	CooldownUntil *time.Time `json:"cooldown_until,omitempty"`
 }
 
 type sessionRouteSwitch struct {
@@ -112,14 +114,15 @@ func (s *Server) sessionRouteAccount(authID, provider, model string, now time.Ti
 	if auth == nil {
 		return sessionRouteAccount{Provider: provider, ProviderName: inferenceQuotaProviderDisplayName(provider)}
 	}
-	inCooldown, _ := inferenceQuotaCooldown(auth, inferenceQuotaModelState(auth, model), now)
+	inCooldown, recoverAt := inferenceQuotaCooldown(auth, inferenceQuotaModelState(auth, model), now)
 	return sessionRouteAccount{
-		Provider:     strings.TrimSpace(auth.Provider),
-		ProviderName: inferenceQuotaProviderDisplayName(auth.Provider),
-		Name:         inferenceQuotaAccountName(auth),
-		Type:         inferenceQuotaAccountType(auth),
-		Plan:         inferenceQuotaPlan(auth),
-		InCooldown:   inCooldown,
+		Provider:      strings.TrimSpace(auth.Provider),
+		ProviderName:  inferenceQuotaProviderDisplayName(auth.Provider),
+		Name:          inferenceQuotaAccountName(auth),
+		Type:          inferenceQuotaAccountType(auth),
+		Plan:          inferenceQuotaPlan(auth),
+		InCooldown:    inCooldown,
+		CooldownUntil: cooldownUntil(inCooldown, recoverAt),
 	}
 }
 
@@ -138,4 +141,14 @@ func (s *Server) sessionRouteAuthState(authID, model string) sessionroute.Reason
 		return sessionroute.ReasonQuota
 	}
 	return sessionroute.ReasonCooldown
+}
+
+// cooldownUntil reports a cooling account's recovery time, in UTC; nil when the account is not
+// cooling or its recovery time is unknown. Shared by /v1/quota and /v1/session-route.
+func cooldownUntil(inCooldown bool, recoverAt time.Time) *time.Time {
+	if !inCooldown || recoverAt.IsZero() {
+		return nil
+	}
+	at := recoverAt.UTC()
+	return &at
 }
