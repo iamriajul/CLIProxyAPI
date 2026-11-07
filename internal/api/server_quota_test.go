@@ -219,8 +219,8 @@ func TestHandleInferenceQuota(t *testing.T) {
 	}
 	allowedKeys := map[string]bool{
 		"provider": true, "provider_name": true, "name": true, "type": true, "plan": true,
-		"description": true, "in_cooldown": true, "windows_observed_at": true, "windows": true,
-		"reset_credits": true,
+		"description": true, "in_cooldown": true, "cooldown_until": true, "windows_observed_at": true,
+		"windows": true, "reset_credits": true,
 	}
 	allowedWindowKeys := map[string]bool{
 		"name": true, "used_percent": true, "reset_at": true, "status": true,
@@ -284,6 +284,17 @@ func TestHandleInferenceQuota(t *testing.T) {
 	exhausted := byName["s***d@example.com"]
 	if exhausted["in_cooldown"] != true {
 		t.Fatalf("exhausted = %+v", exhausted)
+	}
+	// A cooling account reports when it recovers; a healthy one carries no cooldown_until.
+	until, ok := exhausted["cooldown_until"].(string)
+	if !ok {
+		t.Fatalf("exhausted cooldown_until missing: %+v", exhausted)
+	}
+	if at, errParse := time.Parse(time.RFC3339, until); errParse != nil || !at.After(time.Now()) {
+		t.Fatalf("exhausted cooldown_until = %q, want a future RFC 3339 time", until)
+	}
+	if _, has := primary["cooldown_until"]; has {
+		t.Fatalf("primary carries cooldown_until while healthy: %+v", primary)
 	}
 
 	keyed := byName["codex-primary-key"]
