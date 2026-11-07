@@ -51,6 +51,11 @@
           "type": "boolean",
           "description": "True while the account (credential or requested-model state) is effectively blocked by a cooldown."
         },
+        "cooldown_until": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the cooldown ends (UTC). Present only while in_cooldown is true and the end is known; absent otherwise."
+        },
         "windows_observed_at": {
           "type": "string",
           "format": "date-time",
