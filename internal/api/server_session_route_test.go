@@ -143,6 +143,13 @@ func TestSessionRouteFollowsRealFailover(t *testing.T) {
 	if !sw.From.InCooldown {
 		t.Fatalf("from = %+v, want account a in cooldown after its 429", sw.From)
 	}
+	// The 429 carried Retry-After: 3600, so the cooldown's end is known and reported.
+	if sw.From.CooldownUntil == nil || sw.From.CooldownUntil.Before(time.Now().Add(50*time.Minute)) {
+		t.Fatalf("from cooldown_until = %v, want about an hour ahead", sw.From.CooldownUntil)
+	}
+	if sw.To.CooldownUntil != nil {
+		t.Fatalf("to cooldown_until = %v, want none for a healthy account", sw.To.CooldownUntil)
+	}
 	if body := getSessionRoute(t, server, "claude:"+sessionUUID).Body.String(); strings.Contains(body, "user-a") || strings.Contains(body, "user-b") || strings.Contains(body, "sr-auth-") {
 		t.Fatalf("body = %s, must carry only masked labels, never emails or auth ids", body)
 	}
