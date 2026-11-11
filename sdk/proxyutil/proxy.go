@@ -389,3 +389,37 @@ func (c *bufferedConn) Read(p []byte) (int, error) {
 	}
 	return c.Conn.Read(p)
 }
+
+// ErrProxyUnavailable is returned for every request whose proxy setting could
+// not be built. A credential or request that names a proxy must never go out
+// directly when that proxy is malformed: the caller chose the proxy for the
+// address it shows, and a direct connection would reveal another one.
+var ErrProxyUnavailable = errors.New("proxy setting could not be used")
+
+type refusingTransport struct{ err error }
+
+func (t refusingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req != nil && req.Body != nil {
+		_ = req.Body.Close()
+	}
+	return nil, t.err
+}
+
+// RefusingTransport fails every request with ErrProxyUnavailable, wrapping the
+// reason the setting raw could not be built.
+func RefusingTransport(raw string, cause error) http.RoundTripper {
+	return refusingTransport{err: fmt.Errorf("%w: %s: %v", ErrProxyUnavailable, Redact(raw), cause)}
+}
+
+type refusingDialer struct{ err error }
+
+func (d refusingDialer) Dial(string, string) (net.Conn, error) { return nil, d.err }
+
+func (d refusingDialer) DialContext(context.Context, string, string) (net.Conn, error) {
+	return nil, d.err
+}
+
+// RefusingDialer is RefusingTransport for connection-layer callers.
+func RefusingDialer(raw string, cause error) proxy.Dialer {
+	return refusingDialer{err: fmt.Errorf("%w: %s: %v", ErrProxyUnavailable, Redact(raw), cause)}
+}

@@ -496,3 +496,24 @@ go test ./sdk/api/handlers/ -run 'RetryAfter'
 go test ./sdk/api/handlers/claude/ -run 'TestClaudeCooldown|TestWriteClaudeErrorResponse_IncludesRetryAfter'
 go test ./internal/runtime/executor/ -run 'TestXAIExecutorExecuteReturnsTerminalStreamFailures'
 ```
+
+## credential-proxy-fails-closed
+
+**A proxy setting that cannot be built refuses the request instead of going direct**
+
+An operator points each credential at the proxy its account picked
+(`proxy_url` on an auth file, `proxy-url` on a key entry), so the provider
+sees that account from one steady address. Upstream logs a proxy URL it cannot
+build and falls back: the request goes out on the context transport, a
+broader proxy, or directly, which shows the provider a different address
+than the account's. Here every such spot fails the request with
+`proxyutil.ErrProxyUnavailable` instead: the pooled and one-off HTTP clients
+(`NewProxyAwareHTTPClient`), the uTLS and Claude Code dialers, the Claude
+OAuth transport, and the management `api-call` transport (a credential's own
+proxy is final; it does not fall back to the global one). An explicit
+`direct`/`none` still goes direct, and an empty setting still inherits.
+
+```bash
+go test ./internal/runtime/executor/helps/ -run 'TestNewProxyAwareHTTPClientRefusesABrokenCredentialProxy|TestUTLSDialerRefusesABrokenProxy' -count=1
+go test ./internal/api/handlers/management/ -run 'TestAPICallTransportInvalidCredentialProxyRefuses|TestAPICallTransportInvalidRequestProxyDoesNotFallBack' -count=1
+```

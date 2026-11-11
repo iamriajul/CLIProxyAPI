@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -49,8 +50,16 @@ func NewProxyAwareHTTPClient(ctx context.Context, cfg *config.Config, auth *clip
 			httpClient.Transport = transport
 			return httpClient
 		}
-		// If proxy setup failed, log and fall through to context RoundTripper
-		log.Debugf("failed to setup proxy from URL: %s, falling back to context transport", proxyutil.Redact(proxyURL))
+		// A proxy was named but could not be built. Refuse rather than fall
+		// through to a direct transport: the credential chose this proxy for
+		// the address it shows (docs/fork-decisions.md#credential-proxy-fails-closed).
+		_, _, errBuild := proxyutil.BuildHTTPTransport(proxyURL)
+		if errBuild == nil {
+			errBuild = errors.New("the proxy setting produced no transport")
+		}
+		log.Errorf("refusing request: proxy %s could not be used: %v", proxyutil.Redact(proxyURL), errBuild)
+		httpClient.Transport = proxyutil.RefusingTransport(proxyURL, errBuild)
+		return httpClient
 	}
 
 	// Priority 3: Use RoundTripper from context (typically from RoundTripperFor)

@@ -836,10 +836,7 @@ func (h *Handler) authByIndex(authIndex string) *coreauth.Auth {
 
 func (h *Handler) apiCallTransport(auth *coreauth.Auth, requestProxyURL string) http.RoundTripper {
 	if proxyStr := strings.TrimSpace(requestProxyURL); proxyStr != "" {
-		if transport := buildProxyTransport(proxyStr); transport != nil {
-			return transport
-		}
-		return directAPICallTransport()
+		return proxyTransportOrRefuse(proxyStr)
 	}
 
 	var proxyCandidates []string
@@ -859,10 +856,10 @@ func (h *Handler) apiCallTransport(auth *coreauth.Auth, requestProxyURL string) 
 		}
 	}
 
-	for _, proxyStr := range proxyCandidates {
-		if transport := buildProxyTransport(proxyStr); transport != nil {
-			return transport
-		}
+	// The most specific setting decides. A credential's own proxy that cannot
+	// be built refuses the call instead of trying a broader one or going direct.
+	if len(proxyCandidates) > 0 {
+		return proxyTransportOrRefuse(proxyCandidates[0])
 	}
 
 	return directAPICallTransport()
@@ -1010,11 +1007,17 @@ func resolveOpenAICompatAPIKeyProxyURL(cfg *config.Config, auth *coreauth.Auth, 
 	return ""
 }
 
-func buildProxyTransport(proxyStr string) *http.Transport {
+// proxyTransportOrRefuse builds the transport for a named proxy setting, or one
+// that refuses every call when the setting cannot be built.
+func proxyTransportOrRefuse(proxyStr string) http.RoundTripper {
 	transport, _, errBuild := proxyutil.BuildHTTPTransport(proxyStr)
 	if errBuild != nil {
-		log.WithError(errBuild).Debug("build proxy transport failed")
-		return nil
+		log.WithError(errBuild).Error("refusing call: proxy transport could not be built")
+		return proxyutil.RefusingTransport(proxyStr, errBuild)
+	}
+	if transport == nil {
+		return directAPICallTransport()
 	}
 	return transport
 }
+

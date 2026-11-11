@@ -181,7 +181,8 @@ func newUtlsRoundTripper(cfg *config.SDKConfig) *utlsRoundTripper {
 		proxyURL = cfg.ProxyURL
 		proxyDialer, mode, errBuild := proxyutil.BuildDialer(cfg.ProxyURL)
 		if errBuild != nil {
-			log.Errorf("failed to configure proxy dialer for %q: %v", proxyutil.Redact(cfg.ProxyURL), errBuild)
+			log.Errorf("refusing connections: proxy dialer for %q could not be built: %v", proxyutil.Redact(cfg.ProxyURL), errBuild)
+			dialer = proxyutil.RefusingDialer(cfg.ProxyURL, errBuild)
 		} else if mode != proxyutil.ModeInherit && proxyDialer != nil {
 			dialer = proxyDialer
 		}

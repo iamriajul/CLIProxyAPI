@@ -2,6 +2,7 @@ package helps
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -247,5 +248,43 @@ func TestProxyConnectionPoolCustomDefaultTransportDeclinesPooling(t *testing.T) 
 	client := NewProxyAwareHTTPClient(context.Background(), cfg, auth, 0)
 	if client.Transport != nil {
 		t.Fatalf("client.Transport = %T, want nil so client uses http.DefaultTransport", client.Transport)
+	}
+}
+
+func TestNewProxyAwareHTTPClientRefusesABrokenCredentialProxy(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	// A credential whose proxy cannot be built, with a context transport that
+	// would happily go direct: the request must fail, never reach the site.
+	ctx := context.WithValue(context.Background(), "cliproxy.roundtripper", http.DefaultTransport)
+	client := NewProxyAwareHTTPClient(ctx, &config.Config{}, &cliproxyauth.Auth{ProxyURL: "ftp://not-a-proxy.example:21"}, 0)
+	resp, errDo := client.Get(upstream.URL)
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	if !errors.Is(errDo, proxyutil.ErrProxyUnavailable) {
+		t.Fatalf("Get error = %v, want ErrProxyUnavailable", errDo)
+	}
+	if called {
+		t.Fatal("the request reached the site directly through a broken proxy setting")
+	}
+}
+
+func TestUTLSDialerRefusesABrokenProxy(t *testing.T) {
+	t.Parallel()
+
+	if _, err := claudeCodeDialer("ftp://not-a-proxy.example:21").Dial("tcp", "example.com:443"); !errors.Is(err, proxyutil.ErrProxyUnavailable) {
+		t.Fatalf("claude dialer error = %v, want ErrProxyUnavailable", err)
+	}
+	rt := newUtlsRoundTripper("ftp://not-a-proxy.example:21")
+	if _, err := rt.dialer.Dial("tcp", "example.com:443"); !errors.Is(err, proxyutil.ErrProxyUnavailable) {
+		t.Fatalf("utls dialer error = %v, want ErrProxyUnavailable", err)
 	}
 }
