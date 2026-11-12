@@ -436,7 +436,7 @@ grep -q 'CooldownUntil: cooldownUntil(inCooldown, recoverAt)' internal/api/serve
 
 ## claude-structured-outputs
 
-**An OpenAI json_schema reaches Claude as native structured output**
+**A strict OpenAI json_schema reaches Claude as native structured output**
 
 Upstream turns a Chat Completions `response_format` or a Responses
 `text.format` of type `json_schema` into a system-prompt instruction for
@@ -446,13 +446,37 @@ a strict schema then fails to parse it. On a Claude sign-in the cloaking
 moves that instruction into the first user turn as a `<system-reminder>`,
 which makes a prose answer likelier still.
 
-The fork also sends the schema the way Anthropic's own SDKs do (RubyLLM's
-Anthropic provider is one example):
-`output_config: {format: {type: "json_schema", schema}}`. Claude Code sends
-the same field on subscription sign-ins, so both an API key and a sign-in
-take it. The format's `description`, which a native format has no field for,
-travels as the schema's own top-level `description` when the schema has
-none.
+When the client marks the format `strict: true`, the fork also sends the
+schema the way Anthropic's own SDKs do (RubyLLM's Anthropic provider is one
+example): `output_config: {format: {type: "json_schema", schema}}`. Claude
+Code sends the same field on subscription sign-ins, so both an API key and a
+sign-in take it. The format's `description`, which a native format has no
+field for, travels as the schema's own top-level `description` when the
+schema has none.
+
+The schema is rewritten into the subset Claude accepts before it is sent
+(`ClaudeStrictSchema`, a port of `transform_schema` in anthropic-sdk-python):
+every object gets `additionalProperties: false`, `oneOf` and type lists
+become `anyOf`, and keywords Claude does not enforce (`minimum`,
+`maxLength`, `pattern`, `maxItems`, unknown string formats, ...) move into
+the description as `{keyword: value}`. A schema already inside the subset
+passes through unchanged. A schema Claude answers with a 400 whatever the
+rewrite does stays prompt-only: a recursive one, a `$ref` that is not a
+`$defs`/`definitions` entry of the schema, an `allOf` merging a `$ref`
+member with others, or one over Claude's compile
+limits (24 optional properties, 16 union-typed ones).
+Until v8.0.944 the fork sent every `json_schema` natively and verbatim, which
+was the simplest form of the fix while the clients it was built for sent
+clean strict schemas; it turned a loose `strict: false` schema, or one using
+any of those keywords, into a 400 that the prompt-only path would have
+answered, so a non-strict format now keeps the instruction alone.
+
+Subscription sign-ins keep native output, though Claude Code itself only
+sends a native format for its one-`title` helper (agent runs use the Agent
+SDK's `StructuredOutput` tool instead): the cloaked instruction is where a
+prose answer is likeliest, so that is where the guarantee matters most. The
+client-facing guide is
+[claude-structured-output-guide.md](claude-structured-output-guide.md).
 
 Upstream's prompt instruction is kept alongside the native format, as the
 last system block, on every model. The native format is what holds the reply
@@ -464,7 +488,7 @@ json_schema requests on Claude models
 (`claude_openai-responses_system_placement_test.go`), so the fork now adds
 rather than replaces. Where native output is not known to work, the
 instruction is the only mechanism: `json_object`, a format with no schema,
-Claude 3 and the first Opus 4 / Sonnet 4 releases, and any model a
+a format not marked `strict: true`, a schema Claude cannot compile, Claude 3 and the first Opus 4 / Sonnet 4 releases, and any model a
 Claude-compatible endpoint serves under its own name (GLM, Kimi, ...). The
 Antigravity path is untouched: it builds Gemini-shaped requests, and its
 Claude 5.5 schema-to-prompt fallback (router-for-me/CLIProxyAPI#7000) still
@@ -473,8 +497,8 @@ applies there.
 ```bash
 grep -q 'ClaudeOutputFormatSchema' internal/translator/claude/openai/chat-completions/claude_openai_request.go
 grep -q 'ClaudeOutputFormatSchema' internal/translator/claude/openai/responses/claude_openai-responses_request.go
-go test ./internal/translator/common/ -run 'TestClaudeModelTakesStructuredOutputs|TestClaudeOutputFormatSchema'
-go test ./internal/translator/claude/openai/... -run 'JSONSchemaAlsoRidesNativeOutputFormat|JSONSchemaOnAnOlderModelStaysPromptOnly|TestResponsesSystemItemPlacement|TestResponsesStructuredOutput'
+go test ./internal/translator/common/ -run 'TestClaudeModelTakesStructuredOutputs|TestClaudeOutputFormatSchema|TestClaudeStrictSchema'
+go test ./internal/translator/claude/openai/... -run 'JSONSchemaAlsoRidesNativeOutputFormat|JSONSchemaOnAnOlderModelStaysPromptOnly|NonStrictJSONSchemaStaysPromptOnly|TestResponsesSystemItemPlacement|TestResponsesStructuredOutput'
 go test ./internal/runtime/executor/ -run 'TestClaudeExecutor_ChatCompletionsJSONSchemaReachesClaudeAsOutputFormat|TestClaudeExecutor_Issue7000'
 ```
 
