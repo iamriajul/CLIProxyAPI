@@ -61,7 +61,8 @@ func newUtlsRoundTripper(proxyURL string) *utlsRoundTripper {
 	if proxyURL != "" {
 		proxyDialer, mode, errBuild := proxyutil.BuildDialer(proxyURL)
 		if errBuild != nil {
-			log.Errorf("utls: failed to configure proxy dialer for %q: %v", proxyutil.Redact(proxyURL), errBuild)
+			log.Errorf("utls: refusing connections: proxy dialer for %q could not be built: %v", proxyutil.Redact(proxyURL), errBuild)
+			dialer = proxyutil.RefusingDialer(proxyURL, errBuild)
 		} else if mode != proxyutil.ModeInherit && proxyDialer != nil {
 			dialer = proxyDialer
 		}
@@ -339,7 +340,8 @@ func claudeCodeDialer(proxyURL string) proxy.Dialer {
 	if proxyURL != "" {
 		proxyDialer, mode, errBuild := proxyutil.BuildDialer(proxyURL)
 		if errBuild != nil {
-			log.Errorf("claude tls: failed to configure proxy dialer for %q: %v", proxyutil.Redact(proxyURL), errBuild)
+			log.Errorf("claude tls: refusing connections: proxy dialer for %q could not be built: %v", proxyutil.Redact(proxyURL), errBuild)
+			dialer = proxyutil.RefusingDialer(proxyURL, errBuild)
 		} else if mode != proxyutil.ModeInherit && proxyDialer != nil {
 			dialer = proxyDialer
 		}

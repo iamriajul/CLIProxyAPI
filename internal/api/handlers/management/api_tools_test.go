@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/router-for-me/CLIProxyAPI/v8/sdk/proxyutil"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -83,7 +84,7 @@ func TestAPICallTransportDirectBypassesGlobalProxy(t *testing.T) {
 	}
 }
 
-func TestAPICallTransportInvalidAuthFallsBackToGlobalProxy(t *testing.T) {
+func TestAPICallTransportInvalidCredentialProxyRefuses(t *testing.T) {
 	t.Parallel()
 
 	h := &Handler{
@@ -92,23 +93,33 @@ func TestAPICallTransportInvalidAuthFallsBackToGlobalProxy(t *testing.T) {
 		},
 	}
 
+	// The credential named its own proxy; a broken one must not quietly become
+	// the global proxy or a direct call (fork decision credential-proxy-fails-closed).
 	transport := h.apiCallTransport(&coreauth.Auth{ProxyURL: "bad-value"}, "")
-	httpTransport, ok := transport.(*http.Transport)
-	if !ok {
-		t.Fatalf("transport type = %T, want *http.Transport", transport)
-	}
+	assertRefusingTransport(t, transport)
+}
 
-	req, errRequest := http.NewRequest(http.MethodGet, "https://example.com", nil)
+func assertRefusingTransport(t *testing.T, transport http.RoundTripper) {
+	t.Helper()
+	called := false
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+	req, errRequest := http.NewRequest(http.MethodGet, upstream.URL, nil)
 	if errRequest != nil {
 		t.Fatalf("http.NewRequest returned error: %v", errRequest)
 	}
-
-	proxyURL, errProxy := httpTransport.Proxy(req)
-	if errProxy != nil {
-		t.Fatalf("httpTransport.Proxy returned error: %v", errProxy)
+	resp, errDo := transport.RoundTrip(req)
+	if resp != nil {
+		_ = resp.Body.Close()
 	}
-	if proxyURL == nil || proxyURL.String() != "http://global-proxy.example.com:8080" {
-		t.Fatalf("proxy URL = %v, want http://global-proxy.example.com:8080", proxyURL)
+	if !errors.Is(errDo, proxyutil.ErrProxyUnavailable) {
+		t.Fatalf("RoundTrip error = %v, want ErrProxyUnavailable", errDo)
+	}
+	if called {
+		t.Fatal("the request reached the site directly through a broken proxy setting")
 	}
 }
 
@@ -152,14 +163,8 @@ func TestAPICallTransportInvalidRequestProxyDoesNotFallBack(t *testing.T) {
 	}
 	auth := &coreauth.Auth{ProxyURL: "http://credential-proxy.example.com:8080"}
 
-	transport := h.apiCallTransport(auth, "bad-value")
-	httpTransport, ok := transport.(*http.Transport)
-	if !ok {
-		t.Fatalf("transport type = %T, want *http.Transport", transport)
-	}
-	if httpTransport.Proxy != nil {
-		t.Fatal("expected invalid request proxy to avoid lower-priority proxy settings")
-	}
+	// Neither a lower-priority proxy nor a direct call stands in for it.
+	assertRefusingTransport(t, h.apiCallTransport(auth, "bad-value"))
 }
 
 func TestAPICallTransportAPIKeyAuthFallsBackToConfigProxyURL(t *testing.T) {
