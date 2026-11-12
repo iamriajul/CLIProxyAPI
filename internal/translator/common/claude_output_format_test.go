@@ -41,8 +41,12 @@ func TestClaudeOutputFormatSchema(t *testing.T) {
 		{"responses text.format", `{"type":"json_schema","name":"x","strict":true,"schema":` + schema + `}`, "claude-sonnet-4-6", true},
 		{"json_object keeps the instruction", `{"type":"json_object"}`, "claude-sonnet-4-6", false},
 		{"no schema keeps the instruction", `{"type":"json_schema","json_schema":{"name":"x"}}`, "claude-sonnet-4-6", false},
-		{"a model without structured outputs keeps the instruction", `{"type":"json_schema","json_schema":{"name":"x","schema":` + schema + `}}`, "claude-3-7-sonnet-20250219", false},
-		{"a Claude-compatible endpoint's own model keeps the instruction", `{"type":"json_schema","json_schema":{"name":"x","schema":` + schema + `}}`, "glm-4.6", false},
+		{"a model without structured outputs keeps the instruction", `{"type":"json_schema","json_schema":{"name":"x","strict":true,"schema":` + schema + `}}`, "claude-3-7-sonnet-20250219", false},
+		{"a Claude-compatible endpoint's own model keeps the instruction", `{"type":"json_schema","json_schema":{"name":"x","strict":true,"schema":` + schema + `}}`, "glm-4.6", false},
+		{"a chat completions schema not marked strict keeps the instruction", `{"type":"json_schema","json_schema":{"name":"x","schema":` + schema + `}}`, "claude-sonnet-4-6", false},
+		{"a chat completions schema marked strict:false keeps the instruction", `{"type":"json_schema","json_schema":{"name":"x","strict":false,"schema":` + schema + `}}`, "claude-sonnet-4-6", false},
+		{"a responses schema not marked strict keeps the instruction", `{"type":"json_schema","name":"x","schema":` + schema + `}`, "claude-sonnet-4-6", false},
+		{"a recursive schema keeps the instruction", `{"type":"json_schema","strict":true,"schema":{"type":"object","properties":{"child":{"$ref":"#"}}}}`, "claude-sonnet-4-6", false},
 	} {
 		got, ok := ClaudeOutputFormatSchema(ojson.Parse(tc.format), tc.model)
 		if ok != tc.ok {
@@ -56,12 +60,23 @@ func TestClaudeOutputFormatSchema(t *testing.T) {
 }
 
 func TestClaudeOutputFormatSchemaCarriesTheFormatsDescription(t *testing.T) {
-	got, ok := ClaudeOutputFormatSchema(ojson.Parse(`{"type":"json_schema","json_schema":{"name":"x","description":"Primary facts","schema":{"type":"object"}}}`), "claude-sonnet-4-6")
+	got, ok := ClaudeOutputFormatSchema(ojson.Parse(`{"type":"json_schema","json_schema":{"name":"x","strict":true,"description":"Primary facts","schema":{"type":"object"}}}`), "claude-sonnet-4-6")
 	if !ok || ojson.Parse(got).Get("description").String() != "Primary facts" || ojson.Parse(got).Get("type").String() != "object" {
 		t.Fatalf("schema = %s (%v), want the format's description on the schema", got, ok)
 	}
-	got, _ = ClaudeOutputFormatSchema(ojson.Parse(`{"type":"json_schema","description":"Primary facts","schema":{"type":"object","description":"Its own"}}`), "claude-sonnet-4-6")
+	got, _ = ClaudeOutputFormatSchema(ojson.Parse(`{"type":"json_schema","strict":true,"description":"Primary facts","schema":{"type":"object","description":"Its own"}}`), "claude-sonnet-4-6")
 	if ojson.Parse(got).Get("description").String() != "Its own" {
 		t.Fatalf("schema = %s, want the schema's own description kept", got)
+	}
+}
+
+// A strict schema that uses keywords Claude does not enforce still goes
+// native, rewritten the way Anthropic's SDKs rewrite it, instead of being
+// sent as-is for Claude to reject with a 400.
+func TestClaudeOutputFormatSchemaRewritesWhatClaudeRejects(t *testing.T) {
+	got, ok := ClaudeOutputFormatSchema(ojson.Parse(`{"type":"json_schema","json_schema":{"name":"x","strict":true,"schema":{"type":"object","properties":{"age":{"type":"integer","minimum":0}},"required":["age"]}}}`), "claude-opus-5-5")
+	want := `{"type":"object","properties":{"age":{"type":"integer","description":"{minimum: 0}"}},"required":["age"],"additionalProperties":false}`
+	if !ok || got != want {
+		t.Fatalf("schema = %s (%v), want %s", got, ok, want)
 	}
 }

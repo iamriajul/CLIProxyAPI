@@ -21,22 +21,30 @@ func ClaudeModelTakesStructuredOutputs(modelName string) bool {
 	return strings.HasPrefix(model, "claude-") && !claudeModelsWithoutStructuredOutputs.MatchString(model)
 }
 
-// ClaudeOutputFormatSchema returns the JSON schema of a json_schema response
-// format (Chat Completions response_format, or Responses text.format) when it
-// can be held to Claude's native structured outputs, the way Anthropic's own
-// SDKs send it: output_config.format {type: json_schema, schema}. A prompt
-// instruction only asks for the shape; this makes the model produce it.
-// Anything else (json_object, no schema, a model without structured outputs)
-// returns false and keeps BuildClaudeStructuredOutputInstruction.
+// ClaudeOutputFormatSchema returns the JSON schema of a strict json_schema
+// response format (Chat Completions response_format, or Responses
+// text.format) when it can be held to Claude's native structured outputs, the
+// way Anthropic's own SDKs send it: output_config.format {type: json_schema,
+// schema}. A prompt instruction only asks for the shape; this makes the model
+// produce it.
+//
+// Only a format the client marked strict goes native: a non-strict schema
+// asks for best effort, and enforcing it would turn a loose schema Claude
+// cannot hold into a 400. The schema is rewritten into the subset Claude
+// accepts (ClaudeStrictSchema). Anything else (json_object, no schema, not
+// strict, a recursive or unreadable schema, a model without structured
+// outputs) returns false and keeps BuildClaudeStructuredOutputInstruction.
 func ClaudeOutputFormatSchema(format ojson.Result, modelName string) (string, bool) {
 	if !format.Exists() || strings.ToLower(strings.TrimSpace(format.Get("type").String())) != "json_schema" {
 		return "", false
 	}
 	schema := format.Get("json_schema.schema")
+	strict := format.Get("json_schema.strict")
 	if !schema.Exists() {
 		schema = format.Get("schema")
+		strict = format.Get("strict")
 	}
-	if !schema.IsObject() || !ClaudeModelTakesStructuredOutputs(modelName) {
+	if !schema.IsObject() || strict.Type != ojson.True || !ClaudeModelTakesStructuredOutputs(modelName) {
 		return "", false
 	}
 	// The format's description tells the model what the answer is for; a
@@ -45,10 +53,10 @@ func ClaudeOutputFormatSchema(format ojson.Result, modelName string) (string, bo
 	if desc == "" {
 		desc = strings.TrimSpace(format.Get("description").String())
 	}
-	if desc == "" || schema.Get("description").Exists() {
-		return schema.Raw, true
+	if desc != "" && !schema.Get("description").Exists() {
+		doc := ojson.NewDocString(schema.Raw)
+		_ = doc.Set("description", desc)
+		schema = ojson.Parse(doc.String())
 	}
-	doc := ojson.NewDocString(schema.Raw)
-	_ = doc.Set("description", desc)
-	return doc.String(), true
+	return ClaudeStrictSchema(schema)
 }
