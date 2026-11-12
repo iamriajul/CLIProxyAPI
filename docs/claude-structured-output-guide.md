@@ -85,8 +85,9 @@ usually matches, but nothing holds it to the schema, so parse it defensively:
 - The format is `json_object`, or a `json_schema` with no schema.
 - The schema is recursive (a `$ref` cycle, or a `$ref` to `#`), or has a
   `$ref` that is not `#/$defs/<name>` or `#/definitions/<name>` naming a
-  definition the schema has. Claude's native output rejects recursive
-  schemas and references it cannot resolve.
+  definition the schema has, or an `allOf` that merges a member holding a
+  `$ref` with other members. Claude's native output rejects recursive
+  schemas, references it cannot resolve, and that merge.
 - The schema is too complex for Claude to compile: more than 24 optional
   properties, or more than 16 properties typed as a union (`anyOf`,
   `oneOf`, or a type list such as `["string", "null"]`), counted across the

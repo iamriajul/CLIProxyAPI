@@ -31,7 +31,8 @@ var claudeStrictStringFormats = map[string]bool{
 //
 // It returns false for a schema Claude cannot hold, each of which Claude
 // answers with a 400: a recursive one, a $ref that is not a top-level
-// $defs / definitions entry of this schema, more optional properties or
+// $defs / definitions entry of this schema, an allOf merging a member that
+// holds a $ref with others, more optional properties or
 // union-typed nodes than Claude compiles (claudeStrictMaxOptional,
 // claudeStrictMaxUnions), or a node with no type, anyOf, oneOf, allOf, enum,
 // or const.
@@ -176,6 +177,18 @@ func claudeStrictSchemaNode(node ojson.Result) (string, bool) {
 		}
 		out.set("anyOf", "oneOf", raw)
 	case hasAllOf && allOf.IsArray():
+		// Claude merges allOf members itself and cannot merge one that holds
+		// a $ref ("Cannot merge allOf schemas: schema 0 contains $ref"); a
+		// lone member needs no merge and is accepted.
+		if items := allOf.Array(); len(items) > 1 {
+			for _, item := range items {
+				hasRef := false
+				claudeWalkSchemaRefs(item, func(string) { hasRef = true })
+				if hasRef {
+					return "", false
+				}
+			}
+		}
 		raw, ok := claudeStrictSchemaList(allOf)
 		if !ok {
 			return "", false

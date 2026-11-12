@@ -462,7 +462,8 @@ become `anyOf`, and keywords Claude does not enforce (`minimum`,
 the description as `{keyword: value}`. A schema already inside the subset
 passes through unchanged. A schema Claude answers with a 400 whatever the
 rewrite does stays prompt-only: a recursive one, a `$ref` that is not a
-`$defs`/`definitions` entry of the schema, or one over Claude's compile
+`$defs`/`definitions` entry of the schema, an `allOf` merging a `$ref`
+member with others, or one over Claude's compile
 limits (24 optional properties, 16 union-typed ones).
 Until v8.0.944 the fork sent every `json_schema` natively and verbatim, which
 was the simplest form of the fix while the clients it was built for sent

@@ -57,6 +57,11 @@ func TestClaudeStrictSchema(t *testing.T) {
 			`{"type":"object","properties":{"p":{"$ref":"#/$defs/P"}},"required":["p"],"additionalProperties":false,"$defs":{"P":{"type":"object","properties":{"n":{"type":"integer","description":"{minimum: 0}"}},"required":["n"],"additionalProperties":false}}}`,
 		},
 		{
+			"a lone $ref in an allOf needs no merge and stays",
+			`{"type":"object","properties":{"x":{"allOf":[{"$ref":"#/$defs/B"}]}},"required":["x"],"additionalProperties":false,"$defs":{"B":{"type":"object","properties":{"a":{"type":"string"}},"required":["a"],"additionalProperties":false}}}`,
+			`{"type":"object","properties":{"x":{"allOf":[{"$ref":"#/$defs/B"}]}},"required":["x"],"additionalProperties":false,"$defs":{"B":{"type":"object","properties":{"a":{"type":"string"}},"required":["a"],"additionalProperties":false}}}`,
+		},
+		{
 			"property names with path characters survive",
 			`{"type":"object","properties":{"a.b":{"type":"string"},"c*d":{"type":"string"}},"required":["a.b"],"additionalProperties":false}`,
 			`{"type":"object","properties":{"a.b":{"type":"string"},"c*d":{"type":"string"}},"required":["a.b"],"additionalProperties":false}`,
@@ -80,6 +85,7 @@ func TestClaudeStrictSchemaRefusesWhatClaudeCannotHold(t *testing.T) {
 		"an indirect $defs cycle":                `{"$ref":"#/definitions/A","definitions":{"A":{"type":"object","properties":{"b":{"$ref":"#/definitions/B"}}},"B":{"type":"object","properties":{"a":{"$ref":"#/definitions/A"}}}}}`,
 		"a reference to the root":                `{"type":"object","properties":{"child":{"$ref":"#"}}}`,
 		"a missing definition":                   `{"type":"object","properties":{"x":{"$ref":"#/$defs/Nope"}},"$defs":{}}`,
+		"an allOf merging a $ref":                `{"type":"object","properties":{"x":{"allOf":[{"$ref":"#/$defs/B"},{"type":"object","properties":{"c":{"type":"string"}}}]}},"$defs":{"B":{"type":"object","properties":{"a":{"type":"string"}}}}}`,
 		"a nested pointer":                       `{"type":"object","properties":{"x":{"$ref":"#/$defs/B/properties/a"}},"$defs":{"B":{"type":"object","properties":{"a":{"type":"string"}}}}}`,
 		"a required that is not a list of names": `{"type":"object","properties":{"a":{"type":"string"}},"required":"a"}`,
 		"required names that are not strings":    `{"type":"object","properties":{"a":{"type":"string"}},"required":[1]}`,
