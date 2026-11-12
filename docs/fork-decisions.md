@@ -460,8 +460,10 @@ every object gets `additionalProperties: false`, `oneOf` and type lists
 become `anyOf`, and keywords Claude does not enforce (`minimum`,
 `maxLength`, `pattern`, `maxItems`, unknown string formats, ...) move into
 the description as `{keyword: value}`. A schema already inside the subset
-passes through unchanged. A recursive schema, or a `$ref` outside
-`$defs`/`definitions`, cannot be held natively and stays prompt-only.
+passes through unchanged. A schema Claude answers with a 400 whatever the
+rewrite does stays prompt-only: a recursive one, a `$ref` that is not a
+`$defs`/`definitions` entry of the schema, or one over Claude's compile
+limits (24 optional properties, 16 union-typed ones).
 Until v8.0.944 the fork sent every `json_schema` natively and verbatim, which
 was the simplest form of the fix while the clients it was built for sent
 clean strict schemas; it turned a loose `strict: false` schema, or one using
@@ -485,7 +487,7 @@ json_schema requests on Claude models
 (`claude_openai-responses_system_placement_test.go`), so the fork now adds
 rather than replaces. Where native output is not known to work, the
 instruction is the only mechanism: `json_object`, a format with no schema,
-a format not marked `strict: true`, a recursive schema, Claude 3 and the first Opus 4 / Sonnet 4 releases, and any model a
+a format not marked `strict: true`, a schema Claude cannot compile, Claude 3 and the first Opus 4 / Sonnet 4 releases, and any model a
 Claude-compatible endpoint serves under its own name (GLM, Kimi, ...). The
 Antigravity path is untouched: it builds Gemini-shaped requests, and its
 Claude 5.5 schema-to-prompt fallback (router-for-me/CLIProxyAPI#7000) still

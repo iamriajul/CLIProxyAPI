@@ -84,8 +84,14 @@ usually matches, but nothing holds it to the schema, so parse it defensively:
   400.
 - The format is `json_object`, or a `json_schema` with no schema.
 - The schema is recursive (a `$ref` cycle, or a `$ref` to `#`), or has a
-  `$ref` that does not point into `$defs` or `definitions`. Claude's native
-  output rejects recursive schemas.
+  `$ref` that is not `#/$defs/<name>` or `#/definitions/<name>` naming a
+  definition the schema has. Claude's native output rejects recursive
+  schemas and references it cannot resolve.
+- The schema is too complex for Claude to compile: more than 24 optional
+  properties, or more than 16 properties typed as a union (`anyOf`,
+  `oneOf`, or a type list such as `["string", "null"]`), counted across the
+  whole schema. Make properties required, or nullable fewer of them, to keep
+  native output.
 - The model does not support structured outputs, or is a model a
   Claude-compatible endpoint serves under its own name (GLM, Kimi, ...).
 - The route is Antigravity. Its requests are Gemini-shaped, and Claude 5.5
@@ -121,7 +127,8 @@ the agent tries again. You can build the same loop through the proxy.
    parameters are your schema. Set `strict: true` on it. Write the schema
    inside Claude's subset yourself: the proxy rewrites response formats, not
    tool schemas. That means `additionalProperties: false` on every object,
-   and no numeric bounds, string lengths, patterns, or recursion.
+   no numeric bounds, string lengths, patterns, or recursion, and no more
+   than 24 optional or 16 union-typed properties.
 
    ```json
    {

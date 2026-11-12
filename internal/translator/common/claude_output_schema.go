@@ -29,14 +29,74 @@ var claudeStrictStringFormats = map[string]bool{
 //     into the description as "{keyword: value}", so the model can still
 //     follow it.
 //
-// It returns false for a schema Claude cannot hold: a recursive one (Claude
-// rejects those), a $ref that does not point into $defs / definitions, or a
-// node with no type, anyOf, oneOf, allOf, enum, or const.
+// It returns false for a schema Claude cannot hold, each of which Claude
+// answers with a 400: a recursive one, a $ref that is not a top-level
+// $defs / definitions entry of this schema, more optional properties or
+// union-typed nodes than Claude compiles (claudeStrictMaxOptional,
+// claudeStrictMaxUnions), or a node with no type, anyOf, oneOf, allOf, enum,
+// or const.
 func ClaudeStrictSchema(schema ojson.Result) (string, bool) {
 	if !schema.IsObject() || claudeSchemaIsRecursive(schema) {
 		return "", false
 	}
-	return claudeStrictSchemaNode(schema)
+	out, ok := claudeStrictSchemaNode(schema)
+	if !ok {
+		return "", false
+	}
+	optional, unions := claudeSchemaComplexity(ojson.Parse(out))
+	if optional > claudeStrictMaxOptional || unions > claudeStrictMaxUnions {
+		return "", false
+	}
+	return out, true
+}
+
+// Claude refuses to compile a schema with more optional properties, or more
+// properties typed as a union (anyOf, or a type list), than these, counted
+// across the whole schema: "Schemas contains too many optional parameters
+// (25) ... (limit: 24)" and "too many parameters with union types (17 ...)".
+const (
+	claudeStrictMaxOptional = 24
+	claudeStrictMaxUnions   = 16
+)
+
+// claudeSchemaComplexity counts a rewritten schema's optional properties and
+// anyOf nodes, $defs included.
+func claudeSchemaComplexity(node ojson.Result) (optional, unions int) {
+	switch {
+	case node.IsArray():
+		for _, item := range node.Array() {
+			o, u := claudeSchemaComplexity(item)
+			optional, unions = optional+o, unions+u
+		}
+		return optional, unions
+	case !node.IsObject():
+		return 0, 0
+	}
+	if node.Get("anyOf").Exists() {
+		unions++
+	}
+	if props := node.Get("properties"); props.IsObject() {
+		required := map[string]bool{}
+		for _, name := range node.Get("required").Array() {
+			required[name.String()] = true
+		}
+		props.ForEach(func(name, _ ojson.Result) bool {
+			if !required[name.String()] {
+				optional++
+			}
+			return true
+		})
+	}
+	node.ForEach(func(key, value ojson.Result) bool {
+		switch key.String() {
+		case "enum", "const", "required", "description", "title":
+			return true
+		}
+		o, u := claudeSchemaComplexity(value)
+		optional, unions = optional+o, unions+u
+		return true
+	})
+	return optional, unions
 }
 
 func claudeStrictSchemaNode(node ojson.Result) (string, bool) {
@@ -159,6 +219,14 @@ func claudeStrictSchemaNode(node ojson.Result) (string, bool) {
 		delete(vals, "additionalProperties")
 		setRaw("additionalProperties", "false")
 		if required, ok := pop("required"); ok {
+			if !required.IsArray() {
+				return "", false
+			}
+			for _, name := range required.Array() {
+				if name.Type != ojson.String {
+					return "", false
+				}
+			}
 			setRaw("required", required.Raw)
 		}
 	case "string":
@@ -327,17 +395,30 @@ func claudeAllPrimitive(values []ojson.Result) bool {
 }
 
 // claudeSchemaIsRecursive reports whether schema refers back to itself, or
-// refers somewhere this rewrite cannot follow. Claude's structured outputs
-// reject recursive schemas, so it reports true for a "#" reference to the
-// root, a cycle among the $defs / definitions, and any reference that does
-// not point into them (another JSON pointer, or an external document).
+// refers somewhere Claude cannot resolve. Claude's structured outputs reject
+// both, so it reports true for a cycle among the $defs / definitions and for
+// any reference that is not "#/$defs/<name>" or "#/definitions/<name>" naming
+// an entry this schema defines: "#" (the root), a deeper pointer such as
+// "#/$defs/A/properties/b", a missing definition, or an external document.
 func claudeSchemaIsRecursive(schema ojson.Result) bool {
-	defsRef := func(ref string) bool {
-		return strings.HasPrefix(ref, "#/$defs/") || strings.HasPrefix(ref, "#/definitions/")
+	defined := map[string]bool{}
+	for _, defsKey := range []string{"$defs", "definitions"} {
+		schema.Get(ojson.Escape(defsKey)).ForEach(func(name, _ ojson.Result) bool {
+			defined["#/"+defsKey+"/"+name.String()] = true
+			return true
+		})
+	}
+	resolvable := func(ref string) bool {
+		for _, prefix := range []string{"#/$defs/", "#/definitions/"} {
+			if name, ok := strings.CutPrefix(ref, prefix); ok {
+				return name != "" && !strings.ContainsAny(name, "/~") && defined[ref]
+			}
+		}
+		return false
 	}
 	unsupported := false
 	claudeWalkSchemaRefs(schema, func(ref string) {
-		if !defsRef(ref) {
+		if !resolvable(ref) {
 			unsupported = true
 		}
 	})

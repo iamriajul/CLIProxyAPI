@@ -76,12 +76,16 @@ func TestClaudeStrictSchema(t *testing.T) {
 
 func TestClaudeStrictSchemaRefusesWhatClaudeCannotHold(t *testing.T) {
 	for name, in := range map[string]string{
-		"a $defs cycle":           `{"type":"object","properties":{"n":{"$ref":"#/$defs/Node"}},"$defs":{"Node":{"type":"object","properties":{"kids":{"type":"array","items":{"$ref":"#/$defs/Node"}}}}}}`,
-		"an indirect $defs cycle": `{"$ref":"#/definitions/A","definitions":{"A":{"type":"object","properties":{"b":{"$ref":"#/definitions/B"}}},"B":{"type":"object","properties":{"a":{"$ref":"#/definitions/A"}}}}}`,
-		"a reference to the root": `{"type":"object","properties":{"child":{"$ref":"#"}}}`,
-		"a node with no type":     `{"type":"object","properties":{"x":{"description":"anything"}}}`,
-		"an unknown type":         `{"type":"object","properties":{"x":{"type":"date"}}}`,
-		"not an object":           `["type"]`,
+		"a $defs cycle":                          `{"type":"object","properties":{"n":{"$ref":"#/$defs/Node"}},"$defs":{"Node":{"type":"object","properties":{"kids":{"type":"array","items":{"$ref":"#/$defs/Node"}}}}}}`,
+		"an indirect $defs cycle":                `{"$ref":"#/definitions/A","definitions":{"A":{"type":"object","properties":{"b":{"$ref":"#/definitions/B"}}},"B":{"type":"object","properties":{"a":{"$ref":"#/definitions/A"}}}}}`,
+		"a reference to the root":                `{"type":"object","properties":{"child":{"$ref":"#"}}}`,
+		"a missing definition":                   `{"type":"object","properties":{"x":{"$ref":"#/$defs/Nope"}},"$defs":{}}`,
+		"a nested pointer":                       `{"type":"object","properties":{"x":{"$ref":"#/$defs/B/properties/a"}},"$defs":{"B":{"type":"object","properties":{"a":{"type":"string"}}}}}`,
+		"a required that is not a list of names": `{"type":"object","properties":{"a":{"type":"string"}},"required":"a"}`,
+		"required names that are not strings":    `{"type":"object","properties":{"a":{"type":"string"}},"required":[1]}`,
+		"a node with no type":                    `{"type":"object","properties":{"x":{"description":"anything"}}}`,
+		"an unknown type":                        `{"type":"object","properties":{"x":{"type":"date"}}}`,
+		"not an object":                          `["type"]`,
 	} {
 		if got, ok := ClaudeStrictSchema(ojson.Parse(in)); ok {
 			t.Errorf("%s: ClaudeStrictSchema = %s, want it refused", name, got)
@@ -109,5 +113,45 @@ func TestClaudeStrictSchemaIsValidJSON(t *testing.T) {
 	}
 	if v := ojson.Parse(got).Value(); !reflect.DeepEqual(v, want) {
 		t.Fatalf("ClaudeStrictSchema = %s", got)
+	}
+}
+
+// Claude refuses to compile more than 24 optional properties or 16
+// union-typed ones (live: "too many optional parameters (25) ... (limit:
+// 24)"), so such a schema stays prompt-only.
+func TestClaudeStrictSchemaRefusesSchemasClaudeWillNotCompile(t *testing.T) {
+	props := func(n int, prop string) string {
+		out := ""
+		for i := 0; i < n; i++ {
+			if i > 0 {
+				out += ","
+			}
+			out += `"p` + string(rune('a'+i/26)) + string(rune('a'+i%26)) + `":` + prop
+		}
+		return out
+	}
+	names := func(n int) string {
+		out := ""
+		for i := 0; i < n; i++ {
+			if i > 0 {
+				out += ","
+			}
+			out += `"p` + string(rune('a'+i/26)) + string(rune('a'+i%26)) + `"`
+		}
+		return out
+	}
+	for _, tc := range []struct {
+		name, schema string
+		ok           bool
+	}{
+		{"24 optional properties", `{"type":"object","properties":{` + props(24, `{"type":"string"}`) + `}}`, true},
+		{"25 optional properties", `{"type":"object","properties":{` + props(25, `{"type":"string"}`) + `}}`, false},
+		{"16 nullable properties", `{"type":"object","properties":{` + props(16, `{"type":["string","null"]}`) + `},"required":[` + names(16) + `]}`, true},
+		{"17 nullable properties", `{"type":"object","properties":{` + props(17, `{"type":["string","null"]}`) + `},"required":[` + names(17) + `]}`, false},
+		{"17 oneOf properties", `{"type":"object","properties":{` + props(17, `{"oneOf":[{"type":"string"},{"type":"integer"}]}`) + `},"required":[` + names(17) + `]}`, false},
+	} {
+		if _, ok := ClaudeStrictSchema(ojson.Parse(tc.schema)); ok != tc.ok {
+			t.Errorf("%s: ok = %v, want %v", tc.name, ok, tc.ok)
+		}
 	}
 }
