@@ -2,12 +2,12 @@ package websearch
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
-	"regexp"
 	"strings"
 
+	"github.com/MoeForge/moego/json"
 	"github.com/MoeForge/moego/ojson"
+	"github.com/MoeForge/moego/regexp"
 )
 
 // LLM-backed search providers. Both xAI and OpenAI expose an OpenAI-style
