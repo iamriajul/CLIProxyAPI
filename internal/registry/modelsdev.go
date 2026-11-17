@@ -17,11 +17,12 @@
 package registry
 
 import (
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/MoeForge/moego/json"
 )
 
 // ModelsDevProviderIDs lists the exact models.dev provider IDs this fork

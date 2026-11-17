@@ -2,11 +2,12 @@ package zai
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/MoeForge/moego/json"
 )
 
 func TestAuthorizeURLShape(t *testing.T) {

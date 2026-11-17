@@ -1,11 +1,12 @@
 package auth
 
 import (
-	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/MoeForge/moego/json"
 )
 
 func TestModelCooldownError_AppendsRetryAfter(t *testing.T) {
