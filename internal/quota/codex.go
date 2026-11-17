@@ -2,16 +2,17 @@ package quota
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"math"
 	"net/http"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/MoeForge/moego/base64"
+	"github.com/MoeForge/moego/json"
+	"github.com/MoeForge/moego/regexp"
 )
 
 // Codex quota endpoint and headers, mirroring the CPAMC management UI adapter

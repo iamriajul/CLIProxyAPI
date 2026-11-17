@@ -1,10 +1,11 @@
 package registry
 
 import (
-	"encoding/json"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/MoeForge/moego/json"
 )
 
 func TestModelsDevLiveOverlayPrecedence(t *testing.T) {
