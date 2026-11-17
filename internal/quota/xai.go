@@ -11,7 +11,6 @@ package quota
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -20,6 +19,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/MoeForge/moego/json"
 )
 
 // xAI billing and health endpoints. Variables (not constants) so tests can

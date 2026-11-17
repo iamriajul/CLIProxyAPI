@@ -16,11 +16,12 @@ import (
 	"errors"
 	"math"
 	"net/http"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/MoeForge/moego/regexp"
 )
 
 // metaMuseQuotaURL is the Muse key/quota endpoint. It is a variable (not a
