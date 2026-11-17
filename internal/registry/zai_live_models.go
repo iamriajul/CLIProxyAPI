@@ -3,12 +3,13 @@ package registry
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/MoeForge/moego/json"
 )
 
 // Z.AI exposes a plan-scoped, per-credential model discovery endpoint whose

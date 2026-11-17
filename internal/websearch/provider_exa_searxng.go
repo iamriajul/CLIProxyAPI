@@ -2,10 +2,10 @@ package websearch
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"strings"
 
+	"github.com/MoeForge/moego/json"
 	"github.com/MoeForge/moego/ojson"
 )
 

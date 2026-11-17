@@ -1,15 +1,15 @@
 package auth
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strings"
 	"time"
 
+	"github.com/MoeForge/moego/json"
 	"github.com/MoeForge/moego/ojson"
+	"github.com/MoeForge/moego/regexp"
 )
 
 // RecoveryTimeProvider represents an error that reports an earliest recovery timestamp.
