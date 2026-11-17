@@ -1,8 +1,9 @@
 package websearch
 
 import (
-	"regexp"
 	"strings"
+
+	"github.com/MoeForge/moego/regexp"
 )
 
 // QuerySyntax declares which operators a target engine actually parses.

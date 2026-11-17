@@ -2,14 +2,15 @@ package quota
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"math"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/MoeForge/moego/json"
+	"github.com/MoeForge/moego/regexp"
 )
 
 // Claude OAuth quota endpoints and headers, mirroring the CPAMC management UI

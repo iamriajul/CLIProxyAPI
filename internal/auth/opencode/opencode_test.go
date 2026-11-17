@@ -2,11 +2,12 @@ package opencode
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/MoeForge/moego/json"
 )
 
 func TestNormalizeBaseURL(t *testing.T) {
