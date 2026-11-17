@@ -3,10 +3,11 @@ package quota
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+
+	"github.com/MoeForge/moego/json"
 )
 
 // maxQuotaBodyBytes bounds upstream quota responses against memory exhaustion.

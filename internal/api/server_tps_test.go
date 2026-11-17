@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MoeForge/moego/json"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/tps"
 )
 
