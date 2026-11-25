@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -62,10 +64,17 @@ func newZaiDiscoveryService(t *testing.T, handler http.HandlerFunc) (*Service, *
 	return &Service{cfg: &config.Config{}}, server, &hits
 }
 
+// zaiAuthSeq makes each zaiAuthForServer ID unique within the process.
+var zaiAuthSeq atomic.Int64
+
 // zaiAuthForServer builds a credential whose recorded base URL is the test
 // server's protocol base, the same shape an imported Z.AI credential has.
+//
+// The registry's discovery store is process-wide and keyed by auth ID, so each
+// call gets a fresh ID; otherwise a repeated run (-count=N) finds the previous
+// run's lanes still fresh and never reaches the test server.
 func zaiAuthForServer(id, key, serverURL string) *coreauth.Auth {
-	auth := zaiDiscoveryAuth(id, key)
+	auth := zaiDiscoveryAuth(id+"-"+strconv.FormatInt(zaiAuthSeq.Add(1), 10), key)
 	auth.Attributes = map[string]string{"base_url": serverURL + "/api/anthropic"}
 	return auth
 }
