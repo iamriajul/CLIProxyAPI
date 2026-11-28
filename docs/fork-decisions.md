@@ -424,7 +424,10 @@ Both this endpoint and `/v1/quota` report `cooldown_until` on a cooling account
 whose recovery time is known (the same recovery time `in_cooldown` is computed
 from), so a client can say until when an account is blocked; Paseo uses it to
 pause cache warm-up with an end time. It is omitted while the account is healthy
-or the end is unknown.
+or the end is unknown. `in_cooldown` follows the scheduler's availability
+rule, including upstream's v8.1.8 rule that an orphaned `Unavailable` flag (an
+active account with no error and no timer behind it) does not block: the
+router serves that account, so reporting it as cooling would be false.
 
 ```bash
 grep -q '"/session-route"' internal/api/server_routes.go
@@ -432,6 +435,8 @@ grep -q 'sessionroute.Default().SetAuthState' internal/api/server.go
 go test ./internal/sessionroute/
 go test ./internal/api/ -run 'TestSessionRoute'
 grep -q 'CooldownUntil: cooldownUntil(inCooldown, recoverAt)' internal/api/server_session_route.go
+grep -q 'IsOrphanedAuthUnavailable(auth, now)' internal/api/server_quota.go
+go test ./internal/api/ -run 'TestHandleInferenceQuota_CooldownFlag'
 ```
 
 ## quota-retry-after

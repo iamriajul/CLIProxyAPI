@@ -166,6 +166,15 @@ func TestHandleInferenceQuota_CooldownFlag(t *testing.T) {
 		t.Fatalf("indefinite = (%v, %v)", inCooldown, recoverAt)
 	}
 
+	// v8.1.8's scheduler serves an active account whose Unavailable flag has
+	// no error or timer behind it, so the quota view must not report it cooling.
+	orphanedAuth := &auth.Auth{
+		ID: "cool-orphaned", Provider: "codex", Status: auth.StatusActive, Unavailable: true,
+	}
+	if inCooldown, _ := inferenceQuotaCooldown(orphanedAuth, nil, now); inCooldown {
+		t.Fatal("orphaned Unavailable flag must not report a cooldown")
+	}
+
 	modelBlocked := &auth.ModelState{Unavailable: true, NextRetryAfter: future}
 	if inCooldown, _ := inferenceQuotaCooldown(activeAuth, modelBlocked, now); !inCooldown {
 		t.Fatal("model-level block must raise the account flag")

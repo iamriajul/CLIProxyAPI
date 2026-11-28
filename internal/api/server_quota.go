@@ -230,9 +230,12 @@ func mapQuotaResets(resets *quota.Resets) []inferenceQuotaResetCredit {
 // inferenceQuotaCooldown reports whether the account is effectively blocked
 // for the requested model, following the scheduler's availability semantics:
 // flags without a recovery time block indefinitely, while expired timers
-// count as recovered. It returns the latest future recovery time, if any.
+// count as recovered, and an orphaned Unavailable flag (active, no error, no
+// timers) is ignored as the scheduler ignores it. It returns the latest future
+// recovery time, if any.
 func inferenceQuotaCooldown(auth *coreauth.Auth, model *coreauth.ModelState, now time.Time) (bool, time.Time) {
-	blocked, recoverAt := quotaFlagsBlocked(auth.Unavailable, auth.Quota.Exceeded, auth.NextRetryAfter, auth.Quota.NextRecoverAt, now)
+	unavailable := auth.Unavailable && !coreauth.IsOrphanedAuthUnavailable(auth, now)
+	blocked, recoverAt := quotaFlagsBlocked(unavailable, auth.Quota.Exceeded, auth.NextRetryAfter, auth.Quota.NextRecoverAt, now)
 	if model != nil {
 		modelBlocked, modelRecover := quotaFlagsBlocked(
 			model.Unavailable || model.Status == coreauth.StatusDisabled,
